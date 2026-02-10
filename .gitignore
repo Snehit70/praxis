@@ -1,31 +1,101 @@
 # Dependencies
 node_modules/
+web/node_modules/
+bun.lock
+package-lock.json
+web/bun.lock
 
-# Scraped data (too large for git)
+# Next.js build outputs
+web/.next/
+web/out/
+web/build/
+web/dist/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+web/.env
+web/.env.local
+web/.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ============================================
+# SCRAPER FILES (exclude from remote)
+# ============================================
+
+# Scraped data (1.9GB - backed up to ~/quiz-data-backup)
 data/
 images/
 image-urls.json
 
-# Logs
-*.log
+# Scraper source code
+src/
 
-# Runtime state
+# Scraper scripts
+run-scraper.sh
+run-image-downloader.sh
+check-progress.sh
+scrape_poc.js
+show_papers.js
+
+# Scraper documentation
+SCRAPING_STRATEGY.md
+ARCHITECTURE.md
+ENDPOINT_DISCOVERY.md
+ADDITIONAL_ENDPOINTS.md
+DISCOVERY_SUMMARY.md
+PROGRESS_REPORT.md
+IMAGE_DOWNLOADER_README.md
+IMAGES_EXPLANATION.md
+GET_IMAGE_URL.md
+ENDPOINT_TEST_RESULTS.md
+TEST_AUTHENTICATED_IMAGES.md
+DESIGN_SPEC_CYBERPUNK.md
+
+# Scraper state and test files
 scraper-state.json
-
-# Test artifacts
-test-image.png
-test-option.png
-
-# Sensitive
+qp_state.json
+initial_state.json
+home_state.json
 cookies.txt
-.env
-.env.*
-
-# POC dumps (not needed in repo)
-*.html
-*_state.json
+scraper.log
+image-downloader.log
+test-*.png
+test-*.json
 *_dump.html
+*.html
+auth-image-test-results.json
+endpoint-test-results.json
+questions_sample.json
 
-# OS
+# ============================================
+# Standard ignores
+# ============================================
+
+# OS files
 .DS_Store
 Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# TypeScript
+*.tsbuildinfo
+web/next-env.d.ts
+
+# Sisyphus work files (keep plans, exclude temp files)
+.sisyphus/evidence/
+.sisyphus/checkpoints/
+
+# Vercel
+.vercel
