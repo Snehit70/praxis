@@ -4,27 +4,13 @@ node_modules/
 # Scraped data (too large for git)
 data/
 images/
-image-urls.json
 
-# Logs
-*.log
-
-# Runtime state
-scraper-state.json
-
-# Test artifacts
-test-image.png
-test-option.png
-
-# Sensitive
-cookies.txt
+# Environment
 .env
 .env.*
 
-# POC dumps (not needed in repo)
-*.html
-*_state.json
-*_dump.html
+# Logs
+*.log
 
 # OS
 .DS_Store
