@@ -74,6 +74,7 @@ interface QuestionData {
   question_image_3?: string;
   question_image_4?: string;
   question_image_5?: string;
+  question_image_6?: string;
   question_image_7?: string;
   question_image_8?: string;
   question_image_9?: string;
@@ -85,6 +86,7 @@ interface QuestionData {
   answer_type?: string;
   response_type?: string;
   parent_question_id?: number;
+  parent_question?: { uuid: string; question_type: string };
   hash: string;
   is_markdown: number;
   have_answers: number;
@@ -258,7 +260,7 @@ for (let i = 0; i < questionsData.length; i += BATCH_SIZE) {
     questionImage3: q.question_image_3 || undefined,
     questionImage4: q.question_image_4 || undefined,
     questionImage5: q.question_image_5 || undefined,
-    questionImage6: undefined,
+    questionImage6: q.question_image_6 || undefined,
     questionImage7: q.question_image_7 || undefined,
     questionImage8: q.question_image_8 || undefined,
     questionImage9: q.question_image_9 || undefined,
@@ -267,7 +269,7 @@ for (let i = 0; i < questionsData.length; i += BATCH_SIZE) {
     responseType: q.response_type || undefined,
     valueStart: q.value_start || undefined,
     valueEnd: q.value_end || undefined,
-    parentQuestionUuid: undefined,
+    parentQuestionUuid: q.parent_question?.uuid || undefined,
     isMarkdown: q.is_markdown,
     haveAnswers: q.have_answers,
     questionNumLong: q.question_num_long,
@@ -282,11 +284,19 @@ for (let i = 0; i < questionsData.length; i += BATCH_SIZE) {
     if (paperIdMap[uuid]) batchPaperMap[uuid] = paperIdMap[uuid]!;
   }
 
+  // Filter questionIdMap to only include parent UUIDs referenced by this batch
+  const batchParentUuids = new Set(batch.map(q => q.parentQuestionUuid).filter(Boolean));
+  const batchQuestionMap: Record<string, Id<"questions">> = {};
+  for (const uuid of batchParentUuids) {
+    if (uuid && questionIdMap[uuid]) batchQuestionMap[uuid] = questionIdMap[uuid]!;
+  }
+
   const batchIds = await client.mutation(api.seed.seedQuestions, {
     questions: batch,
     examIdMap,
     paperIdMap: batchPaperMap,
     courseIdMap,
+    ...(Object.keys(batchQuestionMap).length > 0 ? { questionIdMap: batchQuestionMap } : {}),
   });
   questionIdMap = { ...questionIdMap, ...batchIds };
   

@@ -31,7 +31,7 @@ export const wipeTableBatch = mutation({
       throw new Error("Invalid table name");
     }
     
-    const docs = await ctx.db.query(args.table as any).take(args.limit);
+    const docs = await ctx.db.query(args.table as "exams" | "courses" | "papers" | "questions" | "options").take(args.limit);
     for (const doc of docs) {
       await ctx.db.delete(doc._id);
     }
