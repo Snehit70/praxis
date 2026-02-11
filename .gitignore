@@ -15,3 +15,6 @@ images/
 # OS
 .DS_Store
 Thumbs.db
+
+# Convex
+convex/_generated/
