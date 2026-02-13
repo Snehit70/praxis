@@ -24,6 +24,7 @@ dist-ssr/
 # Editor
 .vscode/
 .idea/
+tsconfig.tsbuildinfo
 
 # Convex
 convex/_generated/
