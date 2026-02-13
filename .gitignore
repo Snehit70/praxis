@@ -16,5 +16,14 @@ images/
 .DS_Store
 Thumbs.db
 
+# Build output
+dist/
+dist-ssr/
+*.local
+
+# Editor
+.vscode/
+.idea/
+
 # Convex
 convex/_generated/
