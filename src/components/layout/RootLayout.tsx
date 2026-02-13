@@ -1,8 +1,33 @@
 import { Outlet, Link } from "react-router-dom";
 import { BookOpen, User, Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { logger } from "@/lib/logger";
+import { useEffect } from "react";
 
 export default function RootLayout() {
+  useEffect(() => {
+    logger.info('RootLayout mounted');
+    return () => {
+      logger.debug('RootLayout unmounted');
+    };
+  }, []);
+
+  const handleNavClick = (destination: string) => {
+    logger.info('Navigation clicked', { destination });
+  };
+
+  const handleSignInClick = () => {
+    logger.info('Sign In button clicked');
+  };
+
+  const handleGetStartedClick = () => {
+    logger.info('Get Started button clicked');
+  };
+
+  const handleMenuClick = () => {
+    logger.info('Mobile menu button clicked');
+  };
+
   return (
     <div className="min-h-screen bg-background text-foreground font-sans flex flex-col">
       <header className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">
@@ -13,20 +38,20 @@ export default function RootLayout() {
           </Link>
           
           <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-muted-foreground">
-            <Link to="/" className="hover:text-foreground transition-colors">Home</Link>
-            <Link to="/courses" className="hover:text-foreground transition-colors">Courses</Link>
-            <Link to="/practice" className="hover:text-foreground transition-colors">Practice</Link>
+            <Link to="/" className="hover:text-foreground transition-colors" onClick={() => handleNavClick('home')}>Home</Link>
+            <Link to="/exam/quiz1" className="hover:text-foreground transition-colors" onClick={() => handleNavClick('exams')}>Exams</Link>
+            <Link to="/exam/quiz1" className="hover:text-foreground transition-colors" onClick={() => handleNavClick('practice')}>Practice</Link>
           </nav>
 
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" className="md:hidden">
+            <Button variant="ghost" size="icon" className="md:hidden" onClick={handleMenuClick}>
               <Menu className="h-5 w-5" />
             </Button>
-            <Button variant="outline" size="sm" className="hidden md:flex gap-2">
+            <Button variant="outline" size="sm" className="hidden md:flex gap-2" onClick={handleSignInClick}>
               <User className="h-4 w-4" />
               <span>Sign In</span>
             </Button>
-            <Button size="sm">Get Started</Button>
+            <Button size="sm" onClick={handleGetStartedClick}>Get Started</Button>
           </div>
         </div>
       </header>

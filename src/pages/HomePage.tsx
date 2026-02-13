@@ -1,9 +1,26 @@
 import { Button } from "@/components/ui/button";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
-import { ArrowRight, BookOpen, Brain, GraduationCap, Target } from "lucide-react";
+import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { ArrowRight, BookOpen, Brain, Target } from "lucide-react";
 import { Link } from "react-router-dom";
+import { logger } from "@/lib/logger";
+import { useEffect } from "react";
 
 export default function HomePage() {
+  useEffect(() => {
+    logger.info('HomePage mounted');
+    return () => {
+      logger.debug('HomePage unmounted');
+    };
+  }, []);
+
+  const handleStartPracticing = () => {
+    logger.info('Start Practicing button clicked');
+  };
+
+  const handleBrowseCourses = () => {
+    logger.info('Browse Courses button clicked');
+  };
+
   return (
     <div className="space-y-12">
       <section className="text-center py-20 space-y-6">
@@ -30,13 +47,13 @@ export default function HomePage() {
         
         <div className="flex items-center justify-center gap-4 pt-4">
           <Button size="lg" className="h-12 px-8 text-base" asChild>
-            <Link to="/practice">
+            <Link to="/exam/quiz1" onClick={handleStartPracticing}>
               Start Practicing
               <ArrowRight className="ml-2 h-4 w-4" />
             </Link>
           </Button>
           <Button size="lg" variant="outline" className="h-12 px-8 text-base" asChild>
-            <Link to="/courses">Browse Courses</Link>
+            <Link to="/exam/quiz1" onClick={handleBrowseCourses}>Browse Courses</Link>
           </Button>
         </div>
       </section>
