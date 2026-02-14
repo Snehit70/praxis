@@ -1,6 +1,5 @@
-import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { ArrowRight, BookOpen, Brain, Target, FileText, Code, GraduationCap, Trophy } from "lucide-react";
+import { ArrowRight, BookOpen, Brain, Target, FileText, Code, GraduationCap } from "lucide-react";
 import { Link } from "react-router-dom";
 import { logger } from "@/lib/logger";
 import { useEffect } from "react";
