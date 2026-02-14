@@ -15,7 +15,7 @@ function App() {
           <Route index element={<HomePage />} />
           <Route path="debug/exams" element={<DebugExams />} />
           <Route path="exam/:examId" element={<ExamPage />} />
-          <Route path="course/:courseId" element={<CoursePage />} />
+          <Route path="exam/:examId/course/:courseId" element={<CoursePage />} />
           <Route path="paper/:paperId" element={<PaperPage />} />
         </Route>
       </Routes>

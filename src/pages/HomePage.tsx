@@ -1,6 +1,5 @@
-import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { ArrowRight, BookOpen, Brain, Target } from "lucide-react";
+import { ArrowRight, BookOpen, Brain, Target, FileText, Code, GraduationCap } from "lucide-react";
 import { Link } from "react-router-dom";
 import { logger } from "@/lib/logger";
 import { useEffect } from "react";
@@ -13,13 +12,36 @@ export default function HomePage() {
     };
   }, []);
 
-  const handleStartPracticing = () => {
-    logger.info('Start Practicing button clicked');
-  };
-
-  const handleBrowseCourses = () => {
-    logger.info('Browse Courses button clicked');
-  };
+  const exams = [
+    {
+      slug: 'quiz1',
+      name: 'Quiz 1',
+      description: 'Mid-term assessment covering first half of the course',
+      icon: FileText,
+      color: 'from-blue-500 to-cyan-500',
+    },
+    {
+      slug: 'quiz2',
+      name: 'Quiz 2',
+      description: 'Mid-term assessment covering second half of the course',
+      icon: FileText,
+      color: 'from-purple-500 to-pink-500',
+    },
+    {
+      slug: 'end-term',
+      name: 'End Term Quiz',
+      description: 'Comprehensive final exam covering entire course',
+      icon: GraduationCap,
+      color: 'from-orange-500 to-red-500',
+    },
+    {
+      slug: 'oppe',
+      name: 'OPPE',
+      description: 'Online Programming Practical Exam',
+      icon: Code,
+      color: 'from-green-500 to-emerald-500',
+    },
+  ];
 
   return (
     <div className="space-y-12">
@@ -44,17 +66,41 @@ export default function HomePage() {
         <p className="text-xl text-muted-foreground max-w-2xl mx-auto leading-relaxed">
           Access thousands of past year questions, get instant feedback, and track your progress with our advanced analytics platform.
         </p>
-        
-        <div className="flex items-center justify-center gap-4 pt-4">
-          <Button size="lg" className="h-12 px-8 text-base" asChild>
-            <Link to="/exam/quiz1" onClick={handleStartPracticing}>
-              Start Practicing
-              <ArrowRight className="ml-2 h-4 w-4" />
-            </Link>
-          </Button>
-          <Button size="lg" variant="outline" className="h-12 px-8 text-base" asChild>
-            <Link to="/exam/quiz1" onClick={handleBrowseCourses}>Browse Courses</Link>
-          </Button>
+      </section>
+
+      <section className="space-y-6">
+        <div className="text-center space-y-2">
+          <h2 className="text-3xl font-bold tracking-tight">Choose Your Exam</h2>
+          <p className="text-muted-foreground">Select an exam type to start practicing</p>
+        </div>
+
+        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {exams.map((exam) => {
+            const Icon = exam.icon;
+            return (
+              <Card
+                key={exam.slug}
+                className="bg-card/50 backdrop-blur border-muted/50 hover:border-primary/50 transition-all cursor-pointer group hover:shadow-lg"
+              >
+                <Link to={`/exam/${exam.slug}`}>
+                  <CardHeader className="space-y-4">
+                    <div className={`h-14 w-14 rounded-xl bg-gradient-to-br ${exam.color} flex items-center justify-center text-white group-hover:scale-110 transition-transform`}>
+                      <Icon className="h-7 w-7" />
+                    </div>
+                    <div className="space-y-2">
+                      <CardTitle className="group-hover:text-primary transition-colors flex items-center justify-between">
+                        {exam.name}
+                        <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all" />
+                      </CardTitle>
+                      <CardDescription className="text-sm leading-relaxed">
+                        {exam.description}
+                      </CardDescription>
+                    </div>
+                  </CardHeader>
+                </Link>
+              </Card>
+            );
+          })}
         </div>
       </section>
 

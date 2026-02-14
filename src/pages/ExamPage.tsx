@@ -86,7 +86,7 @@ export default function ExamPage() {
             key={course._id}
             className="hover:border-primary/50 transition-colors cursor-pointer group"
           >
-            <Link to={`/course/${course.uuid}`}>
+            <Link to={`/exam/${examId}/course/${course.uuid}`}>
               <CardHeader>
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
