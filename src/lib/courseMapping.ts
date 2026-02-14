@@ -29,7 +29,7 @@ export const LEVEL_ORDER: CourseLevel[] = [
 
 // Normalize course name for matching (lowercase, remove spaces/special chars)
 function normalizeName(name: string): string {
-  return name.toLowerCase().replace(/[\s\-_]/g, '').replace(/[12]$/, match => match);
+  return name.toLowerCase().replace(/[\s\-_]/g, '');
 }
 
 // Course name variations mapped to canonical names
