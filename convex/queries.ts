@@ -95,15 +95,23 @@ export const getPapersByExamAndCourse = query({
       )
       .collect();
 
-    return papers.map((paper) => ({
-      _id: paper._id,
-      paperName: paper.paperName,
-      paperDescription: paper.paperDescription,
-      uuid: paper.uuid,
-      year: paper.year,
-      duration: paper.duration,
-      totalScore: paper.totalScore,
-      isNew: paper.isNew,
-    }));
+    const sortedPapers = papers
+      .map((paper) => ({
+        _id: paper._id,
+        paperName: paper.paperName,
+        paperDescription: paper.paperDescription,
+        uuid: paper.uuid,
+        year: paper.year,
+        duration: paper.duration,
+        totalScore: paper.totalScore,
+        isNew: paper.isNew,
+        createdAt: paper.createdAt,
+      }))
+      .sort((a, b) => {
+        if (b.year !== a.year) return b.year - a.year;
+        return b.createdAt.localeCompare(a.createdAt);
+      });
+
+    return sortedPapers;
   },
 });
