@@ -22,13 +22,19 @@ This file provides context and rules for AI agents working on the Quiz project.
 ## 3. Routing Structure
 
 ```
-/                     → HomePage (landing)
-/exam/:examId         → ExamPage (shows courses for an exam)
-/course/:courseId     → CoursePage (shows papers for a course)  
-/paper/:paperId       → PaperPage (quiz taking interface)
+/                              → HomePage (landing with all exam types)
+/exam/:examId                  → ExamPage (shows courses for an exam)
+/exam/:examId/course/:courseId → CoursePage (shows papers for exam+course)  
+/paper/:paperId                → PaperPage (quiz taking interface)
 ```
 
-**Important**: There is NO `/practice` or `/courses` route. All links must point to existing routes.
+**Exam Types**: quiz1, quiz2, end-term, oppe
+
+**Important**: 
+- Course route is nested under exam to preserve hierarchy
+- There is NO `/practice` or `/courses` route
+- All links must point to existing routes
+- Routing preserves exam→course→paper data relationship
 
 ## 4. Environment Variables
 
