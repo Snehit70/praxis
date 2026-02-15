@@ -36,7 +36,7 @@ export default function CoursePage() {
             questionCount: 0, 
             calculatedTotalMarks: p.totalScore || 0,
           }));
-          setPapers(result);
+          setPapers(processedPapers);
         })
         .catch((err) => {
           logger.error('Failed to load papers', err);
