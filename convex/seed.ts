@@ -26,7 +26,6 @@ export const wipeTableBatch = mutation({
     limit: v.number(),
   },
   handler: async (ctx, args) => {
-    // Validate table name to prevent arbitrary deletion
     if (!["exams", "courses", "papers", "questions", "options"].includes(args.table)) {
       throw new Error("Invalid table name");
     }
@@ -36,6 +35,28 @@ export const wipeTableBatch = mutation({
       await ctx.db.delete(doc._id);
     }
     return docs.length;
+  },
+});
+
+export const deduplicatePapersBatch = mutation({
+  args: {
+    limit: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const questions = await ctx.db.query("questions").take(args.limit);
+    const validPaperIds = new Set(questions.map(q => q.paperId as string));
+    
+    const papers = await ctx.db.query("papers").take(args.limit);
+    let deleted = 0;
+    
+    for (const paper of papers) {
+      if (!validPaperIds.has(paper._id as string)) {
+        await ctx.db.delete(paper._id);
+        deleted++;
+      }
+    }
+    
+    return { checked: papers.length, deleted, kept: papers.length - deleted };
   },
 });
 

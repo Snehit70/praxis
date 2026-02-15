@@ -95,23 +95,104 @@ export const getPapersByExamAndCourse = query({
       )
       .collect();
 
-    const sortedPapers = papers
-      .map((paper) => ({
-        _id: paper._id,
-        paperName: paper.paperName,
-        paperDescription: paper.paperDescription,
-        uuid: paper.uuid,
-        year: paper.year,
-        duration: paper.duration,
-        totalScore: paper.totalScore,
-        isNew: paper.isNew,
-        createdAt: paper.createdAt,
-      }))
-      .sort((a, b) => {
-        if (b.year !== a.year) return b.year - a.year;
-        return b.createdAt.localeCompare(a.createdAt);
-      });
+    const papersWithStats = await Promise.all(
+      papers.map(async (paper) => {
+        const questions = await ctx.db
+          .query("questions")
+          .withIndex("by_paper", (q) => q.eq("paperId", paper._id))
+          .collect();
 
-    return sortedPapers;
+        const questionCount = questions.length;
+        const calculatedTotalMarks = questions.reduce((sum, q) => {
+          const mark = parseFloat(q.totalMark);
+          return sum + (isNaN(mark) ? 0 : mark);
+        }, 0);
+
+        return {
+          _id: paper._id,
+          paperName: paper.paperName,
+          paperDescription: paper.paperDescription,
+          uuid: paper.uuid,
+          year: paper.year,
+          duration: paper.duration,
+          totalScore: paper.totalScore,
+          isNew: paper.isNew,
+          createdAt: paper.createdAt,
+          questionCount,
+          calculatedTotalMarks: Math.round(calculatedTotalMarks),
+        };
+      })
+    );
+
+    return papersWithStats.sort((a, b) => {
+      if (b.year !== a.year) return b.year - a.year;
+      return b.createdAt.localeCompare(a.createdAt);
+    });
   },
 });
+
+export const getPaperByUuid = query({
+  args: {
+    paperUuid: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const paper = await ctx.db
+      .query("papers")
+      .withIndex("by_uuid", (q) => q.eq("uuid", args.paperUuid))
+      .first();
+
+    if (!paper) {
+      return null;
+    }
+
+    const exam = await ctx.db.get(paper.examId);
+    const course = await ctx.db.get(paper.courseId);
+
+    return {
+      ...paper,
+      examName: exam?.examName,
+      examUuid: exam?.uuid,
+      courseName: course?.courseName,
+      courseUuid: course?.uuid,
+    };
+  },
+});
+
+export const getQuestionsByPaperUuid = query({
+  args: {
+    paperUuid: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const paper = await ctx.db
+      .query("papers")
+      .withIndex("by_uuid", (q) => q.eq("uuid", args.paperUuid))
+      .first();
+
+    if (!paper) {
+      return null;
+    }
+
+    const questions = await ctx.db
+      .query("questions")
+      .withIndex("by_paper", (q) => q.eq("paperId", paper._id))
+      .collect();
+
+    const questionsWithOptions = await Promise.all(
+      questions.map(async (question) => {
+        const options = await ctx.db
+          .query("options")
+          .withIndex("by_question", (q) => q.eq("questionId", question._id))
+          .collect();
+
+        return {
+          ...question,
+          options: options.sort((a, b) => (a.optionNumber ?? 0) - (b.optionNumber ?? 0)),
+        };
+      })
+    );
+
+    return questionsWithOptions.sort((a, b) => a.questionNumber - b.questionNumber);
+  },
+});
+
+

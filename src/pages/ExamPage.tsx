@@ -1,5 +1,5 @@
 import { useParams, Link } from 'react-router-dom';
-import { useQuery } from 'convex/react';
+import { useAction } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -24,6 +24,9 @@ export default function ExamPage() {
     new Set(['Foundation', 'Diploma in Programming', 'Diploma in Data Science', 'Degree'])
   );
 
+  const [courses, setCourses] = useState<any[] | null>(null);
+  const getCoursesAction = useAction(api.dynamo.getCoursesByExam);
+
   useEffect(() => {
     logger.info('ExamPage mounted', { examId, examUuid, examName });
     return () => {
@@ -31,10 +34,19 @@ export default function ExamPage() {
     };
   }, [examId, examUuid, examName]);
 
-  const courses = useQuery(
-    api.queries.getCoursesByExamUuid,
-    examUuid ? { examUuid } : 'skip'
-  );
+  useEffect(() => {
+    if (examUuid) {
+      setCourses(null);
+      getCoursesAction({ examUuid })
+        .then((data) => {
+          setCourses(data);
+        })
+        .catch((err) => {
+          logger.error('Failed to load courses', err);
+          setCourses([]);
+        });
+    }
+  }, [examUuid]);
 
   const groupedCourses = useMemo(() => {
     if (!courses) return null;

@@ -1,18 +1,22 @@
 import { useParams, Link } from 'react-router-dom';
-import { useQuery } from 'convex/react';
+import { useQuery, useAction } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { FileText, ArrowRight, ArrowLeft, Calendar, Clock, Award } from 'lucide-react';
+import { FileText, ArrowRight, ArrowLeft, Calendar, HelpCircle, Award, Clock } from 'lucide-react';
 import { logger } from '@/lib/logger';
 import { getExamUuidFromSlug, getExamNameFromSlug } from '@/lib/examMapping';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { getDisplayCourseName } from '@/lib/courseMapping';
+import { formatPaperName } from '@/lib/paperUtils';
 
 export default function CoursePage() {
   const { examId, courseId } = useParams();
   const examUuid = examId ? getExamUuidFromSlug(examId) : null;
   const examName = examId ? getExamNameFromSlug(examId) : null;
+  
+  const [papers, setPapers] = useState<any[] | null>(null);
+  const getPapersAction = useAction(api.dynamo.getPapersByExamAndCourse);
 
   useEffect(() => {
     logger.info('CoursePage mounted', { examId, courseId, examUuid });
@@ -21,16 +25,57 @@ export default function CoursePage() {
     };
   }, [examId, courseId, examUuid]);
 
+  // Fetch papers from DynamoDB via Action
+  useEffect(() => {
+    if (examUuid && courseId) {
+      setPapers(null);
+      getPapersAction({ examUuid, courseUuid: courseId })
+        .then((result) => {
+          const processedPapers = result.map((p: any) => ({
+            ...p,
+            questionCount: 0, 
+            calculatedTotalMarks: p.totalScore || 0,
+          }));
+          setPapers(processedPapers);
+        })
+        .catch((err) => {
+          logger.error('Failed to load papers', err);
+          setPapers([]);
+        });
+    }
+  }, [examUuid, courseId]);
+
   const course = useQuery(
     api.queries.getCourseByUuid,
     courseId ? { courseUuid: courseId } : 'skip'
   );
 
-  const papers = useQuery(
-    api.queries.getPapersByExamAndCourse,
-    examUuid && courseId ? { examUuid, courseUuid: courseId } : 'skip'
-  );
+  // ALL HOOKS MUST BE CALLED BEFORE ANY EARLY RETURNS (React rules of hooks)
+  const papersByYear = useMemo(() => {
+    if (!papers || papers.length === 0) return {};
+    const grouped: Record<number, typeof papers> = {};
+    for (const paper of papers) {
+      const year = paper.year;
+      if (!grouped[year]) {
+        grouped[year] = [];
+      }
+      grouped[year].push(paper);
+    }
+    return grouped;
+  }, [papers]);
 
+  const sortedYears = useMemo(() => {
+    return Object.keys(papersByYear)
+      .map(Number)
+      .sort((a, b) => b - a);
+  }, [papersByYear]);
+
+  const displayCourseName = useMemo(() => {
+    if (!course) return '';
+    return getDisplayCourseName(course.courseName);
+  }, [course]);
+
+  // Early returns AFTER all hooks
   if (!examUuid || !courseId) {
     logger.error('Invalid exam or course slug', { examId, courseId });
     return (
@@ -93,27 +138,6 @@ export default function CoursePage() {
 
   logger.info('Papers loaded successfully', { examId, courseId, count: papers.length });
 
-  const displayCourseName = getDisplayCourseName(course.courseName);
-
-  const papersByYear = useMemo(() => {
-    if (!papers) return {};
-    const grouped: Record<number, typeof papers> = {};
-    for (const paper of papers) {
-      const year = paper.year;
-      if (!grouped[year]) {
-        grouped[year] = [];
-      }
-      grouped[year].push(paper);
-    }
-    return grouped;
-  }, [papers]);
-
-  const sortedYears = useMemo(() => {
-    return Object.keys(papersByYear)
-      .map(Number)
-      .sort((a, b) => b - a);
-  }, [papersByYear]);
-
   return (
     <div className="space-y-6">
       <div className="space-y-4">
@@ -158,51 +182,58 @@ export default function CoursePage() {
             </div>
 
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4 pl-4">
-              {(papersByYear[year] ?? []).map((paper) => (
-                <Card
-                  key={paper._id}
-                  className="hover:border-primary/50 transition-colors cursor-pointer group"
-                >
-                  <Link to={`/paper/${paper.uuid}`}>
-                    <CardHeader className="p-4">
-                      <div className="flex items-start justify-between mb-2">
-                        <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
-                          <FileText className="h-4 w-4" />
+              {(papersByYear[year] ?? []).map((paper) => {
+                const formattedName = formatPaperName(paper.paperName, paper.year);
+                const hasQuestions = paper.questionCount > 0;
+                const totalMarks = paper.calculatedTotalMarks || 0;
+                
+                return (
+                  <Card
+                    key={paper._id}
+                    className="hover:border-primary/50 transition-colors cursor-pointer group"
+                  >
+                    <Link to={`/paper/${paper.uuid}`}>
+                      <CardHeader className="p-4">
+                        <div className="flex items-start justify-between mb-2">
+                          <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
+                            <FileText className="h-4 w-4" />
+                          </div>
+                          {paper.isNew === 1 && (
+                            <span className="px-2 py-0.5 text-xs font-medium bg-primary/10 text-primary rounded-full">
+                              New
+                            </span>
+                          )}
                         </div>
-                        {paper.isNew === 1 && (
-                          <span className="px-2 py-0.5 text-xs font-medium bg-primary/10 text-primary rounded-full">
-                            New
-                          </span>
-                        )}
-                      </div>
-                      
-                      <div className="space-y-1">
-                        <CardTitle className="text-base group-hover:text-primary transition-colors flex items-center justify-between">
-                          <span className="line-clamp-2">{paper.paperName || `Paper ${paper.uuid.slice(0, 8)}`}</span>
-                          <ArrowRight className="h-4 w-4 flex-shrink-0 ml-2 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all" />
-                        </CardTitle>
                         
-                        {paper.paperDescription && (
-                          <CardDescription className="text-xs line-clamp-2">
-                            {paper.paperDescription}
-                          </CardDescription>
-                        )}
-                      </div>
+                        <div className="space-y-1">
+                          <CardTitle className="text-base group-hover:text-primary transition-colors flex items-center justify-between">
+                            <span className="line-clamp-2">{formattedName}</span>
+                            <ArrowRight className="h-4 w-4 flex-shrink-0 ml-2 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all" />
+                          </CardTitle>
+                        </div>
 
-                      <div className="mt-3 flex items-center gap-3 text-xs text-muted-foreground">
-                        <div className="flex items-center gap-1">
-                          <Clock className="h-3 w-3" />
-                          <span>{paper.duration} min</span>
+                        <div className="mt-3 flex items-center gap-3 text-xs text-muted-foreground">
+                          {hasQuestions && (
+                            <>
+                              <div className="flex items-center gap-1">
+                                <HelpCircle className="h-3 w-3" />
+                                <span>{paper.questionCount} questions</span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <Award className="h-3 w-3" />
+                                <span>{totalMarks} marks</span>
+                              </div>
+                            </>
+                          )}
+                          {!hasQuestions && (
+                            <span className="text-muted-foreground/60">No questions loaded</span>
+                          )}
                         </div>
-                        <div className="flex items-center gap-1">
-                          <Award className="h-3 w-3" />
-                          <span>{paper.totalScore} marks</span>
-                        </div>
-                      </div>
-                    </CardHeader>
-                  </Link>
-                </Card>
-              ))}
+                      </CardHeader>
+                    </Link>
+                  </Card>
+                );
+              })}
             </div>
           </div>
         ))}
