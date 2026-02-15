@@ -1,5 +1,5 @@
 import { useParams, Link } from 'react-router-dom';
-import { useQuery, useAction } from 'convex/react';
+import { useAction } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -36,14 +36,76 @@ interface Question {
   options: Option[];
 }
 
-// ... inside stats ...
+export default function PaperPage() {
+  const { paperId } = useParams();
+  const [selectedAnswers, setSelectedAnswers] = useState<Record<string, string | string[]>>({});
+  const [showResults, setShowResults] = useState(false);
+  const [questions, setQuestions] = useState<Question[] | null>(null);
+  const [paper, setPaper] = useState<any | null>(undefined); // undefined = loading, null = not found
+  
+  const getQuestionsAction = useAction(api.dynamo.getQuestionsByPaper);
+  const getPaperAction = useAction(api.dynamo.getPaperByUuid);
+
+  useEffect(() => {
+    if (paperId) {
+      setPaper(undefined);
+      setQuestions(null);
+      
+      getPaperAction({ paperUuid: paperId })
+        .then((data) => {
+          setPaper(data || null);
+        })
+        .catch((err) => {
+          logger.error('Failed to load paper metadata', err);
+          setPaper(null);
+        });
+
+      getQuestionsAction({ paperUuid: paperId })
+        .then((data) => {
+          setQuestions(data as Question[]);
+        })
+        .catch((err) => {
+          logger.error('Failed to load questions', err);
+          setQuestions([]);
+        });
+    }
+  }, [paperId]);
+
+  const examSlug = useMemo(() => {
+    if (!paper?.examUuid) return null;
+    return getExamSlugFromUuid(paper.examUuid);
+  }, [paper?.examUuid]);
+
+  const displayCourseName = useMemo(() => {
+    if (!paper?.courseName) return '';
+    return getDisplayCourseName(paper.courseName);
+  }, [paper?.courseName]);
+
+  const displayPaperName = useMemo(() => {
+    if (!paper?.paperName) return '';
+    return formatPaperName(paper.paperName, paper.year);
+  }, [paper?.paperName, paper?.year]);
+
+  const stats = useMemo(() => {
+    if (!questions) return { total: 0, answered: 0, correct: 0, totalMarks: 0, scoredMarks: 0 };
+    
+    const total = questions.length;
+    const answered = Object.keys(selectedAnswers).length;
+    
+    let correct = 0;
+    let totalMarks = 0;
+    let scoredMarks = 0;
+
+    for (const q of questions) {
+      const mark = parseFloat(q.totalMark) || 0;
+      totalMarks += mark;
+
       if (showResults && selectedAnswers[q.uuid]) {
         const correctIndices = q.options
           .map((o, idx) => o.isCorrect === 1 ? String(idx) : null)
           .filter(Boolean) as string[];
           
         const selected = selectedAnswers[q.uuid];
-// ...
         
         if (q.questionType === 'MCQ') {
           if (correctIndices.includes(selected as string)) {
