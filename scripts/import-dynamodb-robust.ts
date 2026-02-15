@@ -64,6 +64,11 @@ interface Paper {
   examName: string;
   courseId: string;
   courseName: string;
+  paperName: string;
+  year: number;
+  totalScore: string;
+  duration: number;
+  isNew: number;
 }
 
 if (!process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY) {
@@ -134,6 +139,11 @@ function loadData() {
               examName: data.exam.exam_name,
               courseId: courseUuid,
               courseName: data.questions[0].course.course_name,
+              paperName: data.question_paper_name,
+              year: data.year,
+              totalScore: data.total_score,
+              duration: data.duration,
+              isNew: data.is_new,
             });
           }
 
