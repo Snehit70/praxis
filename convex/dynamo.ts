@@ -233,10 +233,24 @@ export const getQuestionsByPaper = action({
       const response = await docClient.send(command);
       const questions = (response.Items || []) as QuestionItem[];
 
-      // Sort by question number
       questions.sort((a, b) => a.questionNumber - b.questionNumber);
 
-      return questions;
+      const filteredQuestions = questions.filter(q => {
+        if (parseFloat(q.totalMark) > 0) return true;
+        
+        const isHallTicketQuestion = 
+          q.questionText1?.toUpperCase().includes('HALL TICKET') ||
+          q.questionText1?.toUpperCase().includes('CROSS CHECK') ||
+          q.questionText1?.toUpperCase().includes('REGISTERED BY YOU');
+        
+        const isUsefulDataQuestion = q.options?.some(opt => 
+          opt.optionText?.includes('Useful Data has been mentioned')
+        );
+        
+        return !isHallTicketQuestion && !isUsefulDataQuestion;
+      });
+
+      return filteredQuestions;
     } catch (e) {
       console.error("DynamoDB Error (getQuestionsByPaper):", e);
       throw new Error("Failed to fetch questions");
