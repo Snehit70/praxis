@@ -109,7 +109,7 @@ const startTime = Date.now();
 
 const examsMap = new Map<string, ExamData>();
 const coursesMap = new Map<string, CourseData>();
-const papersData: { examUuid: string; courseUuid: string; data: PaperData }[] = [];
+const papersMap = new Map<string, { examUuid: string; courseUuid: string; data: PaperData }>();
 const questionsData: { examUuid: string; paperUuid: string; courseUuid: string; q: QuestionData }[] = [];
 
 for (const examDir of EXAM_DIRS) {
@@ -142,7 +142,9 @@ for (const examDir of EXAM_DIRS) {
       }
 
       // Collect course and questions
-      if (data.questions) {
+      if (data.questions && data.questions.length > 0) {
+        const courseUuid = data.questions[0]!.course.uuid;
+        
         for (const q of data.questions) {
           if (q.course && !coursesMap.has(q.course.uuid)) {
             coursesMap.set(q.course.uuid, q.course);
@@ -154,22 +156,22 @@ for (const examDir of EXAM_DIRS) {
             q,
           });
         }
-      }
-    }
 
-    // Collect papers
-    if (papers.length > 0 && files.length > 0) {
-      const firstFile = join(coursePath, files[0]!);
-      const data: PaperFile = JSON.parse(readFileSync(firstFile, "utf-8"));
-      const examUuid = data.exam?.uuid || "";
-      const courseUuid = data.questions?.[0]?.course?.uuid || "";
-
-      for (const paper of papers) {
-        papersData.push({ examUuid, courseUuid, data: paper });
+        // Collect paper from index.json, dedupe by UUID, use courseUuid from questions
+        const paperFromIndex = papers.find(p => p.uuid === paperUuid);
+        if (paperFromIndex && !papersMap.has(paperUuid)) {
+          papersMap.set(paperUuid, {
+            examUuid: data.exam.uuid,
+            courseUuid,
+            data: paperFromIndex,
+          });
+        }
       }
     }
   }
 }
+
+const papersData = Array.from(papersMap.values());
 
 console.log(`   Exams: ${examsMap.size}`);
 console.log(`   Courses: ${coursesMap.size}`);

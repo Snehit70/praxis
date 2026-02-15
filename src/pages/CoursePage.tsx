@@ -1,12 +1,12 @@
 import { useParams, Link } from 'react-router-dom';
-import { useQuery } from 'convex/react';
+import { useQuery, useAction } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { FileText, ArrowRight, ArrowLeft, Calendar, HelpCircle, Award, Clock } from 'lucide-react';
 import { logger } from '@/lib/logger';
 import { getExamUuidFromSlug, getExamNameFromSlug } from '@/lib/examMapping';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { getDisplayCourseName } from '@/lib/courseMapping';
 import { formatPaperName } from '@/lib/paperUtils';
 
@@ -14,6 +14,9 @@ export default function CoursePage() {
   const { examId, courseId } = useParams();
   const examUuid = examId ? getExamUuidFromSlug(examId) : null;
   const examName = examId ? getExamNameFromSlug(examId) : null;
+  
+  const [papers, setPapers] = useState<any[] | null>(null);
+  const getPapersAction = useAction(api.dynamo.getPapersByExamAndCourse);
 
   useEffect(() => {
     logger.info('CoursePage mounted', { examId, courseId, examUuid });
@@ -22,14 +25,29 @@ export default function CoursePage() {
     };
   }, [examId, courseId, examUuid]);
 
+  // Fetch papers from DynamoDB via Action
+  useEffect(() => {
+    if (examUuid && courseId) {
+      setPapers(null);
+      getPapersAction({ examUuid, courseUuid: courseId })
+        .then((result) => {
+          const processedPapers = result.map((p: any) => ({
+            ...p,
+            questionCount: 0, 
+            calculatedTotalMarks: p.totalScore || 0,
+          }));
+          setPapers(result);
+        })
+        .catch((err) => {
+          logger.error('Failed to load papers', err);
+          setPapers([]);
+        });
+    }
+  }, [examUuid, courseId]);
+
   const course = useQuery(
     api.queries.getCourseByUuid,
     courseId ? { courseUuid: courseId } : 'skip'
-  );
-
-  const papers = useQuery(
-    api.queries.getPapersByExamAndCourse,
-    examUuid && courseId ? { examUuid, courseUuid: courseId } : 'skip'
   );
 
   // ALL HOOKS MUST BE CALLED BEFORE ANY EARLY RETURNS (React rules of hooks)
