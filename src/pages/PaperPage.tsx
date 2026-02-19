@@ -9,6 +9,7 @@ import { formatPaperName } from '@/lib/paperUtils';
 import { getExamSlugFromUuid } from '@/lib/examMapping';
 import { getDisplayCourseName } from '@/lib/courseMapping';
 import { logger } from '@/lib/logger';
+import { getQuestionImageUrl, getOptionImageUrl } from '@/lib/imageUtils';
 
 type QuestionType = 'MCQ' | 'MSQ' | 'SA' | 'COMPREHENSION' | 'OPPE';
 
@@ -33,7 +34,12 @@ interface Question {
   questionImage1?: string;
   questionImage2?: string;
   questionImage3?: string;
+  parentQuestionUuid?: string;
   options: Option[];
+}
+
+interface QuestionWithChildren extends Question {
+  subQuestions?: Question[];
 }
 
 export default function PaperPage() {
@@ -86,17 +92,57 @@ export default function PaperPage() {
     return formatPaperName(paper.paperName, paper.year);
   }, [paper?.paperName, paper?.year]);
 
-  const stats = useMemo(() => {
-    if (!questions) return { total: 0, answered: 0, correct: 0, totalMarks: 0, scoredMarks: 0 };
+  const groupedQuestions = useMemo(() => {
+    if (!questions) return [];
     
-    const total = questions.length;
-    const answered = Object.keys(selectedAnswers).length;
+    const parentMap = new Map<string, QuestionWithChildren>();
+    const topLevel: QuestionWithChildren[] = [];
+    
+    for (const q of questions) {
+      if (q.questionType === 'COMPREHENSION' || !q.parentQuestionUuid) {
+        parentMap.set(q.uuid, { ...q, subQuestions: [] });
+      }
+    }
+    
+    for (const q of questions) {
+      if (q.parentQuestionUuid) {
+        const parent = parentMap.get(q.parentQuestionUuid);
+        if (parent) {
+          parent.subQuestions!.push(q);
+        }
+      }
+    }
+    
+    for (const q of questions) {
+      if (!q.parentQuestionUuid) {
+        topLevel.push(parentMap.get(q.uuid) || q);
+      }
+    }
+    
+    return topLevel;
+  }, [questions]);
+
+  const stats = useMemo(() => {
+    if (!groupedQuestions) return { total: 0, answered: 0, correct: 0, totalMarks: 0, scoredMarks: 0 };
+    
+    // Count all answerable questions (excluding COMPREHENSION wrappers)
+    const allQuestionIds = new Set<string>();
+    for (const q of groupedQuestions) {
+      if (q.questionType !== 'COMPREHENSION') {
+        allQuestionIds.add(q.uuid);
+      }
+      if (q.subQuestions) {
+        q.subQuestions.forEach(subQ => allQuestionIds.add(subQ.uuid));
+      }
+    }
+    const total = allQuestionIds.size;
+    const answered = Object.keys(selectedAnswers).filter(id => allQuestionIds.has(id)).length;
     
     let correct = 0;
     let totalMarks = 0;
     let scoredMarks = 0;
 
-    for (const q of questions) {
+    const countQuestion = (q: Question) => {
       const mark = parseFloat(q.totalMark) || 0;
       totalMarks += mark;
 
@@ -122,10 +168,21 @@ export default function PaperPage() {
           }
         }
       }
+    };
+
+    for (const q of groupedQuestions) {
+      if (q.questionType !== 'COMPREHENSION') {
+        countQuestion(q);
+      }
+      if (q.subQuestions) {
+        for (const subQ of q.subQuestions) {
+          countQuestion(subQ);
+        }
+      }
     }
 
     return { total, answered, correct, totalMarks, scoredMarks };
-  }, [questions, selectedAnswers, showResults]);
+  }, [groupedQuestions, selectedAnswers, showResults]);
 
   const handleOptionSelect = (questionId: string, optionIndex: string, questionType: QuestionType) => {
     if (showResults) return;
@@ -240,14 +297,14 @@ export default function PaperPage() {
       </div>
 
       <div className="space-y-6">
-        {(questions as Question[]).map((question, index) => (
+        {groupedQuestions.map((question, index) => (
           <QuestionCard
             key={question.uuid}
             question={question}
             index={index}
-            selectedAnswer={selectedAnswers[question.uuid]}
+            selectedAnswers={selectedAnswers}
             showResults={showResults}
-            onSelect={(optionIndex) => handleOptionSelect(question.uuid, optionIndex, question.questionType)}
+            onSelectAnswer={handleOptionSelect}
           />
         ))}
       </div>
@@ -280,16 +337,17 @@ export default function PaperPage() {
 function QuestionCard({ 
   question, 
   index, 
-  selectedAnswer, 
+  selectedAnswers, 
   showResults, 
-  onSelect 
+  onSelectAnswer 
 }: { 
-  question: Question;
+  question: QuestionWithChildren;
   index: number;
-  selectedAnswer: string | string[] | undefined;
+  selectedAnswers: Record<string, string | string[]>;
   showResults: boolean;
-  onSelect: (optionIndex: string) => void;
+  onSelectAnswer: (questionId: string, optionIndex: string, questionType: QuestionType) => void;
 }) {
+  const selectedAnswer = selectedAnswers[question.uuid];
   const questionTexts = [
     question.questionText1,
     question.questionText2,
@@ -299,13 +357,14 @@ function QuestionCard({
   ].filter(Boolean);
 
   const questionImages = [
-    question.questionImage1,
-    question.questionImage2,
-    question.questionImage3,
+    getQuestionImageUrl(question.questionImage1),
+    getQuestionImageUrl(question.questionImage2),
+    getQuestionImageUrl(question.questionImage3),
   ].filter(Boolean);
 
   const marks = parseFloat(question.totalMark) || 0;
   const isMultiSelect = question.questionType === 'MSQ';
+  const isComprehension = question.questionType === 'COMPREHENSION';
 
   return (
     <Card className="overflow-hidden">
@@ -336,76 +395,97 @@ function QuestionCard({
                 ))}
               </div>
               
-              <div className="flex-shrink-0 text-xs text-muted-foreground px-2 py-1 bg-muted rounded">
-                {marks} {marks === 1 ? 'mark' : 'marks'}
-              </div>
+              {marks > 0 && (
+                <div className="flex-shrink-0 text-xs text-muted-foreground px-2 py-1 bg-muted rounded">
+                  {marks} {marks === 1 ? 'mark' : 'marks'}
+                </div>
+              )}
             </div>
 
-            {isMultiSelect && (
-              <p className="text-xs text-muted-foreground">Select all that apply</p>
+            {!isComprehension && (
+              <>
+                {isMultiSelect && (
+                  <p className="text-xs text-muted-foreground">Select all that apply</p>
+                )}
+
+                <div className="space-y-2">
+                  {question.options.map((option, optIndex) => {
+                    const optionId = String(optIndex);
+                    const isSelected = isMultiSelect 
+                      ? (selectedAnswer as string[] || []).includes(optionId)
+                      : selectedAnswer === optionId;
+                    const isCorrect = option.isCorrect === 1;
+                    
+                    let optionStyle = 'border-border hover:border-primary/50 hover:bg-muted/50';
+                    if (showResults) {
+                      if (isCorrect) {
+                        optionStyle = 'border-green-500 bg-green-50 dark:bg-green-950/30';
+                      } else if (isSelected && !isCorrect) {
+                        optionStyle = 'border-red-500 bg-red-50 dark:bg-red-950/30';
+                      }
+                    } else if (isSelected) {
+                      optionStyle = 'border-primary bg-primary/5';
+                    }
+
+                    return (
+                      <button
+                        key={optIndex}
+                        onClick={() => onSelectAnswer(question.uuid, optionId, question.questionType)}
+                        disabled={showResults}
+                        className={`w-full flex items-start gap-3 p-3 rounded-lg border transition-colors text-left ${optionStyle}`}
+                      >
+                        <div className="flex-shrink-0 mt-0.5">
+                          {showResults ? (
+                            isCorrect ? (
+                              <CheckCircle2 className="h-5 w-5 text-green-600" />
+                            ) : isSelected ? (
+                              <Circle className="h-5 w-5 text-red-600" />
+                            ) : (
+                              <Circle className="h-5 w-5 text-muted-foreground" />
+                            )
+                          ) : isSelected ? (
+                            <CheckCircle2 className="h-5 w-5 text-primary" />
+                          ) : (
+                            <Circle className="h-5 w-5 text-muted-foreground" />
+                          )}
+                        </div>
+                        
+                        <div className="flex-1">
+                          {option.optionText && (
+                            <span 
+                              className="text-sm"
+                              dangerouslySetInnerHTML={{ __html: option.optionText }}
+                            />
+                          )}
+                          {option.optionImage && (
+                            <img 
+                              src={getOptionImageUrl(option.optionImage)} 
+                              alt="Option"
+                              className="mt-2 max-w-full rounded border"
+                            />
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
             )}
 
-            <div className="space-y-2">
-              {question.options.map((option, optIndex) => {
-                const optionId = String(optIndex);
-                const isSelected = isMultiSelect 
-                  ? (selectedAnswer as string[] || []).includes(optionId)
-                  : selectedAnswer === optionId;
-                const isCorrect = option.isCorrect === 1;
-                
-                let optionStyle = 'border-border hover:border-primary/50 hover:bg-muted/50';
-                if (showResults) {
-                  if (isCorrect) {
-                    optionStyle = 'border-green-500 bg-green-50 dark:bg-green-950/30';
-                  } else if (isSelected && !isCorrect) {
-                    optionStyle = 'border-red-500 bg-red-50 dark:bg-red-950/30';
-                  }
-                } else if (isSelected) {
-                  optionStyle = 'border-primary bg-primary/5';
-                }
-
-                return (
-                  <button
-                    key={optIndex}
-                    onClick={() => onSelect(optionId)}
-                    disabled={showResults}
-                    className={`w-full flex items-start gap-3 p-3 rounded-lg border transition-colors text-left ${optionStyle}`}
-                  >
-                    <div className="flex-shrink-0 mt-0.5">
-                      {showResults ? (
-                        isCorrect ? (
-                          <CheckCircle2 className="h-5 w-5 text-green-600" />
-                        ) : isSelected ? (
-                          <Circle className="h-5 w-5 text-red-600" />
-                        ) : (
-                          <Circle className="h-5 w-5 text-muted-foreground" />
-                        )
-                      ) : isSelected ? (
-                        <CheckCircle2 className="h-5 w-5 text-primary" />
-                      ) : (
-                        <Circle className="h-5 w-5 text-muted-foreground" />
-                      )}
-                    </div>
-                    
-                    <div className="flex-1">
-                      {option.optionText && (
-                        <span 
-                          className="text-sm"
-                          dangerouslySetInnerHTML={{ __html: option.optionText }}
-                        />
-                      )}
-                      {option.optionImage && (
-                        <img 
-                          src={option.optionImage} 
-                          alt="Option"
-                          className="mt-2 max-w-full rounded border"
-                        />
-                      )}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
+            {isComprehension && question.subQuestions && question.subQuestions.length > 0 && (
+              <div className="ml-4 pl-4 border-l-2 border-primary/20 space-y-4">
+                {question.subQuestions.map((subQ, subIndex) => (
+                  <QuestionCard
+                    key={subQ.uuid}
+                    question={subQ}
+                    index={subIndex}
+                    selectedAnswers={selectedAnswers}
+                    showResults={showResults}
+                    onSelectAnswer={onSelectAnswer}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </CardContent>

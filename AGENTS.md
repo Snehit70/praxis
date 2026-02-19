@@ -45,7 +45,19 @@ VITE_CONVEX_URL=your-convex-deployment-url
 
 The app validates this at startup - it will crash without it.
 
-## 5. Code Standards
+## 5. CDN & Images
+
+Images are stored in Cloudflare R2 bucket `praxis-images` and served via public URL:
+
+**R2 Public URL**: `https://pub-38cbed42a577473eb75ea45c187c8d6f.r2.dev`
+
+Image paths:
+- Question images: `https://pub-38cbed42a577473eb75ea45c187c8d6f.r2.dev/question_images/{filename}`
+- Option images: `https://pub-38cbed42a577473eb75ea45c187c8d6f.r2.dev/option_images/{filename}`
+
+Total: 26,652 images (9,186 question + 17,466 option images, ~1.5GB)
+
+## 6. Code Standards
 
 ### Component Patterns
 - Use `function Component()` not arrow functions for components
@@ -62,14 +74,14 @@ The app validates this at startup - it will crash without it.
 - Currently: button.tsx, card.tsx
 - Use `className` prop for overrides, not style
 
-## 6. Convex Integration
+## 7. Convex Integration
 
 - Schema defined in `convex/schema.ts`
 - Queries in `convex/`
 - Client initialized in `src/main.tsx`
 - Always wrap app with `<ConvexProvider>`
 
-## 7. Common Issues to Avoid
+## 8. Common Issues to Avoid
 
 | Issue | Solution |
 |-------|----------|
@@ -78,21 +90,21 @@ The app validates this at startup - it will crash without it.
 | Missing env | Validate `import.meta.env.VITE_*` at startup |
 | Build fails | Run `bun run build` before committing |
 
-## 8. Git Workflow
+## 9. Git Workflow
 
 - Branch: `feat/...` or `fix/...`
 - Commit: conventional (`feat:`, `fix:`, `chore:`)
 - Never commit to main directly
 - Run `bun run build` before committing
 
-## 9. Testing
+## 10. Testing
 
 Run tests with:
 ```bash
 bun test
 ```
 
-## 10. Development
+## 11. Development
 
 ```bash
 bun install    # Install deps
