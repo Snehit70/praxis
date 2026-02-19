@@ -21,7 +21,7 @@ export function getQuestionImageUrl(filename: string | undefined): string | unde
   
   const cleanFilename = filename.startsWith('/') ? filename.slice(1) : filename;
   
-  if (cleanFilename.includes('question_images/')) {
+  if (cleanFilename.startsWith('question_images/')) {
     return `${R2_PUBLIC_URL}/${cleanFilename}`;
   }
   
@@ -42,7 +42,7 @@ export function getOptionImageUrl(filename: string | undefined): string | undefi
   
   const cleanFilename = filename.startsWith('/') ? filename.slice(1) : filename;
   
-  if (cleanFilename.includes('option_images/')) {
+  if (cleanFilename.startsWith('option_images/')) {
     return `${R2_PUBLIC_URL}/${cleanFilename}`;
   }
   

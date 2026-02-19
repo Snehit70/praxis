@@ -125,8 +125,18 @@ export default function PaperPage() {
   const stats = useMemo(() => {
     if (!groupedQuestions) return { total: 0, answered: 0, correct: 0, totalMarks: 0, scoredMarks: 0 };
     
-    const total = groupedQuestions.length;
-    const answered = Object.keys(selectedAnswers).length;
+    // Count all answerable questions (excluding COMPREHENSION wrappers)
+    const allQuestionIds = new Set<string>();
+    for (const q of groupedQuestions) {
+      if (q.questionType !== 'COMPREHENSION') {
+        allQuestionIds.add(q.uuid);
+      }
+      if (q.subQuestions) {
+        q.subQuestions.forEach(subQ => allQuestionIds.add(subQ.uuid));
+      }
+    }
+    const total = allQuestionIds.size;
+    const answered = Object.keys(selectedAnswers).filter(id => allQuestionIds.has(id)).length;
     
     let correct = 0;
     let totalMarks = 0;
