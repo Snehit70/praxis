@@ -192,7 +192,7 @@ export default function CoursePage() {
                     key={paper._id}
                     className="hover:border-primary/50 transition-colors cursor-pointer group"
                   >
-                    <Link to={`/paper/${paper.uuid}`}>
+                    <Link to={`/paper/${paper.uuid}/course/${courseId}`}>
                       <CardHeader className="p-4">
                         <div className="flex items-start justify-between mb-2">
                           <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">

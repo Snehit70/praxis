@@ -25,6 +25,8 @@ interface QuestionItem {
   totalMark: string;
   hash: string;
   uuid: string;
+  courseId?: string;
+  courseName?: string;
   questionText1?: string;
   questionText2?: string;
   questionText3?: string;
@@ -211,24 +213,32 @@ export const getPaperByUuid = action({
 });
 
 /**
- * Get all questions for a specific paper
+ * Get all questions for a specific paper, optionally filtered by course
  * Used by PaperPage.tsx
  */
 export const getQuestionsByPaper = action({
   args: {
     paperUuid: v.string(),
+    courseUuid: v.optional(v.string()),
   },
   handler: async (_ctx, args): Promise<QuestionItem[]> => {
     const docClient = createDynamoClient();
 
     try {
-      const command = new QueryCommand({
+      const queryParams: any = {
         TableName: "quiz-questions",
         KeyConditionExpression: "paperUuid = :pid",
         ExpressionAttributeValues: {
           ":pid": args.paperUuid,
         },
-      });
+      };
+
+      if (args.courseUuid) {
+        queryParams.FilterExpression = "courseId = :cid";
+        queryParams.ExpressionAttributeValues[":cid"] = args.courseUuid;
+      }
+
+      const command = new QueryCommand(queryParams);
 
       const response = await docClient.send(command);
       const questions = (response.Items || []) as QuestionItem[];
