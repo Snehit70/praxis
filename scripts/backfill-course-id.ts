@@ -49,9 +49,9 @@ for (const examDir of EXAM_DIRS) {
         if (!data.questions) continue;
 
         for (const q of data.questions) {
-          const key = `${file.replace(".json", "")}:${q.question_number}`;
-          if (!courseLookup.has(key)) {
-            courseLookup.set(key, {
+          if (!q.uuid) continue;
+          if (!courseLookup.has(q.uuid)) {
+            courseLookup.set(q.uuid, {
               courseId: q.course?.uuid || "",
               courseName: q.course?.course_name || "",
             });
@@ -94,8 +94,8 @@ async function scanAndUpdateBatch(): Promise<boolean> {
   const updates: any[] = [];
 
   for (const item of items) {
-    const key = `${item.paperUuid}:${item.questionNumber}`;
-    const courseInfo = courseLookup.get(key);
+    if (!item.uuid) continue;
+    const courseInfo = courseLookup.get(item.uuid);
 
     if (courseInfo && courseInfo.courseId) {
       updates.push({
@@ -113,10 +113,11 @@ async function scanAndUpdateBatch(): Promise<boolean> {
   if (updates.length > 0) {
     const batches = [];
     for (let i = 0; i < updates.length; i += 25) {
-      batches.push(updates.slice(i, 25));
+      batches.push(updates.slice(i, i + 25));
     }
 
     for (const batch of batches) {
+      if (batch.length === 0) continue;
       await docClient.send(new BatchWriteCommand({
         RequestItems: {
           "quiz-questions": batch,
