@@ -292,9 +292,9 @@ export default function PaperPage() {
             key={question.uuid}
             question={question}
             index={index}
-            selectedAnswer={selectedAnswers[question.uuid]}
+            selectedAnswers={selectedAnswers}
             showResults={showResults}
-            onSelect={(optionIndex) => handleOptionSelect(question.uuid, optionIndex, question.questionType)}
+            onSelectAnswer={handleOptionSelect}
           />
         ))}
       </div>
@@ -327,16 +327,17 @@ export default function PaperPage() {
 function QuestionCard({ 
   question, 
   index, 
-  selectedAnswer, 
+  selectedAnswers, 
   showResults, 
-  onSelect 
+  onSelectAnswer 
 }: { 
   question: QuestionWithChildren;
   index: number;
-  selectedAnswer: string | string[] | undefined;
+  selectedAnswers: Record<string, string | string[]>;
   showResults: boolean;
-  onSelect: (optionIndex: string) => void;
+  onSelectAnswer: (questionId: string, optionIndex: string, questionType: QuestionType) => void;
 }) {
+  const selectedAnswer = selectedAnswers[question.uuid];
   const questionTexts = [
     question.questionText1,
     question.questionText2,
@@ -419,7 +420,7 @@ function QuestionCard({
                     return (
                       <button
                         key={optIndex}
-                        onClick={() => onSelect(optionId)}
+                        onClick={() => onSelectAnswer(question.uuid, optionId, question.questionType)}
                         disabled={showResults}
                         className={`w-full flex items-start gap-3 p-3 rounded-lg border transition-colors text-left ${optionStyle}`}
                       >
@@ -468,9 +469,9 @@ function QuestionCard({
                     key={subQ.uuid}
                     question={subQ}
                     index={subIndex}
-                    selectedAnswer={selectedAnswer}
+                    selectedAnswers={selectedAnswers}
                     showResults={showResults}
-                    onSelect={onSelect}
+                    onSelectAnswer={onSelectAnswer}
                   />
                 ))}
               </div>
