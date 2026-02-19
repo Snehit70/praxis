@@ -18,7 +18,7 @@ function App() {
             <Route path="debug/exams" element={<DebugExams />} />
             <Route path="exam/:examId" element={<ExamPage />} />
             <Route path="exam/:examId/course/:courseId" element={<CoursePage />} />
-            <Route path="paper/:paperId" element={<PaperPage />} />
+            <Route path="paper/:paperId/course/:courseId" element={<PaperPage />} />
           </Route>
         </Routes>
       </Router>

@@ -42,6 +42,8 @@ interface Question {
   totalMark: string;
   hash: string;
   uuid: string;
+  courseId?: string;
+  courseName?: string;
   questionText1?: string;
   questionText2?: string;
   questionText3?: string;
@@ -160,6 +162,8 @@ for (const examDir of EXAM_DIRS) {
             totalMark: q.total_mark,
             hash: q.hash,
             uuid: q.uuid,
+            courseId: q.course?.uuid,
+            courseName: q.course?.course_name,
             questionText1: q.question_text_1,
             questionText2: q.question_text_2,
             questionText3: q.question_text_3,

@@ -43,11 +43,11 @@ interface QuestionWithChildren extends Question {
 }
 
 export default function PaperPage() {
-  const { paperId } = useParams();
+  const { paperId, courseId } = useParams();
   const [selectedAnswers, setSelectedAnswers] = useState<Record<string, string | string[]>>({});
   const [showResults, setShowResults] = useState(false);
   const [questions, setQuestions] = useState<Question[] | null>(null);
-  const [paper, setPaper] = useState<any | null>(undefined); // undefined = loading, null = not found
+  const [paper, setPaper] = useState<any | null>(undefined);
   
   const getQuestionsAction = useAction(api.dynamo.getQuestionsByPaper);
   const getPaperAction = useAction(api.dynamo.getPaperByUuid);
@@ -66,7 +66,7 @@ export default function PaperPage() {
           setPaper(null);
         });
 
-      getQuestionsAction({ paperUuid: paperId })
+      getQuestionsAction({ paperUuid: paperId, courseUuid: courseId })
         .then((data) => {
           setQuestions(data as Question[]);
         })
@@ -75,7 +75,7 @@ export default function PaperPage() {
           setQuestions([]);
         });
     }
-  }, [paperId]);
+  }, [paperId, courseId]);
 
   const examSlug = useMemo(() => {
     if (!paper?.examUuid) return null;
@@ -248,7 +248,7 @@ export default function PaperPage() {
     return (
       <div className="space-y-6">
         <Button variant="ghost" size="sm" asChild className="gap-2 -ml-2">
-          <Link to={examSlug && paper.courseUuid ? `/exam/${examSlug}/course/${paper.courseUuid}` : '/'}>
+          <Link to={examSlug && courseId ? `/exam/${examSlug}/course/${courseId}` : '/'}>
             <ArrowLeft className="h-4 w-4" />
             Back
           </Link>
@@ -267,7 +267,7 @@ export default function PaperPage() {
     <div className="space-y-6">
       <div className="space-y-4">
         <Button variant="ghost" size="sm" asChild className="gap-2 -ml-2">
-          <Link to={examSlug && paper.courseUuid ? `/exam/${examSlug}/course/${paper.courseUuid}` : '/'}>
+          <Link to={examSlug && courseId ? `/exam/${examSlug}/course/${courseId}` : '/'}>
             <ArrowLeft className="h-4 w-4" />
             Back to {displayCourseName}
           </Link>
