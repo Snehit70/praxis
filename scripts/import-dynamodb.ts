@@ -314,16 +314,16 @@ async function writeBatchesAdaptive<T extends Record<string, any>>(items: T[], t
   const total = items.length;
   const batchStartTime = Date.now();
   
-  // Adaptive rate control
-  let delayMs = 100;        // Start aggressive (100ms between batches)
-  const MIN_DELAY = 50;     // Fastest we'll go
-  const MAX_DELAY = 2000;   // Slowest we'll go
+  // Adaptive rate control - start conservative for free tier
+  let delayMs = 500;        // Start with 500ms delay
+  const MIN_DELAY = 100;    // Fastest we'll go
+  const MAX_DELAY = 3000;   // Slowest we'll go
   let consecutiveSuccess = 0;
-  let concurrency = 5;      // Start with moderate parallelism
-  const MAX_CONCURRENCY = 10;
+  let concurrency = 2;      // Start with low parallelism
+  const MAX_CONCURRENCY = 5;
   const MIN_CONCURRENCY = 1;
 
-  const writeBatch = async (batch: T[], retries = 3): Promise<'success' | 'throttled'> => {
+  const writeBatch = async (batch: T[], retries = 5): Promise<'success' | 'throttled'> => {
     try {
       const result = await docClient.send(new BatchWriteCommand({
         RequestItems: {
@@ -334,17 +334,18 @@ async function writeBatchesAdaptive<T extends Record<string, any>>(items: T[], t
       // Handle unprocessed items (partial failure - also means throttling)
       const unprocessed = result.UnprocessedItems?.[tableName];
       if (unprocessed && unprocessed.length > 0) {
-        await new Promise(resolve => setTimeout(resolve, delayMs * 2));
+        await new Promise(resolve => setTimeout(resolve, delayMs * 3));
         const retryItems = unprocessed.map(u => u.PutRequest!.Item as T);
-        await writeBatch(retryItems, retries - 1);
-        return 'throttled';
+        return writeBatch(retryItems, retries - 1);
       }
       
       completed += batch.length;
       return 'success';
     } catch (err: any) {
       if (retries > 0 && err.name === 'ProvisionedThroughputExceededException') {
-        await new Promise(resolve => setTimeout(resolve, delayMs * 3));
+        // Wait longer on throttle, then retry
+        const waitTime = (5 - retries + 1) * 1000; // 1s, 2s, 3s, 4s, 5s
+        await new Promise(resolve => setTimeout(resolve, waitTime));
         return writeBatch(batch, retries - 1);
       }
       throw err;
@@ -367,19 +368,19 @@ async function writeBatchesAdaptive<T extends Record<string, any>>(items: T[], t
     const hadThrottle = results.includes('throttled');
     
     if (hadThrottle) {
-      // Back off: increase delay, reduce concurrency
-      delayMs = Math.min(delayMs * 1.5, MAX_DELAY);
-      concurrency = Math.max(concurrency - 1, MIN_CONCURRENCY);
+      // Back off aggressively: double delay, halve concurrency
+      delayMs = Math.min(delayMs * 2, MAX_DELAY);
+      concurrency = Math.max(Math.floor(concurrency / 2), MIN_CONCURRENCY);
       consecutiveSuccess = 0;
       console.log(`\n   ⚠ Throttled! Backing off to delay:${delayMs.toFixed(0)}ms, concurrency:${concurrency}`);
     } else {
       consecutiveSuccess++;
-      // Speed up after 10 consecutive successes
-      if (consecutiveSuccess >= 10) {
+      // Speed up gradually after 20 consecutive successes
+      if (consecutiveSuccess >= 20) {
         delayMs = Math.max(delayMs * 0.9, MIN_DELAY);
-        if (consecutiveSuccess >= 20 && concurrency < MAX_CONCURRENCY) {
+        if (consecutiveSuccess >= 40 && concurrency < MAX_CONCURRENCY) {
           concurrency++;
-          consecutiveSuccess = 10; // Reset partially
+          consecutiveSuccess = 20;
         }
       }
     }
