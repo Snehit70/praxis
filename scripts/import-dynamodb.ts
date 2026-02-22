@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, BatchWriteCommand, PutCommand } from "@aws-sdk/lib-dynamodb";
+import { DynamoDBDocumentClient, BatchWriteCommand, PutCommand, ScanCommand } from "@aws-sdk/lib-dynamodb";
 import { readdirSync, readFileSync } from "fs";
 import { join } from "path";
 
@@ -26,6 +26,22 @@ const docClient = DynamoDBDocumentClient.from(client);
 const DATA_DIR = join(process.cwd(), "data");
 const EXAM_DIRS = ["Quiz 1", "Quiz 2", "End Term Quiz", "OPPE"];
 const BATCH_SIZE = 25;
+
+// Parse CLI args
+const SKIP_EXISTING = process.argv.includes("--skip-existing") || process.argv.includes("-s");
+const FORCE_ALL = process.argv.includes("--force") || process.argv.includes("-f");
+
+if (process.argv.includes("--help") || process.argv.includes("-h")) {
+  console.log(`
+Usage: bun run scripts/import-dynamodb.ts [options]
+
+Options:
+  -s, --skip-existing  Skip items that already exist in DynamoDB (faster re-runs)
+  -f, --force          Force overwrite all items (default behavior)
+  -h, --help           Show this help message
+`);
+  process.exit(0);
+}
 
 interface Option {
   optionText: string;
@@ -116,6 +132,50 @@ interface PaperFile {
   }>;
 }
 
+// Fetch existing IDs from DynamoDB (for --skip-existing mode)
+async function getExistingPaperIds(): Promise<Set<string>> {
+  const ids = new Set<string>();
+  let lastKey: Record<string, any> | undefined;
+  
+  do {
+    const result = await docClient.send(new ScanCommand({
+      TableName: "quiz-papers",
+      ProjectionExpression: "#uuid",
+      ExpressionAttributeNames: { "#uuid": "uuid" },
+      ExclusiveStartKey: lastKey,
+    }));
+    
+    for (const item of result.Items || []) {
+      if (item.uuid) ids.add(item.uuid);
+    }
+    lastKey = result.LastEvaluatedKey;
+  } while (lastKey);
+  
+  return ids;
+}
+
+async function getExistingQuestionKeys(): Promise<Set<string>> {
+  const keys = new Set<string>();
+  let lastKey: Record<string, any> | undefined;
+  
+  do {
+    const result = await docClient.send(new ScanCommand({
+      TableName: "quiz-questions",
+      ProjectionExpression: "paperUuid, questionNumber",
+      ExclusiveStartKey: lastKey,
+    }));
+    
+    for (const item of result.Items || []) {
+      if (item.paperUuid && item.questionNumber !== undefined) {
+        keys.add(`${item.paperUuid}:${item.questionNumber}`);
+      }
+    }
+    lastKey = result.LastEvaluatedKey;
+  } while (lastKey);
+  
+  return keys;
+}
+
 console.log("📊 Phase 1: Scanning data files...");
 const startTime = Date.now();
 
@@ -196,9 +256,40 @@ for (const examDir of EXAM_DIRS) {
   }
 }
 
-console.log(`   Papers: ${papersToImport.size}`);
-console.log(`   Questions: ${questionsToImport.size}`);
-console.log(`   Scan time: ${((Date.now() - startTime) / 1000).toFixed(1)}s\n`);
+console.log(`   Papers found: ${papersToImport.size}`);
+console.log(`   Questions found: ${questionsToImport.size}`);
+console.log(`   Scan time: ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
+console.log(`   Mode: ${SKIP_EXISTING ? "skip-existing" : "overwrite-all"}\n`);
+
+// Filter out existing items if --skip-existing
+let papersFiltered = Array.from(papersToImport.values());
+let questionsFiltered = Array.from(questionsToImport.values());
+
+if (SKIP_EXISTING) {
+  console.log("🔍 Phase 1b: Checking existing items in DynamoDB...");
+  
+  const [existingPapers, existingQuestions] = await Promise.all([
+    getExistingPaperIds(),
+    getExistingQuestionKeys(),
+  ]);
+  
+  console.log(`   Existing papers: ${existingPapers.size}`);
+  console.log(`   Existing questions: ${existingQuestions.size}`);
+  
+  const papersBefore = papersFiltered.length;
+  const questionsBefore = questionsFiltered.length;
+  
+  papersFiltered = papersFiltered.filter(p => !existingPapers.has(p.uuid));
+  questionsFiltered = questionsFiltered.filter(q => !existingQuestions.has(`${q.paperUuid}:${q.questionNumber}`));
+  
+  console.log(`   Papers to import: ${papersFiltered.length} (skipping ${papersBefore - papersFiltered.length})`);
+  console.log(`   Questions to import: ${questionsFiltered.length} (skipping ${questionsBefore - questionsFiltered.length})\n`);
+  
+  if (papersFiltered.length === 0 && questionsFiltered.length === 0) {
+    console.log("✅ Nothing new to import. All items already exist.");
+    process.exit(0);
+  }
+}
 
 async function writeBatchesAdaptive<T extends Record<string, any>>(items: T[], tableName: string): Promise<void> {
   const batches: T[][] = [];
@@ -288,16 +379,22 @@ async function writeBatchesAdaptive<T extends Record<string, any>>(items: T[], t
 
 // Adaptive rate limiting: starts fast, backs off on throttle, speeds up on success
 
-console.log("📄 Phase 2: Importing papers...");
-const papers = Array.from(papersToImport.values());
-await writeBatchesAdaptive(papers, "quiz-papers");
+if (papersFiltered.length > 0) {
+  console.log("📄 Phase 2: Importing papers...");
+  await writeBatchesAdaptive(papersFiltered, "quiz-papers");
+} else {
+  console.log("📄 Phase 2: No new papers to import");
+}
 
-console.log("\n❓ Phase 3: Importing questions...");
-console.log("   (Adaptive rate - will find optimal speed automatically)");
-const questions = Array.from(questionsToImport.values());
-await writeBatchesAdaptive(questions, "quiz-questions");
+if (questionsFiltered.length > 0) {
+  console.log("\n❓ Phase 3: Importing questions...");
+  console.log("   (Adaptive rate - will find optimal speed automatically)");
+  await writeBatchesAdaptive(questionsFiltered, "quiz-questions");
+} else {
+  console.log("\n❓ Phase 3: No new questions to import");
+}
 
 const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
 console.log(`\n✅ Import complete in ${totalTime}s`);
-console.log(`   Papers: ${papers.length}`);
-console.log(`   Questions: ${questions.length}`);
+console.log(`   Papers imported: ${papersFiltered.length}`);
+console.log(`   Questions imported: ${questionsFiltered.length}`);
