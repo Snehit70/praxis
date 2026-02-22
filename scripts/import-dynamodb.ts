@@ -304,7 +304,7 @@ if (SKIP_EXISTING) {
   }
 }
 
-async function writeBatchesAdaptive<T extends Record<string, any>>(items: T[], tableName: string): Promise<void> {
+async function writeBatchesSequential<T extends Record<string, any>>(items: T[], tableName: string): Promise<void> {
   const batches: T[][] = [];
   for (let i = 0; i < items.length; i += BATCH_SIZE) {
     batches.push(items.slice(i, i + BATCH_SIZE));
@@ -314,16 +314,13 @@ async function writeBatchesAdaptive<T extends Record<string, any>>(items: T[], t
   const total = items.length;
   const batchStartTime = Date.now();
   
-  // Adaptive rate control - start conservative for free tier
-  let delayMs = 500;        // Start with 500ms delay
-  const MIN_DELAY = 100;    // Fastest we'll go
-  const MAX_DELAY = 3000;   // Slowest we'll go
+  // Simple sequential rate control
+  let delayMs = 300;        // Start with 300ms between batches
+  const MIN_DELAY = 100;
+  const MAX_DELAY = 2000;
   let consecutiveSuccess = 0;
-  let concurrency = 2;      // Start with low parallelism
-  const MAX_CONCURRENCY = 5;
-  const MIN_CONCURRENCY = 1;
 
-  const writeBatch = async (batch: T[], retries = 5): Promise<'success' | 'throttled'> => {
+  const writeBatch = async (batch: T[]): Promise<boolean> => {
     try {
       const result = await docClient.send(new BatchWriteCommand({
         RequestItems: {
@@ -331,79 +328,75 @@ async function writeBatchesAdaptive<T extends Record<string, any>>(items: T[], t
         }
       }));
       
-      // Handle unprocessed items (partial failure - also means throttling)
+      // Handle unprocessed items
       const unprocessed = result.UnprocessedItems?.[tableName];
       if (unprocessed && unprocessed.length > 0) {
-        await new Promise(resolve => setTimeout(resolve, delayMs * 3));
-        const retryItems = unprocessed.map(u => u.PutRequest!.Item as T);
-        return writeBatch(retryItems, retries - 1);
+        // Retry unprocessed with longer wait
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        const retryItems = unprocessed
+          .map(u => u.PutRequest?.Item as T | undefined)
+          .filter((item): item is T => item !== undefined);
+        if (retryItems.length > 0) {
+          return writeBatch(retryItems);
+        }
       }
       
-      completed += batch.length;
-      return 'success';
+      return true; // Success
     } catch (err: any) {
-      if (retries > 0 && err.name === 'ProvisionedThroughputExceededException') {
-        // Wait longer on throttle, then retry
-        const waitTime = (5 - retries + 1) * 1000; // 1s, 2s, 3s, 4s, 5s
-        await new Promise(resolve => setTimeout(resolve, waitTime));
-        return writeBatch(batch, retries - 1);
+      if (err.name === 'ProvisionedThroughputExceededException') {
+        return false; // Throttled
       }
       throw err;
     }
   };
 
-  const updateProgress = () => {
+  for (let i = 0; i < batches.length; i++) {
+    const batch = batches[i]!;
+    
+    // Try the batch, back off on failure
+    let success = await writeBatch(batch);
+    while (!success) {
+      delayMs = Math.min(delayMs * 2, MAX_DELAY);
+      consecutiveSuccess = 0;
+      process.stdout.write(`\r   ⚠ Throttled, waiting ${delayMs}ms...`);
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+      success = await writeBatch(batch);
+    }
+    
+    completed += batch.length;
+    consecutiveSuccess++;
+    
+    // Gradually speed up
+    if (consecutiveSuccess >= 10 && delayMs > MIN_DELAY) {
+      delayMs = Math.max(delayMs - 20, MIN_DELAY);
+    }
+    
+    // Progress display
     const elapsed = (Date.now() - batchStartTime) / 1000;
     const rate = completed / elapsed;
     const remaining = (total - completed) / rate;
     const eta = remaining > 60 ? `${(remaining / 60).toFixed(1)}m` : `${remaining.toFixed(0)}s`;
-    const ratePerSec = rate.toFixed(0);
-    process.stdout.write(`\r   ✓ ${completed}/${total} | ${ratePerSec}/s | delay:${delayMs}ms | c:${concurrency} | ETA: ${eta}   `);
-  };
-
-  for (let i = 0; i < batches.length; i += concurrency) {
-    const chunk = batches.slice(i, Math.min(i + concurrency, batches.length));
-    const results = await Promise.all(chunk.map(b => writeBatch(b)));
+    process.stdout.write(`\r   ✓ ${completed}/${total} | ${rate.toFixed(0)}/s | delay:${delayMs}ms | ETA: ${eta}   `);
     
-    const hadThrottle = results.includes('throttled');
-    
-    if (hadThrottle) {
-      // Back off aggressively: double delay, halve concurrency
-      delayMs = Math.min(delayMs * 2, MAX_DELAY);
-      concurrency = Math.max(Math.floor(concurrency / 2), MIN_CONCURRENCY);
-      consecutiveSuccess = 0;
-      console.log(`\n   ⚠ Throttled! Backing off to delay:${delayMs.toFixed(0)}ms, concurrency:${concurrency}`);
-    } else {
-      consecutiveSuccess++;
-      // Speed up gradually after 20 consecutive successes
-      if (consecutiveSuccess >= 20) {
-        delayMs = Math.max(delayMs * 0.9, MIN_DELAY);
-        if (consecutiveSuccess >= 40 && concurrency < MAX_CONCURRENCY) {
-          concurrency++;
-          consecutiveSuccess = 20;
-        }
-      }
-    }
-    
-    updateProgress();
+    // Delay between batches
     await new Promise(resolve => setTimeout(resolve, delayMs));
   }
   console.log();
 }
 
-// Adaptive rate limiting: starts fast, backs off on throttle, speeds up on success
+// Sequential batch writing with adaptive delay
 
 if (papersFiltered.length > 0) {
   console.log("📄 Phase 2: Importing papers...");
-  await writeBatchesAdaptive(papersFiltered, "quiz-papers");
+  await writeBatchesSequential(papersFiltered, "quiz-papers");
 } else {
   console.log("📄 Phase 2: No new papers to import");
 }
 
 if (questionsFiltered.length > 0) {
   console.log("\n❓ Phase 3: Importing questions...");
-  console.log("   (Adaptive rate - will find optimal speed automatically)");
-  await writeBatchesAdaptive(questionsFiltered, "quiz-questions");
+  console.log("   (Sequential batches with adaptive delay)");
+  await writeBatchesSequential(questionsFiltered, "quiz-questions");
 } else {
   console.log("\n❓ Phase 3: No new questions to import");
 }
