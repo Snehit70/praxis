@@ -132,10 +132,13 @@ interface PaperFile {
   }>;
 }
 
+const SCAN_DELAY_MS = 200; // Delay between scan pages to avoid throttling
+
 // Fetch existing IDs from DynamoDB (for --skip-existing mode)
 async function getExistingPaperIds(): Promise<Set<string>> {
   const ids = new Set<string>();
   let lastKey: Record<string, any> | undefined;
+  let count = 0;
   
   do {
     const result = await docClient.send(new ScanCommand({
@@ -148,15 +151,21 @@ async function getExistingPaperIds(): Promise<Set<string>> {
     for (const item of result.Items || []) {
       if (item.uuid) ids.add(item.uuid);
     }
+    count += result.Items?.length || 0;
+    process.stdout.write(`\r   Scanning papers: ${count} found`);
     lastKey = result.LastEvaluatedKey;
+    
+    if (lastKey) await new Promise(resolve => setTimeout(resolve, SCAN_DELAY_MS));
   } while (lastKey);
   
+  console.log();
   return ids;
 }
 
 async function getExistingQuestionKeys(): Promise<Set<string>> {
   const keys = new Set<string>();
   let lastKey: Record<string, any> | undefined;
+  let count = 0;
   
   do {
     const result = await docClient.send(new ScanCommand({
@@ -170,9 +179,14 @@ async function getExistingQuestionKeys(): Promise<Set<string>> {
         keys.add(`${item.paperUuid}:${item.questionNumber}`);
       }
     }
+    count += result.Items?.length || 0;
+    process.stdout.write(`\r   Scanning questions: ${count} found`);
     lastKey = result.LastEvaluatedKey;
+    
+    if (lastKey) await new Promise(resolve => setTimeout(resolve, SCAN_DELAY_MS));
   } while (lastKey);
   
+  console.log();
   return keys;
 }
 
@@ -267,11 +281,10 @@ let questionsFiltered = Array.from(questionsToImport.values());
 
 if (SKIP_EXISTING) {
   console.log("🔍 Phase 1b: Checking existing items in DynamoDB...");
+  console.log("   (Scanning sequentially to avoid throttling)");
   
-  const [existingPapers, existingQuestions] = await Promise.all([
-    getExistingPaperIds(),
-    getExistingQuestionKeys(),
-  ]);
+  const existingPapers = await getExistingPaperIds();
+  const existingQuestions = await getExistingQuestionKeys();
   
   console.log(`   Existing papers: ${existingPapers.size}`);
   console.log(`   Existing questions: ${existingQuestions.size}`);
