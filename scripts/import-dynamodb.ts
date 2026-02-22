@@ -200,7 +200,7 @@ console.log(`   Papers: ${papersToImport.size}`);
 console.log(`   Questions: ${questionsToImport.size}`);
 console.log(`   Scan time: ${((Date.now() - startTime) / 1000).toFixed(1)}s\n`);
 
-async function writeBatchesParallel<T extends Record<string, any>>(items: T[], tableName: string, concurrency: number = 20, delayMs: number = 0): Promise<void> {
+async function writeBatchesAdaptive<T extends Record<string, any>>(items: T[], tableName: string): Promise<void> {
   const batches: T[][] = [];
   for (let i = 0; i < items.length; i += BATCH_SIZE) {
     batches.push(items.slice(i, i + BATCH_SIZE));
@@ -208,32 +208,94 @@ async function writeBatchesParallel<T extends Record<string, any>>(items: T[], t
 
   let completed = 0;
   const total = items.length;
+  const batchStartTime = Date.now();
+  
+  // Adaptive rate control
+  let delayMs = 100;        // Start aggressive (100ms between batches)
+  const MIN_DELAY = 50;     // Fastest we'll go
+  const MAX_DELAY = 2000;   // Slowest we'll go
+  let consecutiveSuccess = 0;
+  let concurrency = 5;      // Start with moderate parallelism
+  const MAX_CONCURRENCY = 10;
+  const MIN_CONCURRENCY = 1;
 
-  const writeBatch = async (batch: T[]): Promise<void> => {
-    await docClient.send(new BatchWriteCommand({
-      RequestItems: {
-        [tableName]: batch.map(item => ({ PutRequest: { Item: item } }))
+  const writeBatch = async (batch: T[], retries = 3): Promise<'success' | 'throttled'> => {
+    try {
+      const result = await docClient.send(new BatchWriteCommand({
+        RequestItems: {
+          [tableName]: batch.map(item => ({ PutRequest: { Item: item } }))
+        }
+      }));
+      
+      // Handle unprocessed items (partial failure - also means throttling)
+      const unprocessed = result.UnprocessedItems?.[tableName];
+      if (unprocessed && unprocessed.length > 0) {
+        await new Promise(resolve => setTimeout(resolve, delayMs * 2));
+        const retryItems = unprocessed.map(u => u.PutRequest!.Item as T);
+        await writeBatch(retryItems, retries - 1);
+        return 'throttled';
       }
-    }));
-    completed += batch.length;
-    process.stdout.write(`\r   ✓ ${completed}/${total}`);
-    if (delayMs > 0) await new Promise(resolve => setTimeout(resolve, delayMs));
+      
+      completed += batch.length;
+      return 'success';
+    } catch (err: any) {
+      if (retries > 0 && err.name === 'ProvisionedThroughputExceededException') {
+        await new Promise(resolve => setTimeout(resolve, delayMs * 3));
+        return writeBatch(batch, retries - 1);
+      }
+      throw err;
+    }
+  };
+
+  const updateProgress = () => {
+    const elapsed = (Date.now() - batchStartTime) / 1000;
+    const rate = completed / elapsed;
+    const remaining = (total - completed) / rate;
+    const eta = remaining > 60 ? `${(remaining / 60).toFixed(1)}m` : `${remaining.toFixed(0)}s`;
+    const ratePerSec = rate.toFixed(0);
+    process.stdout.write(`\r   ✓ ${completed}/${total} | ${ratePerSec}/s | delay:${delayMs}ms | c:${concurrency} | ETA: ${eta}   `);
   };
 
   for (let i = 0; i < batches.length; i += concurrency) {
-    const chunk = batches.slice(i, i + concurrency);
-    await Promise.all(chunk.map(writeBatch));
+    const chunk = batches.slice(i, Math.min(i + concurrency, batches.length));
+    const results = await Promise.all(chunk.map(b => writeBatch(b)));
+    
+    const hadThrottle = results.includes('throttled');
+    
+    if (hadThrottle) {
+      // Back off: increase delay, reduce concurrency
+      delayMs = Math.min(delayMs * 1.5, MAX_DELAY);
+      concurrency = Math.max(concurrency - 1, MIN_CONCURRENCY);
+      consecutiveSuccess = 0;
+      console.log(`\n   ⚠ Throttled! Backing off to delay:${delayMs.toFixed(0)}ms, concurrency:${concurrency}`);
+    } else {
+      consecutiveSuccess++;
+      // Speed up after 10 consecutive successes
+      if (consecutiveSuccess >= 10) {
+        delayMs = Math.max(delayMs * 0.9, MIN_DELAY);
+        if (consecutiveSuccess >= 20 && concurrency < MAX_CONCURRENCY) {
+          concurrency++;
+          consecutiveSuccess = 10; // Reset partially
+        }
+      }
+    }
+    
+    updateProgress();
+    await new Promise(resolve => setTimeout(resolve, delayMs));
   }
   console.log();
 }
 
+// Adaptive rate limiting: starts fast, backs off on throttle, speeds up on success
+
 console.log("📄 Phase 2: Importing papers...");
 const papers = Array.from(papersToImport.values());
-await writeBatchesParallel(papers, "quiz-papers", 20, 0);
+await writeBatchesAdaptive(papers, "quiz-papers");
 
 console.log("\n❓ Phase 3: Importing questions...");
+console.log("   (Adaptive rate - will find optimal speed automatically)");
 const questions = Array.from(questionsToImport.values());
-await writeBatchesParallel(questions, "quiz-questions", 20, 0);
+await writeBatchesAdaptive(questions, "quiz-questions");
 
 const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
 console.log(`\n✅ Import complete in ${totalTime}s`);
