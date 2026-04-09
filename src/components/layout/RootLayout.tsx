@@ -1,10 +1,12 @@
 import { Outlet, Link } from "react-router-dom";
-import { BookOpen, User, Menu } from "lucide-react";
+import { BookOpen, Menu, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { logger } from "@/lib/logger";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 export default function RootLayout() {
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
   useEffect(() => {
     logger.info('RootLayout mounted');
     return () => {
@@ -14,59 +16,68 @@ export default function RootLayout() {
 
   const handleNavClick = (destination: string) => {
     logger.info('Navigation clicked', { destination });
-  };
-
-  const handleSignInClick = () => {
-    logger.info('Sign In button clicked');
-  };
-
-  const handleGetStartedClick = () => {
-    logger.info('Get Started button clicked');
+    setMobileMenuOpen(false);
   };
 
   const handleMenuClick = () => {
-    logger.info('Mobile menu button clicked');
+    logger.info('Mobile menu button clicked', { open: !mobileMenuOpen });
+    setMobileMenuOpen((current) => !current);
   };
 
   return (
-    <div className="min-h-screen bg-background text-foreground font-sans flex flex-col">
-      <header className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">
-        <div className="container mx-auto px-4 md:px-8 h-16 flex items-center justify-between">
-          <Link to="/" className="flex items-center gap-2 font-bold text-xl tracking-tight hover:opacity-80 transition-opacity">
-            <BookOpen className="h-6 w-6 text-primary" />
+    <div className="min-h-screen bg-background text-foreground flex flex-col">
+      <header className="sticky top-0 z-50 border-b border-border/80 bg-background/90 backdrop-blur-xl">
+        <div className="container mx-auto flex h-18 items-center justify-between px-4 md:px-8">
+          <Link to="/" className="flex items-center gap-3 transition-opacity hover:opacity-80">
+            <span className="flex h-10 w-10 items-center justify-center rounded-2xl border border-border bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
+              <BookOpen className="h-5 w-5 text-primary" />
+            </span>
             <span>Praxis</span>
+            <span className="hidden rounded-full bg-accent px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-accent-foreground sm:inline-flex">
+              IITM Archive
+            </span>
           </Link>
           
-          <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-muted-foreground">
+          <nav className="hidden items-center gap-6 text-sm font-medium text-muted-foreground md:flex">
             <Link to="/" className="hover:text-foreground transition-colors" onClick={() => handleNavClick('home')}>Home</Link>
             <Link to="/exam/quiz1" className="hover:text-foreground transition-colors" onClick={() => handleNavClick('exams')}>Exams</Link>
-            <Link to="/exam/quiz1" className="hover:text-foreground transition-colors" onClick={() => handleNavClick('practice')}>Practice</Link>
+            <Link to="/#exam-grid" className="hover:text-foreground transition-colors" onClick={() => handleNavClick('browse')}>Browse Papers</Link>
           </nav>
 
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" className="md:hidden" onClick={handleMenuClick}>
-              <Menu className="h-5 w-5" />
+            <Button variant="ghost" size="icon" className="md:hidden" onClick={handleMenuClick} aria-label="Toggle menu">
+              {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </Button>
-            <Button variant="outline" size="sm" className="hidden md:flex gap-2" onClick={handleSignInClick}>
-              <User className="h-4 w-4" />
-              <span>Sign In</span>
+            <Button size="sm" asChild className="rounded-full px-5">
+              <Link to="/exam/quiz1" onClick={() => handleNavClick('get-started')}>Get Started</Link>
             </Button>
-            <Button size="sm" onClick={handleGetStartedClick}>Get Started</Button>
           </div>
         </div>
+
+        {mobileMenuOpen && (
+          <div className="border-t border-border/80 bg-card/95 md:hidden">
+            <nav className="container mx-auto flex flex-col gap-3 px-4 py-4 text-sm font-medium">
+              <Link to="/" className="rounded-xl px-3 py-2 hover:bg-secondary hover:text-primary transition-colors" onClick={() => handleNavClick('home')}>Home</Link>
+              <Link to="/exam/quiz1" className="rounded-xl px-3 py-2 hover:bg-secondary hover:text-primary transition-colors" onClick={() => handleNavClick('exams')}>Exams</Link>
+              <Link to="/#exam-grid" className="rounded-xl px-3 py-2 hover:bg-secondary hover:text-primary transition-colors" onClick={() => handleNavClick('browse')}>Browse Papers</Link>
+            </nav>
+          </div>
+        )}
       </header>
 
       <main className="flex-1">
-        <div className="container mx-auto px-4 md:px-8 py-8">
+        <div className="container mx-auto px-4 py-8 md:px-8 md:py-10">
           <Outlet />
         </div>
       </main>
 
-      <footer className="border-t py-6 md:py-0">
-        <div className="container mx-auto px-4 md:px-8 flex flex-col md:flex-row items-center justify-between gap-4 md:h-24">
-          <p className="text-balance text-center text-sm leading-loose text-muted-foreground md:text-left">
-            Built by <a href="#" className="font-medium underline underline-offset-4">Praxis Team</a>. 
-            The source code is available on <a href="#" className="font-medium underline underline-offset-4">GitHub</a>.
+      <footer className="border-t border-border/80 bg-card/60 py-6 md:py-0">
+        <div className="container mx-auto flex flex-col items-center justify-between gap-4 px-4 md:h-24 md:flex-row md:px-8">
+          <p className="text-center text-sm leading-loose text-muted-foreground md:text-left">
+            Praxis helps IITM BS students practice across real quiz and exam paper archives, with local-first access for faster, more reliable study sessions.
+          </p>
+          <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+            Based on [notion] in [DESIGN.md]
           </p>
         </div>
       </footer>

@@ -3,7 +3,6 @@ import HomePage from './pages/HomePage';
 import ExamPage from './pages/ExamPage';
 import CoursePage from './pages/CoursePage';
 import PaperPage from './pages/PaperPage';
-import DebugExams from './pages/DebugExams';
 
 import RootLayout from '@/components/layout/RootLayout';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
@@ -15,10 +14,9 @@ function App() {
         <Routes>
           <Route path="/" element={<RootLayout />}>
             <Route index element={<HomePage />} />
-            <Route path="debug/exams" element={<DebugExams />} />
             <Route path="exam/:examId" element={<ExamPage />} />
             <Route path="exam/:examId/course/:courseId" element={<CoursePage />} />
-            <Route path="paper/:paperId/course/:courseId" element={<PaperPage />} />
+            <Route path="paper/:paperId" element={<PaperPage />} />
           </Route>
         </Routes>
       </Router>
