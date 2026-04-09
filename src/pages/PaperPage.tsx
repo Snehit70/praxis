@@ -1,7 +1,6 @@
 import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { ArrowLeft, FileText, CheckCircle2, Circle, HelpCircle, Award } from 'lucide-react';
+import { ArrowLeft, FileText, CheckCircle2, XCircle, Circle, HelpCircle, Award } from 'lucide-react';
 import { useState, useMemo, useEffect } from 'react';
 import { formatPaperName } from '@/lib/paperUtils';
 import { getExamSlugFromUuid, getExamUuidFromSlug } from '@/lib/examMapping';
@@ -77,26 +76,17 @@ export default function PaperPage() {
   }, [paperId, courseId, examUuidFromSearch]);
 
   const examSlug = useMemo(() => {
-    if (!paper?.examUuid) {
-      return null;
-    }
-
+    if (!paper?.examUuid) return null;
     return getExamSlugFromUuid(paper.examUuid);
   }, [paper?.examUuid]);
 
   const displayCourseName = useMemo(() => {
-    if (!paper?.courseName) {
-      return '';
-    }
-
+    if (!paper?.courseName) return '';
     return getDisplayCourseName(paper.courseName);
   }, [paper?.courseName]);
 
   const displayPaperName = useMemo(() => {
-    if (!paper?.paperName) {
-      return '';
-    }
-
+    if (!paper?.paperName) return '';
     return formatPaperName(paper.paperName, paper.year);
   }, [paper?.paperName, paper?.year]);
 
@@ -111,10 +101,7 @@ export default function PaperPage() {
     }
 
     for (const question of questions) {
-      if (!question.parentQuestionUuid) {
-        continue;
-      }
-
+      if (!question.parentQuestionUuid) continue;
       const parent = parentMap.get(question.parentQuestionUuid);
       if (parent) {
         parent.subQuestions!.push(question);
@@ -137,14 +124,12 @@ export default function PaperPage() {
       if (question.questionType !== 'COMPREHENSION') {
         allQuestionIds.add(question.uuid);
       }
-
       if (question.subQuestions) {
-        question.subQuestions.forEach((subQuestion) => allQuestionIds.add(subQuestion.uuid));
+        question.subQuestions.forEach((sq) => allQuestionIds.add(sq.uuid));
       }
     }
 
     const answered = Object.keys(selectedAnswers).filter((id) => allQuestionIds.has(id)).length;
-
     let correct = 0;
     let totalMarks = 0;
     let scoredMarks = 0;
@@ -153,9 +138,7 @@ export default function PaperPage() {
       const marks = parseFloat(question.totalMark) || 0;
       totalMarks += marks;
 
-      if (!showResults || !selectedAnswers[question.uuid]) {
-        return;
-      }
+      if (!showResults || !selectedAnswers[question.uuid]) return;
 
       const correctIndices = question.options
         .map((option, index) => (option.isCorrect === 1 ? String(index) : null))
@@ -172,8 +155,7 @@ export default function PaperPage() {
         const selectedEntries = selected as string[];
         const isCorrect =
           correctIndices.length === selectedEntries.length &&
-          correctIndices.every((value) => selectedEntries.includes(value));
-
+          correctIndices.every((v) => selectedEntries.includes(v));
         if (isCorrect) {
           correct++;
           scoredMarks += marks;
@@ -182,30 +164,17 @@ export default function PaperPage() {
     };
 
     for (const question of groupedQuestions) {
-      if (question.questionType !== 'COMPREHENSION') {
-        countQuestion(question);
-      }
-
+      if (question.questionType !== 'COMPREHENSION') countQuestion(question);
       if (question.subQuestions) {
-        for (const subQuestion of question.subQuestions) {
-          countQuestion(subQuestion);
-        }
+        for (const subQuestion of question.subQuestions) countQuestion(subQuestion);
       }
     }
 
-    return {
-      total: allQuestionIds.size,
-      answered,
-      correct,
-      totalMarks,
-      scoredMarks,
-    };
+    return { total: allQuestionIds.size, answered, correct, totalMarks, scoredMarks };
   }, [groupedQuestions, selectedAnswers, showResults]);
 
   const handleOptionSelect = (questionId: string, optionIndex: string, questionType: QuestionType) => {
-    if (showResults) {
-      return;
-    }
+    if (showResults) return;
 
     setSelectedAnswers((previous) => {
       if (questionType === 'MSQ') {
@@ -213,31 +182,17 @@ export default function PaperPage() {
         if (current.includes(optionIndex)) {
           return { ...previous, [questionId]: current.filter((id) => id !== optionIndex) };
         }
-
         return { ...previous, [questionId]: [...current, optionIndex] };
       }
-
       return { ...previous, [questionId]: optionIndex };
     });
-  };
-
-  const handleSubmit = () => {
-    setShowResults(true);
-  };
-
-  const handleReset = () => {
-    setSelectedAnswers({});
-    setShowResults(false);
   };
 
   if (!paperId) {
     return (
       <div className="text-center py-20 space-y-4">
-        <FileText className="h-16 w-16 text-muted-foreground mx-auto" />
-        <h2 className="text-2xl font-bold">Invalid Paper</h2>
-        <Button asChild>
-          <Link to="/">Go Home</Link>
-        </Button>
+        <h2 className="text-xl font-semibold">Invalid paper</h2>
+        <Button asChild variant="outline"><Link to="/">Go home</Link></Button>
       </div>
     );
   }
@@ -245,10 +200,7 @@ export default function PaperPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <div className="text-center space-y-4">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
-          <p className="text-muted-foreground">Loading paper...</p>
-        </div>
+        <div className="h-5 w-5 animate-spin rounded-full border-2 border-border border-t-primary" />
       </div>
     );
   }
@@ -256,11 +208,11 @@ export default function PaperPage() {
   if (loadFailed) {
     return (
       <div className="text-center py-20 space-y-4">
-        <FileText className="h-16 w-16 text-muted-foreground mx-auto" />
-        <h2 className="text-2xl font-bold">Unable to Load Paper</h2>
-        <p className="text-muted-foreground">The local paper archive could not be read for "{paperId}".</p>
-        <Button asChild>
-          <Link to={examSlug ? `/exam/${examSlug}` : '/'}>Go Back</Link>
+        <FileText className="h-10 w-10 text-muted-foreground mx-auto" />
+        <h2 className="text-xl font-semibold">Unable to load paper</h2>
+        <p className="text-sm text-muted-foreground">Could not read the archive for "{paperId}".</p>
+        <Button asChild variant="outline">
+          <Link to={examSlug ? `/exam/${examSlug}` : '/'}>Go back</Link>
         </Button>
       </div>
     );
@@ -269,12 +221,8 @@ export default function PaperPage() {
   if (!paper) {
     return (
       <div className="text-center py-20 space-y-4">
-        <FileText className="h-16 w-16 text-muted-foreground mx-auto" />
-        <h2 className="text-2xl font-bold">Paper Not Found</h2>
-        <p className="text-muted-foreground">The paper "{paperId}" does not exist.</p>
-        <Button asChild>
-          <Link to="/">Go Home</Link>
-        </Button>
+        <h2 className="text-xl font-semibold">Paper not found</h2>
+        <Button asChild variant="outline"><Link to="/">Go home</Link></Button>
       </div>
     );
   }
@@ -282,48 +230,47 @@ export default function PaperPage() {
   if (questions.length === 0) {
     return (
       <div className="space-y-6">
-        <Button variant="ghost" size="sm" asChild className="gap-2 -ml-2">
+        <Button variant="ghost" size="sm" asChild className="gap-1.5 -ml-2 text-muted-foreground">
           <Link to={examSlug ? `/exam/${examSlug}/course/${paper.courseUuid}` : '/'}>
             <ArrowLeft className="h-4 w-4" />
             Back
           </Link>
         </Button>
-
-        <div className="text-center py-20 space-y-4">
-          <FileText className="h-16 w-16 text-muted-foreground mx-auto" />
-          <h2 className="text-2xl font-bold">No Questions Available</h2>
-          <p className="text-muted-foreground">Questions for this paper haven't been loaded yet.</p>
+        <div className="text-center py-16 space-y-3">
+          <h2 className="text-xl font-semibold">No questions available</h2>
+          <p className="text-sm text-muted-foreground">Questions for this paper haven't been loaded yet.</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-3xl">
+      {/* Header */}
       <div className="space-y-4">
-        <Button variant="ghost" size="sm" asChild className="gap-2 -ml-2">
+        <Button variant="ghost" size="sm" asChild className="gap-1.5 -ml-2 text-muted-foreground">
           <Link to={examSlug ? `/exam/${examSlug}/course/${paper.courseUuid}` : '/'}>
             <ArrowLeft className="h-4 w-4" />
-            Back to {displayCourseName}
+            {displayCourseName}
           </Link>
         </Button>
 
-        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">{displayPaperName}</h1>
-            <p className="text-muted-foreground mt-1">
-              {displayCourseName} • {paper.examName}
+            <h1 className="text-xl font-bold tracking-tight">{displayPaperName}</h1>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              {displayCourseName} · {paper.examName}
             </p>
           </div>
 
-          <div className="flex items-center gap-4 text-sm">
-            <div className="flex items-center gap-2 px-3 py-2 bg-muted rounded-lg">
-              <HelpCircle className="h-4 w-4 text-muted-foreground" />
-              <span>{stats.answered}/{stats.total} answered</span>
+          <div className="flex items-center gap-3 text-sm flex-shrink-0">
+            <div className="flex items-center gap-1.5 text-muted-foreground">
+              <HelpCircle className="h-3.5 w-3.5" />
+              <span>{stats.answered}/{stats.total}</span>
             </div>
             {showResults && (
-              <div className="flex items-center gap-2 px-3 py-2 bg-primary/10 text-primary rounded-lg">
-                <Award className="h-4 w-4" />
+              <div className="flex items-center gap-1.5 text-primary">
+                <Award className="h-3.5 w-3.5" />
                 <span>{stats.scoredMarks}/{stats.totalMarks} marks</span>
               </div>
             )}
@@ -331,7 +278,8 @@ export default function PaperPage() {
         </div>
       </div>
 
-      <div className="space-y-6">
+      {/* Questions */}
+      <div className="space-y-4">
         {groupedQuestions.map((question, index) => (
           <QuestionCard
             key={question.uuid}
@@ -344,24 +292,23 @@ export default function PaperPage() {
         ))}
       </div>
 
-      <div className="sticky bottom-4 flex justify-center gap-4">
+      {/* Sticky action bar */}
+      <div className="sticky bottom-4 flex justify-center gap-3 pt-4">
         {!showResults ? (
           <Button
             size="lg"
-            onClick={handleSubmit}
+            onClick={() => setShowResults(true)}
             disabled={stats.answered === 0}
-            className="shadow-lg"
           >
-            Submit ({stats.answered}/{stats.total} answered)
+            Submit ({stats.answered}/{stats.total})
           </Button>
         ) : (
           <Button
             size="lg"
             variant="outline"
-            onClick={handleReset}
-            className="shadow-lg"
+            onClick={() => { setSelectedAnswers({}); setShowResults(false); }}
           >
-            Try Again
+            Try again
           </Button>
         )}
       </div>
@@ -409,20 +356,21 @@ function QuestionCard({
   const isComprehension = question.questionType === 'COMPREHENSION';
 
   return (
-    <Card className="overflow-hidden">
-      <CardContent className="p-6">
-        <div className="flex items-start gap-4">
-          <div className="flex-shrink-0 h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-sm">
+    <div className="rounded-lg border border-border bg-card overflow-hidden">
+      <div className="p-5">
+        <div className="flex items-start gap-3">
+          {/* Question number */}
+          <div className="flex-shrink-0 w-6 h-6 rounded flex items-center justify-center bg-muted text-muted-foreground text-xs font-semibold mt-0.5">
             {index + 1}
           </div>
 
-          <div className="flex-1 space-y-4">
-            <div className="flex items-start justify-between gap-4">
-              <div className="space-y-2 flex-1">
+          <div className="flex-1 space-y-3 min-w-0">
+            <div className="flex items-start justify-between gap-3">
+              <div className="space-y-2 flex-1 min-w-0">
                 {questionTexts.map((text, textIndex) => (
                   <div
                     key={textIndex}
-                    className="prose prose-sm max-w-none"
+                    className="prose prose-sm dark:prose-invert max-w-none text-foreground"
                     dangerouslySetInnerHTML={{ __html: text ?? '' }}
                   />
                 ))}
@@ -432,90 +380,86 @@ function QuestionCard({
                     key={imageIndex}
                     src={image}
                     alt={`Question ${index + 1} image ${imageIndex + 1}`}
-                    className="max-w-full rounded-lg border"
+                    className="max-w-full rounded border border-border"
                   />
                 ))}
               </div>
 
               {marks > 0 && (
-                <div className="flex-shrink-0 text-xs text-muted-foreground px-2 py-1 bg-muted rounded">
-                  {marks} {marks === 1 ? 'mark' : 'marks'}
-                </div>
+                <span className="flex-shrink-0 text-xs text-muted-foreground tabular-nums">
+                  {marks}m
+                </span>
               )}
             </div>
 
+            {/* Options */}
             {!isComprehension && (
-              <>
+              <div className="space-y-1.5">
                 {isMultiSelect && (
-                  <p className="text-xs text-muted-foreground">Select all that apply</p>
+                  <p className="text-xs text-muted-foreground mb-2">Select all that apply</p>
                 )}
+                {question.options.map((option, optionIndex) => {
+                  const optionId = String(optionIndex);
+                  const isSelected = isMultiSelect
+                    ? ((selectedAnswer as string[]) || []).includes(optionId)
+                    : selectedAnswer === optionId;
+                  const isCorrect = option.isCorrect === 1;
 
-                <div className="space-y-2">
-                  {question.options.map((option, optionIndex) => {
-                    const optionId = String(optionIndex);
-                    const isSelected = isMultiSelect
-                      ? ((selectedAnswer as string[]) || []).includes(optionId)
-                      : selectedAnswer === optionId;
-                    const isCorrect = option.isCorrect === 1;
+                  let optionClass = 'border-border hover:border-primary/40';
+                  if (showResults) {
+                    if (isCorrect) optionClass = 'border-green-600 bg-green-500/10';
+                    else if (isSelected) optionClass = 'border-red-500 bg-red-500/10';
+                  } else if (isSelected) {
+                    optionClass = 'border-primary bg-primary/8';
+                  }
 
-                    let optionStyle = 'border-border hover:border-primary/50 hover:bg-muted/50';
-                    if (showResults) {
-                      if (isCorrect) {
-                        optionStyle = 'border-green-500 bg-green-50';
-                      } else if (isSelected) {
-                        optionStyle = 'border-red-500 bg-red-50';
-                      }
-                    } else if (isSelected) {
-                      optionStyle = 'border-primary bg-primary/5';
-                    }
-
-                    return (
-                      <button
-                        key={optionIndex}
-                        onClick={() => onSelectAnswer(question.uuid, optionId, question.questionType)}
-                        disabled={showResults}
-                        className={`w-full flex items-start gap-3 p-3 rounded-lg border transition-colors text-left ${optionStyle}`}
-                      >
-                        <div className="flex-shrink-0 mt-0.5">
-                          {showResults ? (
-                            isCorrect ? (
-                              <CheckCircle2 className="h-5 w-5 text-green-600" />
-                            ) : isSelected ? (
-                              <Circle className="h-5 w-5 text-red-600" />
-                            ) : (
-                              <Circle className="h-5 w-5 text-muted-foreground" />
-                            )
+                  return (
+                    <button
+                      key={optionIndex}
+                      onClick={() => onSelectAnswer(question.uuid, optionId, question.questionType)}
+                      disabled={showResults}
+                      className={`w-full flex items-start gap-2.5 px-3 py-2.5 rounded border transition-colors text-left ${optionClass}`}
+                    >
+                      <div className="flex-shrink-0 mt-0.5">
+                        {showResults ? (
+                          isCorrect ? (
+                            <CheckCircle2 className="h-4 w-4 text-green-500" />
                           ) : isSelected ? (
-                            <CheckCircle2 className="h-5 w-5 text-primary" />
+                            <XCircle className="h-4 w-4 text-red-500" />
                           ) : (
-                            <Circle className="h-5 w-5 text-muted-foreground" />
-                          )}
-                        </div>
+                            <Circle className="h-4 w-4 text-muted-foreground" />
+                          )
+                        ) : isSelected ? (
+                          <CheckCircle2 className="h-4 w-4 text-primary" />
+                        ) : (
+                          <Circle className="h-4 w-4 text-muted-foreground" />
+                        )}
+                      </div>
 
-                        <div className="flex-1">
-                          {option.optionText && (
-                            <span
-                              className="text-sm"
-                              dangerouslySetInnerHTML={{ __html: option.optionText }}
-                            />
-                          )}
-                          {option.optionImage && (
-                            <img
-                              src={getOptionImageUrl(option.optionImage)}
-                              alt="Option"
-                              className="mt-2 max-w-full rounded border"
-                            />
-                          )}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </>
+                      <div className="flex-1 min-w-0">
+                        {option.optionText && (
+                          <span
+                            className="text-sm text-foreground"
+                            dangerouslySetInnerHTML={{ __html: option.optionText }}
+                          />
+                        )}
+                        {option.optionImage && (
+                          <img
+                            src={getOptionImageUrl(option.optionImage)}
+                            alt="Option"
+                            className="mt-2 max-w-full rounded border border-border"
+                          />
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             )}
 
+            {/* Comprehension sub-questions */}
             {isComprehension && question.subQuestions && question.subQuestions.length > 0 && (
-              <div className="ml-4 pl-4 border-l-2 border-primary/20 space-y-4">
+              <div className="ml-2 pl-4 border-l border-border space-y-3 mt-4">
                 {question.subQuestions.map((subQuestion, subIndex) => (
                   <QuestionCard
                     key={subQuestion.uuid}
@@ -530,7 +474,7 @@ function QuestionCard({
             )}
           </div>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

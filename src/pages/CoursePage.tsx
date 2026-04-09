@@ -1,7 +1,6 @@
 import { useParams, Link } from 'react-router-dom';
-import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { FileText, ArrowRight, ArrowLeft, Calendar, HelpCircle, Award, Clock } from 'lucide-react';
+import { FileText, ArrowRight, ArrowLeft, HelpCircle, Award, Clock } from 'lucide-react';
 import { logger } from '@/lib/logger';
 import { getExamUuidFromSlug, getExamNameFromSlug } from '@/lib/examMapping';
 import { useEffect, useMemo, useState } from 'react';
@@ -94,34 +93,24 @@ export default function CoursePage() {
     if (!course) {
       return '';
     }
-
     return getDisplayCourseName(course.course_name);
   }, [course]);
 
   if (!examUuid || !courseId) {
-    logger.error('Invalid exam or course slug', { examId, courseId });
     return (
       <div className="text-center py-20 space-y-4">
-        <FileText className="h-16 w-16 text-muted-foreground mx-auto" />
-        <h2 className="text-2xl font-bold">Invalid Course</h2>
-        <p className="text-muted-foreground">
-          The course or exam does not exist.
-        </p>
-        <Button asChild>
-          <Link to="/">Go Home</Link>
+        <h2 className="text-xl font-semibold">Invalid course</h2>
+        <Button asChild variant="outline">
+          <Link to="/">Go home</Link>
         </Button>
       </div>
     );
   }
 
   if (loading) {
-    logger.debug('Loading course and papers...', { examId, courseId });
     return (
       <div className="flex items-center justify-center py-20">
-        <div className="text-center space-y-4">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
-          <p className="text-muted-foreground">Loading papers...</p>
-        </div>
+        <div className="h-5 w-5 animate-spin rounded-full border-2 border-border border-t-primary" />
       </div>
     );
   }
@@ -129,12 +118,11 @@ export default function CoursePage() {
   if (loadFailed) {
     return (
       <div className="text-center py-20 space-y-4">
-        <FileText className="h-16 w-16 text-muted-foreground mx-auto" />
-        <h2 className="text-2xl font-bold">Unable to Load Papers</h2>
-        <p className="text-muted-foreground">
-          The local paper archive for this course could not be read.
+        <h2 className="text-xl font-semibold">Unable to load papers</h2>
+        <p className="text-sm text-muted-foreground">
+          Could not read the paper archive for this course.
         </p>
-        <Button asChild>
+        <Button asChild variant="outline">
           <Link to={`/exam/${examId}`}>Back to {examName}</Link>
         </Button>
       </div>
@@ -142,15 +130,10 @@ export default function CoursePage() {
   }
 
   if (!course) {
-    logger.error('Course not found', { courseId });
     return (
       <div className="text-center py-20 space-y-4">
-        <FileText className="h-16 w-16 text-muted-foreground mx-auto" />
-        <h2 className="text-2xl font-bold">Course Not Found</h2>
-        <p className="text-muted-foreground">
-          The course "{courseId}" does not exist.
-        </p>
-        <Button asChild>
+        <h2 className="text-xl font-semibold">Course not found</h2>
+        <Button asChild variant="outline">
           <Link to={`/exam/${examId}`}>Back to {examName}</Link>
         </Button>
       </div>
@@ -158,117 +141,104 @@ export default function CoursePage() {
   }
 
   if (papers.length === 0) {
-    logger.warn('No papers found for course', { examId, courseId });
     return (
       <div className="text-center py-20 space-y-4">
-        <FileText className="h-16 w-16 text-muted-foreground mx-auto" />
-        <h2 className="text-2xl font-bold">No Papers Found</h2>
-        <p className="text-muted-foreground">
+        <h2 className="text-xl font-semibold">No papers found</h2>
+        <p className="text-sm text-muted-foreground">
           No papers available for {course.course_name} in {examName}.
         </p>
-        <Button asChild>
+        <Button asChild variant="outline">
           <Link to={`/exam/${examId}`}>Back to {examName}</Link>
         </Button>
       </div>
     );
   }
 
-  logger.info('Papers loaded successfully', { examId, courseId, count: papers.length });
-
   return (
     <div className="space-y-8">
-      <section className="rounded-[1.75rem] border border-border/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(246,245,242,0.86))] p-6 shadow-[0_10px_30px_rgba(0,0,0,0.04)] md:p-8">
-      <div className="space-y-4">
-        <Button variant="ghost" size="sm" asChild className="gap-2 rounded-full px-3">
+      {/* Header */}
+      <div className="space-y-3">
+        <Button variant="ghost" size="sm" asChild className="gap-1.5 -ml-2 text-muted-foreground">
           <Link to={`/exam/${examId}`}>
             <ArrowLeft className="h-4 w-4" />
-            Back to {examName}
+            {examName}
           </Link>
         </Button>
 
-        <div className="space-y-2">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Link to="/" className="hover:text-primary transition-colors">
-              Home
-            </Link>
+        <div>
+          <nav className="flex items-center gap-1.5 text-xs text-muted-foreground mb-2">
+            <Link to="/" className="hover:text-foreground transition-colors">Home</Link>
             <span>/</span>
-            <Link to={`/exam/${examId}`} className="hover:text-primary transition-colors">
-              {examName}
-            </Link>
+            <Link to={`/exam/${examId}`} className="hover:text-foreground transition-colors">{examName}</Link>
             <span>/</span>
             <span className="text-foreground">{displayCourseName}</span>
-          </div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Archive by year</p>
-          <h2 className="text-4xl font-semibold tracking-tight">{displayCourseName}</h2>
-          <p className="text-muted-foreground">
-            {course.course_code !== course.course_name && `${course.course_code} • `}
-            {papers.length} {papers.length === 1 ? 'paper' : 'papers'} available
+          </nav>
+          <h1 className="text-2xl font-bold tracking-tight">{displayCourseName}</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            {course.course_code !== course.course_name && `${course.course_code} · `}
+            {papers.length} {papers.length === 1 ? 'paper' : 'papers'}
           </p>
         </div>
       </div>
-      </section>
 
+      {/* Papers by year */}
       <div className="space-y-8">
         {sortedYears.map((year) => (
-          <div key={year} className="space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-primary">
-                <Calendar className="h-4 w-4" />
-              </div>
-              <h3 className="font-display text-2xl font-semibold">{year}</h3>
-              <span className="text-sm text-muted-foreground">
+          <div key={year} className="space-y-3">
+            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-[0.1em]">
+              {year}
+              <span className="ml-2 text-xs font-normal normal-case tracking-normal">
                 {papersByYear[year]?.length ?? 0} {(papersByYear[year]?.length ?? 0) === 1 ? 'paper' : 'papers'}
               </span>
-            </div>
+            </h2>
 
-            <div className="grid gap-4 pl-2 md:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
               {(papersByYear[year] ?? []).map((paper) => {
                 const formattedName = formatPaperName(paper.paperName, paper.year);
                 const totalMarks = paper.calculatedTotalMarks || 0;
 
                 return (
-                  <Card
+                  <Link
                     key={paper._id}
-                    className="group cursor-pointer border-border/80 bg-card/95 transition-all hover:-translate-y-1 hover:border-primary/30 hover:shadow-[0_16px_36px_rgba(0,0,0,0.07)]"
+                    to={`/paper/${paper.uuid}?course=${courseId}&exam=${examId}`}
+                    className="group flex items-start justify-between rounded-lg border border-border bg-card p-4 transition-colors hover:border-primary/30 hover:bg-muted/40"
                   >
-                    <Link to={`/paper/${paper.uuid}?course=${courseId}&exam=${examId}`}>
-                      <CardHeader className="p-4">
-                        <div className="flex items-start justify-between mb-2">
-                          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-primary">
-                            <FileText className="h-4 w-4" />
-                          </div>
-                          {paper.isNew === 1 && (
-                            <span className="rounded-full bg-accent px-2 py-0.5 text-xs font-medium text-primary">
-                              New
-                            </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start gap-2">
+                        <FileText className="h-4 w-4 text-muted-foreground mt-0.5 flex-shrink-0" />
+                        <div>
+                          <p className="text-sm font-medium text-foreground group-hover:text-primary transition-colors line-clamp-2 leading-snug">
+                            {formattedName}
+                          </p>
+                          {paper.paperDescription && (
+                            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{paper.paperDescription}</p>
                           )}
-                        </div>
-
-                        <div className="space-y-1">
-                          <CardTitle className="flex items-center justify-between text-[1.15rem] group-hover:text-primary transition-colors">
-                            <span className="line-clamp-2">{formattedName}</span>
-                            <ArrowRight className="h-4 w-4 flex-shrink-0 ml-2 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all" />
-                          </CardTitle>
-                          <CardDescription>{paper.paperDescription}</CardDescription>
-                        </div>
-
-                        <div className="mt-3 flex items-center gap-3 text-xs text-muted-foreground">
-                          <div className="flex items-center gap-1">
-                            <HelpCircle className="h-3 w-3" />
-                            <span>{paper.questionCount} questions</span>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Award className="h-3 w-3" />
-                            <span>{totalMarks} marks</span>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Clock className="h-3 w-3" />
-                            <span>{paper.duration} min</span>
+                          <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
+                            <span className="flex items-center gap-1">
+                              <HelpCircle className="h-3 w-3" />
+                              {paper.questionCount}q
+                            </span>
+                            {totalMarks > 0 && (
+                              <span className="flex items-center gap-1">
+                                <Award className="h-3 w-3" />
+                                {totalMarks}m
+                              </span>
+                            )}
+                            {paper.duration > 0 && (
+                              <span className="flex items-center gap-1">
+                                <Clock className="h-3 w-3" />
+                                {paper.duration}min
+                              </span>
+                            )}
+                            {paper.isNew === 1 && (
+                              <span className="text-primary font-medium">New</span>
+                            )}
                           </div>
                         </div>
-                      </CardHeader>
-                    </Link>
-                  </Card>
+                      </div>
+                    </div>
+                    <ArrowRight className="h-3.5 w-3.5 text-muted-foreground group-hover:text-primary group-hover:translate-x-0.5 transition-all flex-shrink-0 ml-3 mt-0.5" />
+                  </Link>
                 );
               })}
             </div>

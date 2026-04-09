@@ -1,7 +1,6 @@
 @import "tailwindcss";
 
 @theme {
-  --font-display: var(--display-font);
   --font-body: var(--body-font);
   --color-border: var(--border);
   --color-input: var(--input);
@@ -25,8 +24,8 @@
 }
 
 @layer base {
+  /* Light theme (secondary) */
   :root {
-    --display-font: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
     --body-font: "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
     --background: #fcfbf8;
     --foreground: rgba(0, 0, 0, 0.92);
@@ -47,28 +46,28 @@
     --border: rgba(0, 0, 0, 0.1);
     --input: #ddd7d0;
     --ring: #097fe8;
-    --radius: 0.85rem;
   }
 
+  /* Dark theme — warm Notion dark, default */
   .dark {
     --background: #1f1d1b;
-    --foreground: rgba(255, 255, 255, 0.94);
-    --card: #282523;
-    --card-foreground: rgba(255, 255, 255, 0.94);
-    --popover: #282523;
-    --popover-foreground: rgba(255, 255, 255, 0.94);
+    --foreground: rgba(255, 255, 255, 0.92);
+    --card: #262422;
+    --card-foreground: rgba(255, 255, 255, 0.92);
+    --popover: #262422;
+    --popover-foreground: rgba(255, 255, 255, 0.92);
     --primary: #62aef0;
-    --primary-foreground: #10263c;
-    --secondary: #312e2b;
-    --secondary-foreground: rgba(255, 255, 255, 0.94);
-    --muted: #2d2926;
-    --muted-foreground: #b8b0a7;
-    --accent: #1d3042;
-    --accent-foreground: #b8daff;
+    --primary-foreground: #0d1f33;
+    --secondary: #2d2a27;
+    --secondary-foreground: rgba(255, 255, 255, 0.84);
+    --muted: #2a2825;
+    --muted-foreground: #b0a89f;
+    --accent: #1b2d42;
+    --accent-foreground: #93c5fd;
     --destructive: #9e3d2f;
     --destructive-foreground: #fff7f5;
-    --border: rgba(255, 255, 255, 0.12);
-    --input: rgba(255, 255, 255, 0.14);
+    --border: rgba(255, 255, 255, 0.1);
+    --input: rgba(255, 255, 255, 0.12);
     --ring: #62aef0;
   }
 }
@@ -85,18 +84,16 @@
   body {
     font-family: var(--body-font);
     @apply bg-background text-foreground;
-    background-image:
-      radial-gradient(circle at top, rgba(0, 117, 222, 0.07), transparent 28rem),
-      linear-gradient(180deg, rgba(246, 245, 242, 0.9) 0%, rgba(252, 251, 248, 1) 28%, rgba(252, 251, 248, 1) 100%);
     min-height: 100vh;
   }
 
   h1,
   h2,
   h3,
-  .font-display {
-    font-family: var(--font-display);
-    letter-spacing: -0.03em;
+  h4,
+  h5,
+  h6 {
+    letter-spacing: -0.02em;
     text-wrap: balance;
   }
 
@@ -105,6 +102,6 @@
   }
 
   ::selection {
-    background: rgba(0, 117, 222, 0.14);
+    background: rgba(98, 174, 240, 0.2);
   }
 }
