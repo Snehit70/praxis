@@ -381,14 +381,84 @@ export function getLevelDescription(level: CourseLevel): string {
 export function getLevelColor(level: CourseLevel): string {
   switch (level) {
     case 'Foundation':
-      return 'from-blue-500 to-cyan-500';
+      return 'text-blue-400';
     case 'Diploma in Programming':
-      return 'from-purple-500 to-pink-500';
+      return 'text-purple-400';
     case 'Diploma in Data Science':
-      return 'from-orange-500 to-red-500';
+      return 'text-orange-400';
     case 'Degree':
-      return 'from-green-500 to-emerald-500';
+      return 'text-emerald-400';
     case 'Other':
-      return 'from-gray-500 to-slate-500';
+      return 'text-gray-400';
   }
+}
+
+/**
+ * Deduplicated course with merged data from multiple source entries
+ */
+export interface DeduplicatedCourse {
+  displayName: string;
+  uuids: string[];
+  primaryUuid: string;
+  paperCount: number;
+  level: CourseLevel;
+  originalNames: string[];
+}
+
+/**
+ * Deduplicate courses by their canonical display name.
+ * Merges paper counts and keeps track of all source UUIDs.
+ */
+export function deduplicateCourses<T extends { uuid: string; courseName: string; paperCount: number }>(
+  courses: T[]
+): DeduplicatedCourse[] {
+  const mergedMap = new Map<string, DeduplicatedCourse>();
+
+  for (const course of courses) {
+    const displayName = getDisplayCourseName(course.courseName);
+    const level = getCourseLevel(course.courseName);
+
+    const existing = mergedMap.get(displayName);
+    if (existing) {
+      existing.uuids.push(course.uuid);
+      existing.paperCount += course.paperCount;
+      if (!existing.originalNames.includes(course.courseName)) {
+        existing.originalNames.push(course.courseName);
+      }
+    } else {
+      mergedMap.set(displayName, {
+        displayName,
+        uuids: [course.uuid],
+        primaryUuid: course.uuid,
+        paperCount: course.paperCount,
+        level,
+        originalNames: [course.courseName],
+      });
+    }
+  }
+
+  return Array.from(mergedMap.values()).sort((a, b) =>
+    a.displayName.localeCompare(b.displayName)
+  );
+}
+
+/**
+ * Group deduplicated courses by level
+ */
+export function groupDeduplicatedCoursesByLevel(
+  courses: DeduplicatedCourse[]
+): Record<CourseLevel, DeduplicatedCourse[]> {
+  const grouped: Record<CourseLevel, DeduplicatedCourse[]> = {
+    'Foundation': [],
+    'Diploma in Programming': [],
+    'Diploma in Data Science': [],
+    'Degree': [],
+    'Other': [],
+  };
+
+  for (const course of courses) {
+    grouped[course.level].push(course);
+  }
+
+  return grouped;
 }

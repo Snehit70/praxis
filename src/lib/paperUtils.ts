@@ -94,7 +94,7 @@ export function parsePaperName(rawName: string): ParsedPaperName {
 
 export function formatPaperName(rawName: string, paperYear?: number): string {
   const parsed = parsePaperName(rawName);
-  
+
   const parts: string[] = [];
 
   // Add exam type if not regular
@@ -113,9 +113,7 @@ export function formatPaperName(rawName: string, paperYear?: number): string {
   }
 
   // Add date
-  if (parsed.date) {
-    parts.push(`- ${parsed.date}`);
-  } else if (parsed.month) {
+  if (parsed.month) {
     const year = parsed.year || paperYear;
     parts.push(`- ${parsed.month}${year ? ` ${year}` : ''}`);
   } else if (paperYear) {
@@ -123,17 +121,42 @@ export function formatPaperName(rawName: string, paperYear?: number): string {
   }
 
   // Fallback if we couldn't parse anything useful
-  if (parts.length === 0) {
+  if (parts.length === 0 || (parts.length === 1 && parts[0]?.startsWith('-'))) {
     // Try to extract just the meaningful part
     const cleaned = rawName
       .replace(/^IIT\s*M\s*/i, '')
-      .replace(/\s*AN\s*EXAM\s*/i, ' ')
+      .replace(/\d{4}\s*[A-Za-z]+\d*:\s*/i, '') // Remove date prefix like "2024 Oct27:"
+      .replace(/\s*AN\d?\s*EXAM\s*/i, ' ')
       .replace(/\s*EXAM\s*/i, ' ')
       .replace(/Q[A-Z]{2,3}\d?\s*/gi, '')
       .replace(/\s+/g, ' ')
       .trim();
-    
-    return cleaned || rawName;
+
+    if (cleaned && cleaned.length > 2) {
+      return cleaned;
+    }
+
+    // If still nothing useful, construct from parsed data
+    const fallbackParts: string[] = [];
+    if (parsed.examType !== 'Regular') {
+      fallbackParts.push(parsed.examType);
+    }
+    if (parsed.setNumber) {
+      fallbackParts.push(`Set ${parsed.setNumber}`);
+    }
+    if (parsed.month) {
+      fallbackParts.push(`- ${parsed.month}`);
+    }
+    if (paperYear && !fallbackParts.some(p => p.includes(String(paperYear)))) {
+      fallbackParts.push(paperYear.toString());
+    }
+
+    if (fallbackParts.length > 0) {
+      return fallbackParts.join(' ');
+    }
+
+    // Last resort: use original name
+    return rawName;
   }
 
   return parts.join(' ');
