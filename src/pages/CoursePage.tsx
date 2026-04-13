@@ -1,6 +1,6 @@
 import { useParams, Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { ArrowRight, ArrowLeft, Search, X, Calendar } from 'lucide-react';
+import { ArrowRight, ArrowLeft, Search, X, Calendar, FileText } from 'lucide-react';
 import { logger } from '@/lib/logger';
 import { getExamUuidFromSlug, getExamNameFromSlug } from '@/lib/examMapping';
 import { useEffect, useMemo, useState } from 'react';
@@ -235,9 +235,12 @@ export default function CoursePage() {
   if (loadFailed) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center">
+        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-destructive/10 mb-4">
+          <FileText className="h-7 w-7 text-destructive" />
+        </div>
         <h2 className="text-xl font-semibold">Unable to load papers</h2>
         <p className="text-muted-foreground mt-1 mb-4">
-          Could not load papers for this course.
+          Could not load papers for this course. Please try again.
         </p>
         <Button asChild variant="outline">
           <Link to={`/exam/${examId}`}>Back to {examName}</Link>
@@ -249,7 +252,11 @@ export default function CoursePage() {
   if (!course) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center">
+        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted mb-4">
+          <FileText className="h-7 w-7 text-muted-foreground" />
+        </div>
         <h2 className="text-xl font-semibold">Course not found</h2>
+        <p className="text-muted-foreground mt-1 mb-4">This course could not be found.</p>
         <Button asChild variant="outline">
           <Link to={`/exam/${examId}`}>Back to {examName}</Link>
         </Button>
@@ -260,6 +267,9 @@ export default function CoursePage() {
   if (papers.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center">
+        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted mb-4">
+          <FileText className="h-7 w-7 text-muted-foreground" />
+        </div>
         <h2 className="text-xl font-semibold">No papers found</h2>
         <p className="text-muted-foreground mt-1 mb-4">
           No papers available for {displayCourseName} in {examName}.
@@ -326,19 +336,25 @@ export default function CoursePage() {
             >
               All years
             </button>
-            {allYears.map((year) => (
-              <button
-                key={year}
-                onClick={() => setYearFilter(yearFilter === year ? null : year)}
-                className={`px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors ${
-                  yearFilter === year
-                    ? 'border-primary bg-primary/10 text-primary'
-                    : 'border-border text-muted-foreground hover:text-foreground hover:border-primary/30'
-                }`}
-              >
-                {year}
-              </button>
-            ))}
+            {allYears.map((year) => {
+              const count = papers.filter((p) => p.year === year).length;
+              return (
+                <button
+                  key={year}
+                  onClick={() => setYearFilter(yearFilter === year ? null : year)}
+                  className={`px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors ${
+                    yearFilter === year
+                      ? 'border-primary bg-primary/10 text-primary'
+                      : 'border-border text-muted-foreground hover:text-foreground hover:border-primary/30'
+                  }`}
+                >
+                  {year}
+                  <span className={`ml-1.5 text-xs ${yearFilter === year ? 'text-primary/70' : 'text-muted-foreground/60'}`}>
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
           </div>
         )}
       </header>

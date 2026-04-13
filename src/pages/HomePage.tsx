@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { logger } from "@/lib/logger";
 import { useEffect, useState } from "react";
 import { getDatasetStats, type DatasetStats } from "@/lib/api";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export default function HomePage() {
   const [stats, setStats] = useState<DatasetStats | null>(null);
@@ -95,8 +96,15 @@ export default function HomePage() {
             IITM BS exam archive
           </h1>
           <p className="mt-4 text-lg text-muted-foreground leading-relaxed">
-            Practice with {stats?.paperVariantCount?.toLocaleString() ?? '3,800'}+ past papers from {stats?.courseCount ?? 120}+ courses.
-            Browse by exam type, filter by year, and test yourself with real questions.
+            Practice with{' '}
+            <span className="text-foreground font-medium">
+              {stats?.paperVariantCount?.toLocaleString() ?? '3,800+'}
+            </span>{' '}
+            past papers from{' '}
+            <span className="text-foreground font-medium">
+              {stats?.courseCount ? `${stats.courseCount}+` : '120+'}
+            </span>{' '}
+            courses. Browse by exam type, filter by year, and test yourself with real questions.
           </p>
 
           {/* Search Bar */}
@@ -164,21 +172,33 @@ export default function HomePage() {
       <section className="rounded-xl border border-border bg-card/50 p-8">
         <div className="grid gap-8 sm:grid-cols-3">
           <div className="text-center sm:text-left">
-            <p className="text-3xl font-bold text-foreground tabular-nums">
-              {stats?.paperVariantCount?.toLocaleString() ?? '—'}
-            </p>
+            {stats ? (
+              <p className="text-3xl font-bold text-foreground tabular-nums">
+                {stats.paperVariantCount?.toLocaleString()}
+              </p>
+            ) : (
+              <Skeleton className="h-9 w-24 mb-1" />
+            )}
             <p className="mt-1 text-sm text-muted-foreground">Past papers</p>
           </div>
           <div className="text-center sm:text-left">
-            <p className="text-3xl font-bold text-foreground tabular-nums">
-              {stats?.questionCount?.toLocaleString() ?? '—'}
-            </p>
+            {stats ? (
+              <p className="text-3xl font-bold text-foreground tabular-nums">
+                {stats.questionCount?.toLocaleString()}
+              </p>
+            ) : (
+              <Skeleton className="h-9 w-32 mb-1" />
+            )}
             <p className="mt-1 text-sm text-muted-foreground">Practice questions</p>
           </div>
           <div className="text-center sm:text-left">
-            <p className="text-3xl font-bold text-foreground tabular-nums">
-              {stats?.courseCount ?? '—'}
-            </p>
+            {stats ? (
+              <p className="text-3xl font-bold text-foreground tabular-nums">
+                {stats.courseCount}
+              </p>
+            ) : (
+              <Skeleton className="h-9 w-16 mb-1" />
+            )}
             <p className="mt-1 text-sm text-muted-foreground">Courses covered</p>
           </div>
         </div>

@@ -76,7 +76,7 @@ function StickyProgress({
   const percentage = total > 0 ? (answered / total) * 100 : 0;
   return (
     <div
-      className={`fixed top-0 left-0 right-0 z-50 transition-transform duration-300 ${
+      className={`fixed top-14 left-0 right-0 z-40 transition-transform duration-300 ${
         visible ? 'translate-y-0' : '-translate-y-full'
       }`}
     >
@@ -128,12 +128,21 @@ function ResultsSummary({
           </div>
           <div>
             <p className="text-sm text-muted-foreground mb-0.5">Your score</p>
-            <p className={`text-3xl font-bold leading-none ${scoreColor}`}>
-              {stats.scoredMarks}
-              <span className="text-lg font-normal text-muted-foreground ml-1">
-                / {stats.totalMarks}
-              </span>
-            </p>
+            {stats.totalMarks > 0 ? (
+              <p className={`text-3xl font-bold leading-none ${scoreColor}`}>
+                {stats.scoredMarks}
+                <span className="text-lg font-normal text-muted-foreground ml-1">
+                  / {stats.totalMarks} marks
+                </span>
+              </p>
+            ) : (
+              <p className={`text-3xl font-bold leading-none ${scoreColor}`}>
+                {stats.correct}
+                <span className="text-lg font-normal text-muted-foreground ml-1">
+                  / {stats.total} correct
+                </span>
+              </p>
+            )}
             <p className="text-sm text-muted-foreground mt-1.5">
               {stats.correct} of {stats.total} correct &middot; {percentage}%
             </p>
@@ -160,6 +169,20 @@ function QuestionTypeBadge({ type }: { type: string }) {
     return (
       <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold tracking-wide uppercase bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
         Passage
+      </span>
+    );
+  }
+  if (type === 'SA') {
+    return (
+      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold tracking-wide uppercase bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+        Short Answer
+      </span>
+    );
+  }
+  if (type === 'OPPE') {
+    return (
+      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold tracking-wide uppercase bg-teal-500/10 text-teal-600 dark:text-teal-400 border border-teal-500/20">
+        OPPE
       </span>
     );
   }
@@ -247,6 +270,7 @@ function OptionButton({
             alt={`Option ${label}`}
             className="mt-2 max-w-full rounded border border-border"
             loading="lazy"
+            onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
           />
         )}
       </div>
@@ -294,6 +318,8 @@ function QuestionCard({
   const marks = parseFloat(question.totalMark) || 0;
   const isMultiSelect = question.questionType === 'MSQ';
   const isComprehension = question.questionType === 'COMPREHENSION';
+  const isShortAnswer = question.questionType === 'SA' || question.questionType === 'OPPE';
+  const hasOptions = question.options.length > 0;
 
   if (isSubQuestion) {
     return (
@@ -329,6 +355,7 @@ function QuestionCard({
                         alt={`Question ${index + 1} image ${imageIndex + 1}`}
                         className="max-w-full max-h-48 rounded border border-border object-contain"
                         loading="lazy"
+                        onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
                       />
                     ))}
                   </div>
@@ -337,29 +364,37 @@ function QuestionCard({
             </div>
             {!isComprehension && (
               <div className="space-y-2">
-                {isMultiSelect && (
-                  <p className="text-xs text-muted-foreground">Select all that apply</p>
-                )}
-                {question.options.map((option, optionIndex) => {
-                  const optionId = String(optionIndex);
-                  const isSelected = isMultiSelect
-                    ? ((selectedAnswer as string[]) || []).includes(optionId)
-                    : selectedAnswer === optionId;
-                  const isCorrect = option.isCorrect === 1;
+                {isShortAnswer ? (
+                  <p className="text-xs text-muted-foreground italic px-1">
+                    Written response — answer not available for practice
+                  </p>
+                ) : (
+                  <>
+                    {isMultiSelect && (
+                      <p className="text-xs text-muted-foreground">Select all that apply</p>
+                    )}
+                    {hasOptions && question.options.map((option, optionIndex) => {
+                      const optionId = String(optionIndex);
+                      const isSelected = isMultiSelect
+                        ? ((selectedAnswer as string[]) || []).includes(optionId)
+                        : selectedAnswer === optionId;
+                      const isCorrect = option.isCorrect === 1;
 
-                  return (
-                    <OptionButton
-                      key={optionIndex}
-                      option={option}
-                      optionIndex={optionIndex}
-                      isSelected={isSelected}
-                      isCorrect={isCorrect}
-                      showResults={showResults}
-                      isMultiSelect={isMultiSelect}
-                      onClick={() => onSelectAnswer(question.uuid, optionId, question.questionType)}
-                    />
-                  );
-                })}
+                      return (
+                        <OptionButton
+                          key={optionIndex}
+                          option={option}
+                          optionIndex={optionIndex}
+                          isSelected={isSelected}
+                          isCorrect={isCorrect}
+                          showResults={showResults}
+                          isMultiSelect={isMultiSelect}
+                          onClick={() => onSelectAnswer(question.uuid, optionId, question.questionType)}
+                        />
+                      );
+                    })}
+                  </>
+                )}
               </div>
             )}
           </div>
@@ -406,6 +441,7 @@ function QuestionCard({
                     alt={`Question ${index + 1} image ${imageIndex + 1}`}
                     className="max-w-full max-h-64 rounded-lg border border-border object-contain"
                     loading="lazy"
+                    onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
                   />
                 ))}
               </div>
@@ -415,29 +451,37 @@ function QuestionCard({
           {/* Options */}
           {!isComprehension && (
             <div className="space-y-2">
-              {isMultiSelect && (
-                <p className="text-xs text-muted-foreground italic">Select all that apply</p>
-              )}
-              {question.options.map((option, optionIndex) => {
-                const optionId = String(optionIndex);
-                const isSelected = isMultiSelect
-                  ? ((selectedAnswer as string[]) || []).includes(optionId)
-                  : selectedAnswer === optionId;
-                const isCorrect = option.isCorrect === 1;
+              {isShortAnswer ? (
+                <p className="text-xs text-muted-foreground italic px-1">
+                  Written response — answer not available for practice
+                </p>
+              ) : (
+                <>
+                  {isMultiSelect && (
+                    <p className="text-xs text-muted-foreground italic">Select all that apply</p>
+                  )}
+                  {hasOptions && question.options.map((option, optionIndex) => {
+                    const optionId = String(optionIndex);
+                    const isSelected = isMultiSelect
+                      ? ((selectedAnswer as string[]) || []).includes(optionId)
+                      : selectedAnswer === optionId;
+                    const isCorrect = option.isCorrect === 1;
 
-                return (
-                  <OptionButton
-                    key={optionIndex}
-                    option={option}
-                    optionIndex={optionIndex}
-                    isSelected={isSelected}
-                    isCorrect={isCorrect}
-                    showResults={showResults}
-                    isMultiSelect={isMultiSelect}
-                    onClick={() => onSelectAnswer(question.uuid, optionId, question.questionType)}
-                  />
-                );
-              })}
+                    return (
+                      <OptionButton
+                        key={optionIndex}
+                        option={option}
+                        optionIndex={optionIndex}
+                        isSelected={isSelected}
+                        isCorrect={isCorrect}
+                        showResults={showResults}
+                        isMultiSelect={isMultiSelect}
+                        onClick={() => onSelectAnswer(question.uuid, optionId, question.questionType)}
+                      />
+                    );
+                  })}
+                </>
+              )}
             </div>
           )}
 
@@ -694,7 +738,7 @@ export default function PaperPage() {
         <Button variant="ghost" size="sm" asChild className="gap-1.5 -ml-2 text-muted-foreground">
           <Link to={examSlug ? `/exam/${examSlug}/course/${paper.courseUuid}` : '/'}>
             <ArrowLeft className="h-4 w-4" />
-            {displayCourseName}
+            {displayCourseName || 'Back'}
           </Link>
         </Button>
         <div className="flex flex-col items-center py-16 text-center">
@@ -727,17 +771,18 @@ export default function PaperPage() {
             asChild
             className="gap-1.5 -ml-2 text-muted-foreground"
           >
-            <Link to={examSlug ? `/exam/${examSlug}/course/${paper.courseUuid}` : '/'}>
-              <ArrowLeft className="h-4 w-4" />
-              {displayCourseName}
-            </Link>
-          </Button>
+          <Link to={examSlug ? `/exam/${examSlug}/course/${paper.courseUuid}` : '/'}>
+            <ArrowLeft className="h-4 w-4" />
+            {displayCourseName || 'Back'}
+          </Link>
+        </Button>
 
-          <div>
-            <p className="text-sm font-medium text-primary">{paper.examName}</p>
+        <div>
+          <p className="text-sm font-medium text-primary">{paper.examName}</p>
             <h1 className="text-2xl font-bold tracking-tight mt-1">{displayPaperName}</h1>
             <p className="text-muted-foreground mt-1 text-sm">
-              {stats.total} questions &middot; {stats.totalMarks} marks
+              {stats.total} {stats.total === 1 ? 'question' : 'questions'}
+              {stats.totalMarks > 0 && <> &middot; {stats.totalMarks} marks</>}
             </p>
           </div>
 
@@ -775,20 +820,28 @@ export default function PaperPage() {
         {/* Submit Button */}
         {!showResults && (
           <div className="sticky bottom-4 flex justify-center pt-4 pb-2">
-            <Button
-              size="lg"
-              onClick={() => setShowResults(true)}
-              disabled={stats.answered === 0}
-              className={`shadow-lg gap-2 transition-all ${
-                allAnswered
-                  ? 'bg-green-600 hover:bg-green-700 text-white'
-                  : ''
-              }`}
-            >
-              {allAnswered
-                ? 'Submit answers'
-                : `Submit (${stats.answered}/${stats.total} answered)`}
-            </Button>
+            <div className="relative">
+              {/* backdrop blur halo so the button doesn't hard-clip over questions */}
+              <div className="absolute inset-0 -m-3 rounded-2xl bg-background/60 backdrop-blur-sm pointer-events-none" />
+              <Button
+                size="lg"
+                onClick={() => setShowResults(true)}
+                disabled={stats.answered === 0}
+                className={`relative shadow-lg gap-2 transition-all ${
+                  allAnswered
+                    ? 'bg-green-600 hover:bg-green-700 text-white'
+                    : stats.answered > 0
+                    ? 'bg-primary/90 hover:bg-primary text-primary-foreground'
+                    : ''
+                }`}
+              >
+                {allAnswered
+                  ? 'Submit answers'
+                  : stats.answered > 0
+                  ? `Submit (${stats.answered} / ${stats.total})`
+                  : 'Answer a question to submit'}
+              </Button>
+            </div>
           </div>
         )}
       </div>

@@ -208,9 +208,12 @@ export default function ExamPage() {
   if (loadFailed) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center">
+        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-destructive/10 mb-4">
+          <BookOpen className="h-7 w-7 text-destructive" />
+        </div>
         <h2 className="text-xl font-semibold">Unable to load courses</h2>
         <p className="text-muted-foreground mt-1 mb-4">
-          Could not load courses for {examName}.
+          Could not load courses for {examName}. Please try again.
         </p>
         <Button asChild variant="outline">
           <Link to="/">Go home</Link>
@@ -222,6 +225,9 @@ export default function ExamPage() {
   if (courses.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center">
+        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted mb-4">
+          <BookOpen className="h-7 w-7 text-muted-foreground" />
+        </div>
         <h2 className="text-xl font-semibold">No courses found</h2>
         <p className="text-muted-foreground mt-1 mb-4">
           No courses available for {examName}.
