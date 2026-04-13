@@ -241,7 +241,7 @@ function collectImportRows() {
               question_image_3: rawQuestion.question_image_3 ?? null,
               question_image_4: rawQuestion.question_image_4 ?? null,
               question_image_5: rawQuestion.question_image_5 ?? null,
-              question_image_6: null,
+              question_image_6: rawQuestion.question_image_6 ?? null,
               question_image_7: rawQuestion.question_image_7 ?? null,
               question_image_8: rawQuestion.question_image_8 ?? null,
               question_image_9: rawQuestion.question_image_9 ?? null,
@@ -364,7 +364,7 @@ async function main() {
 
     console.log('Import complete');
   } finally {
-    await sql.end();
+    await sql.close();
   }
 }
 

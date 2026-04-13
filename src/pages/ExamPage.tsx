@@ -24,9 +24,13 @@ const LEVEL_INFO: Record<CourseLevel, { label: string; accent: string }> = {
 };
 
 function CourseCard({ course, examId }: { course: DeduplicatedCourse; examId: string }) {
+  const search = course.uuids.length > 1
+    ? `?aliases=${encodeURIComponent(course.uuids.join(','))}`
+    : '';
+
   return (
     <Link
-      to={`/exam/${examId}/course/${course.primaryUuid}`}
+      to={`/exam/${examId}/course/${course.primaryUuid}${search}`}
       className="group flex items-center gap-3 rounded-lg border border-border bg-card p-4 transition-all hover:border-primary/40 hover:bg-muted/30 hover:shadow-sm"
     >
       <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted text-muted-foreground group-hover:bg-primary/10 group-hover:text-primary transition-colors flex-shrink-0">

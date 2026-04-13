@@ -1,4 +1,4 @@
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { ArrowRight, ArrowLeft, Search, X, Calendar, FileText } from 'lucide-react';
 import { logger } from '@/lib/logger';
@@ -9,6 +9,7 @@ import { formatPaperName } from '@/lib/paperUtils';
 import {
   getCourseByUuid,
   getPapersByExamAndCourse,
+  getPapersByExamAndCourseUuids,
   type CourseRecord,
   type PaperSummary,
 } from '@/lib/api';
@@ -120,6 +121,7 @@ function LoadingSkeleton({ examId, examName }: { examId: string; examName: strin
 
 export default function CoursePage() {
   const { examId, courseId } = useParams();
+  const [searchParams] = useSearchParams();
   const examUuid = examId ? getExamUuidFromSlug(examId) : null;
   const examName = examId ? getExamNameFromSlug(examId) : null;
   const [papers, setPapers] = useState<PaperSummary[]>([]);
@@ -128,6 +130,17 @@ export default function CoursePage() {
   const [loadFailed, setLoadFailed] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [yearFilter, setYearFilter] = useState<number | null>(null);
+  const courseUuids = useMemo(() => {
+    if (!courseId) return [];
+
+    const aliases = searchParams
+      .get('aliases')
+      ?.split(',')
+      .map((value) => value.trim())
+      .filter(Boolean) ?? [];
+
+    return Array.from(new Set([courseId, ...aliases]));
+  }, [courseId, searchParams]);
 
   useEffect(() => {
     logger.info('CoursePage mounted', { examId, courseId, examUuid });
@@ -149,7 +162,9 @@ export default function CoursePage() {
 
     Promise.all([
       getCourseByUuid(examUuid, courseId),
-      getPapersByExamAndCourse(examUuid, courseId),
+      courseUuids.length > 1
+        ? getPapersByExamAndCourseUuids(examUuid, courseUuids)
+        : getPapersByExamAndCourse(examUuid, courseId),
     ])
       .then(([courseData, paperData]) => {
         if (active) {
@@ -170,7 +185,7 @@ export default function CoursePage() {
       });
 
     return () => { active = false; };
-  }, [examUuid, courseId]);
+  }, [courseUuids, examUuid, courseId]);
 
   const filteredPapers = useMemo(() => {
     let result = papers;
@@ -298,6 +313,7 @@ export default function CoursePage() {
             <h1 className="text-3xl font-bold tracking-tight mt-1">{displayCourseName}</h1>
             <p className="text-muted-foreground mt-1">
               {papers.length} {papers.length === 1 ? 'paper' : 'papers'} available
+              {courseUuids.length > 1 && ' across merged course variants'}
             </p>
           </div>
 

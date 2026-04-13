@@ -66,9 +66,99 @@ describe('Praxis API integration', () => {
     });
     expect(json[1]).toMatchObject({
       uuid: 'paper-2024',
+      courseUuid: 'course-1',
       year: 2024,
       questionCount: 1,
       calculatedTotalMarks: 4,
+    });
+  });
+
+  test('lists merged papers when course aliases are provided', async () => {
+    await database.sql`
+      INSERT INTO courses (source_uuid, course_name, course_code, program_id, label, canonical_name)
+      VALUES ('course-2', 'Computational Thinking (New)', 'CT', 1, 'Foundation', 'Computational Thinking')
+    `;
+
+    await database.sql`
+      INSERT INTO paper_variants (
+        id,
+        source_uuid,
+        exam_uuid,
+        course_uuid,
+        group_id,
+        total_score,
+        duration,
+        paper_name,
+        paper_description,
+        year,
+        is_new,
+        source_path
+      )
+      VALUES (
+        'variant-2023',
+        'paper-2023',
+        'exam-1',
+        'course-2',
+        1,
+        '2',
+        45,
+        'Computational Thinking Quiz 1 2023',
+        'Alias fixture paper',
+        2023,
+        0,
+        'fixtures/paper-2023.json'
+      )
+    `;
+
+    await database.sql`
+      INSERT INTO questions (
+        id,
+        source_uuid,
+        paper_variant_id,
+        question_number,
+        question_type,
+        total_mark,
+        total_mark_value,
+        hash,
+        question_text_1,
+        parent_question_uuid,
+        is_markdown,
+        have_answers,
+        question_num_long
+      )
+      VALUES (
+        'variant-2023:q-alias',
+        'q-alias',
+        'variant-2023',
+        1,
+        'MCQ',
+        '2',
+        2,
+        'hash-alias',
+        'Alias question',
+        NULL,
+        0,
+        1,
+        1
+      )
+    `;
+
+    const { response, json } = await getJson(
+      '/api/exams/exam-1/courses/course-1/papers?courseUuids=course-1,course-2',
+    );
+
+    expect(response.status).toBe(200);
+    expect(json).toHaveLength(3);
+    expect(json.map((paper: { uuid: string }) => paper.uuid)).toEqual([
+      'paper-2025',
+      'paper-2024',
+      'paper-2023',
+    ]);
+    expect(json[2]).toMatchObject({
+      uuid: 'paper-2023',
+      courseUuid: 'course-2',
+      questionCount: 1,
+      calculatedTotalMarks: 2,
     });
   });
 

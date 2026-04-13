@@ -27,18 +27,16 @@ export async function createIsolatedTestDatabase(): Promise<IsolatedTestDatabase
   const schemaName = `test_${randomUUID().replaceAll('-', '_')}`;
   const adminSql = createDbClient(DEFAULT_TEST_DATABASE_URL, {
     max: 1,
-    idle_timeout: 5,
-    connect_timeout: 5,
-    onnotice: () => undefined,
+    idleTimeout: 5,
+    connectionTimeout: 5,
   });
 
   await adminSql.unsafe(`CREATE SCHEMA "${schemaName}"`);
 
   const sql = createDbClient(getSchemaDatabaseUrl(schemaName), {
     max: 1,
-    idle_timeout: 5,
-    connect_timeout: 5,
-    onnotice: () => undefined,
+    idleTimeout: 5,
+    connectionTimeout: 5,
   });
 
   await ensureSchema(sql);
@@ -48,9 +46,9 @@ export async function createIsolatedTestDatabase(): Promise<IsolatedTestDatabase
     sql,
     schemaName,
     async dispose() {
-      await sql.end({ timeout: 1 });
+      await sql.close({ timeout: 1 });
       await adminSql.unsafe(`DROP SCHEMA IF EXISTS "${schemaName}" CASCADE`);
-      await adminSql.end({ timeout: 1 });
+      await adminSql.close({ timeout: 1 });
     },
   };
 }

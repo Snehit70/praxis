@@ -28,6 +28,7 @@ export interface CourseRecord {
 export interface PaperSummary {
   _id: string;
   uuid: string;
+  courseUuid: string;
   paperName: string;
   paperDescription: string;
   year: number;
@@ -81,8 +82,18 @@ export function getCourseByUuid(examUuid: string, courseUuid: string) {
 }
 
 export function getPapersByExamAndCourse(examUuid: string, courseUuid: string) {
+  return getPapersByExamAndCourseUuids(examUuid, [courseUuid]);
+}
+
+export function getPapersByExamAndCourseUuids(examUuid: string, courseUuids: string[]) {
+  const params = new URLSearchParams();
+  if (courseUuids.length > 0) {
+    params.set('courseUuids', courseUuids.join(','));
+  }
+
+  const suffix = params.toString() ? `?${params.toString()}` : '';
   return fetchJson<PaperSummary[]>(
-    `/api/exams/${encodeURIComponent(examUuid)}/courses/${encodeURIComponent(courseUuid)}/papers`,
+    `/api/exams/${encodeURIComponent(examUuid)}/courses/${encodeURIComponent(courseUuids[0] ?? '')}/papers${suffix}`,
   );
 }
 

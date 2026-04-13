@@ -17,6 +17,16 @@ function notFound(message: string) {
 }
 
 export function createApiFetchHandler(sql: DbClient) {
+  function getCourseUuids(searchParams: URLSearchParams, fallbackCourseUuid: string) {
+    const requested = searchParams
+      .get('courseUuids')
+      ?.split(',')
+      .map((value) => decodeURIComponent(value.trim()))
+      .filter(Boolean) ?? [];
+
+    return Array.from(new Set(requested.length > 0 ? requested : [fallbackCourseUuid]));
+  }
+
   async function resolvePaperVariantId(
     paperUuid: string,
     courseUuid: string | null,
@@ -136,10 +146,12 @@ export function createApiFetchHandler(sql: DbClient) {
       if (papersMatch) {
         const examUuid = decodeURIComponent(papersMatch[1] ?? '');
         const courseUuid = decodeURIComponent(papersMatch[2] ?? '');
+        const courseUuids = getCourseUuids(url.searchParams, courseUuid);
         const rows = await sql<
           Array<{
             _id: string;
             uuid: string;
+            courseUuid: string;
             paperName: string;
             paperDescription: string;
             year: number;
@@ -155,6 +167,7 @@ export function createApiFetchHandler(sql: DbClient) {
           SELECT
             p.id AS "_id",
             p.source_uuid AS "uuid",
+            p.course_uuid AS "courseUuid",
             p.paper_name AS "paperName",
             p.paper_description AS "paperDescription",
             p.year,
@@ -167,7 +180,7 @@ export function createApiFetchHandler(sql: DbClient) {
             COALESCE(ROUND(SUM(CASE WHEN q.question_type <> 'COMPREHENSION' THEN q.total_mark_value ELSE 0 END)), 0)::int AS "calculatedTotalMarks"
           FROM paper_variants p
           LEFT JOIN questions q ON q.paper_variant_id = p.id
-          WHERE p.exam_uuid = ${examUuid} AND p.course_uuid = ${courseUuid}
+          WHERE p.exam_uuid = ${examUuid} AND p.course_uuid IN ${sql(courseUuids)}
           GROUP BY p.id
           ORDER BY p.year DESC, p.created_at DESC NULLS LAST
         `;

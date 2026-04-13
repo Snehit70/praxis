@@ -412,7 +412,7 @@ export interface DeduplicatedCourse {
 export function deduplicateCourses<T extends { uuid: string; courseName: string; paperCount: number }>(
   courses: T[]
 ): DeduplicatedCourse[] {
-  const mergedMap = new Map<string, DeduplicatedCourse>();
+  const mergedMap = new Map<string, DeduplicatedCourse & { primaryPaperCount: number }>();
 
   for (const course of courses) {
     const displayName = getDisplayCourseName(course.courseName);
@@ -425,21 +425,26 @@ export function deduplicateCourses<T extends { uuid: string; courseName: string;
       if (!existing.originalNames.includes(course.courseName)) {
         existing.originalNames.push(course.courseName);
       }
+      if (course.paperCount > existing.primaryPaperCount) {
+        existing.primaryUuid = course.uuid;
+        existing.primaryPaperCount = course.paperCount;
+      }
     } else {
       mergedMap.set(displayName, {
         displayName,
         uuids: [course.uuid],
         primaryUuid: course.uuid,
         paperCount: course.paperCount,
+        primaryPaperCount: course.paperCount,
         level,
         originalNames: [course.courseName],
       });
     }
   }
 
-  return Array.from(mergedMap.values()).sort((a, b) =>
-    a.displayName.localeCompare(b.displayName)
-  );
+  return Array.from(mergedMap.values())
+    .map(({ primaryPaperCount: _primaryPaperCount, ...course }) => course)
+    .sort((a, b) => a.displayName.localeCompare(b.displayName));
 }
 
 /**
