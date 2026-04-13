@@ -53,6 +53,38 @@ describe('Praxis API integration', () => {
     });
   });
 
+  test('returns global search results for matching courses and papers', async () => {
+    const { response, json } = await getJson('/api/search?q=computational');
+
+    expect(response.status).toBe(200);
+    expect(json.courses).toEqual([
+      {
+        uuid: 'course-1',
+        courseName: 'Computational Thinking',
+        courseCode: 'CT',
+        examUuid: 'exam-1',
+        examName: 'Quiz 1',
+        examSlug: 'quiz1',
+        paperCount: 2,
+      },
+    ]);
+    expect(json.papers).toHaveLength(2);
+    expect(json.papers[0]).toMatchObject({
+      uuid: 'paper-2025',
+      courseUuid: 'course-1',
+      examUuid: 'exam-1',
+      questionCount: 2,
+      calculatedTotalMarks: 3,
+    });
+  });
+
+  test('returns empty search results when query is blank', async () => {
+    const { response, json } = await getJson('/api/search?q=');
+
+    expect(response.status).toBe(200);
+    expect(json).toEqual({ courses: [], papers: [] });
+  });
+
   test('lists papers ordered by most recent year and computes marks', async () => {
     const { response, json } = await getJson('/api/exams/exam-1/courses/course-1/papers');
 

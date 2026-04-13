@@ -6,7 +6,7 @@
 
 ## Summary
 
-The application uses a **modern React stack** with some architectural inconsistencies, primarily the **dual database setup** (Convex schema exists but DynamoDB is used) and **missing application layers** (auth, caching, error handling).
+The application uses a **modern React stack** with Bun + Postgres as the active backend. The main architectural issue is now **stale documentation and legacy Convex/DynamoDB files** that no longer represent the runtime path, plus missing application layers like caching and richer error handling.
 
 ---
 
@@ -20,7 +20,7 @@ The application uses a **modern React stack** with some architectural inconsiste
 | Styling | Tailwind CSS | v4 | Good |
 | Routing | React Router | v7 | Good |
 | UI Components | Radix + shadcn | Latest | Good |
-| Backend | Convex + DynamoDB | Mixed | **Needs cleanup** |
+| Backend | Bun API + Postgres | Good | Active runtime |
 | CDN | Cloudflare R2 | - | Good |
 | Icons | Lucide React | Latest | Good |
 
@@ -43,20 +43,19 @@ The core choices are solid for this use case. Main issues are implementation, no
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                    Convex (API Layer)                        │
+│                     Bun API (`server/`)                      │
 │  ┌──────────────────┐    ┌──────────────────────────────┐   │
-│  │ schema.ts        │    │ dynamo.ts                    │   │
-│  │ (UNUSED)         │    │ getPapers(), getQuestions()  │   │
+│  │ app.ts           │    │ import-db.ts                │   │
+│  │ route handlers   │    │ JSON -> Postgres pipeline   │   │
 │  └──────────────────┘    └──────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                    AWS DynamoDB                              │
+│                      PostgreSQL                               │
 │  ┌────────────────────┐    ┌─────────────────────────────┐  │
-│  │ quiz-papers        │    │ quiz-questions              │  │
-│  │ PK: paperId        │    │ PK: paperId                 │  │
-│  │                    │    │ SK: questionId              │  │
+│  │ paper_variants     │    │ questions / options         │  │
+│  │ exams / courses    │    │ ordered quiz content        │  │
 │  └────────────────────┘    └─────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────┘
                               │
@@ -74,34 +73,19 @@ The core choices are solid for this use case. Main issues are implementation, no
 
 ## 3. Key Architectural Issues
 
-### 3.1 Dual Database Confusion
+### 3.1 Runtime vs Legacy File Confusion
 
-**Problem**: Convex schema exists in `convex/schema.ts` but is completely unused.
-
-```typescript
-// convex/schema.ts - EXISTS BUT UNUSED
-export default defineSchema({
-  papers: defineTable({ ... }),
-  questions: defineTable({ ... }),
-});
-```
-
-All actual data lives in DynamoDB, accessed via `convex/dynamo.ts`.
+**Problem**: The active path is Bun + Postgres, but several docs still describe Convex/DynamoDB as the main backend.
 
 **Impact**:
-- Confuses developers about data source
-- Convex provider still initialized (unnecessary overhead)
-- Schema doesn't match actual DynamoDB structure
+- Confuses developers about the source of truth
+- Slows down onboarding and future feature work
+- Encourages edits in legacy folders instead of `server/`
 
-**Options**:
-
-| Option | Pros | Cons |
-|--------|------|------|
-| **A: Migrate to Convex fully** | Simpler, real-time, free tier | Migration effort, potential limits |
-| **B: Remove Convex, keep DynamoDB** | Full control, AWS ecosystem | Lose Convex benefits, more code |
-| **C: Keep both (current)** | No effort | Confusing, wasteful |
-
-**Recommendation**: Option A (Convex) for this project size, or Option B if scaling beyond free tier.
+**Recommendation**:
+- Keep `server/` + Postgres as the documented source of truth
+- Mark `convex/` and old DynamoDB scripts as archival
+- Update docs and guides before deeper backend work
 
 ### 3.2 No Caching Layer
 
@@ -140,9 +124,9 @@ Auth UI exists but no backend:
 
 ## 4. Data Model Analysis
 
-### Current DynamoDB Schema
+### Current Postgres Schema
 
-**quiz-papers Table**
+**paper_variants Table**
 ```
 PK: paperId (UUID)
 Attributes:
@@ -153,7 +137,7 @@ Attributes:
   - year: number
 ```
 
-**quiz-questions Table**
+**questions Table**
 ```
 PK: paperId (UUID)
 SK: questionId (UUID)

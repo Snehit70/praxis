@@ -6,7 +6,7 @@
 
 ## Executive Summary
 
-Praxis is an IIT Madras BS program exam practice platform built with React 19, Vite 7, and DynamoDB backend. **Data import is now complete** with 85,824 questions across 115 courses.
+Praxis is an IIT Madras BS program exam practice platform built with React 19, Vite 7, a Bun API, and Postgres. **Data import is now complete** with 85,824 questions across 115 courses.
 
 ### Key Findings
 
@@ -15,7 +15,7 @@ Praxis is an IIT Madras BS program exam practice platform built with React 19, V
 | Data Import | ✅ Complete | Resolved |
 | Core Quiz Functionality | Working | Good |
 | UI/UX Polish | Needs work | Medium |
-| Architecture | Dual-DB confusion | Medium |
+| Architecture | Legacy docs/scripts cleanup | Medium |
 | Authentication | Not implemented | Low (MVP) |
 
 ### Quick Stats
@@ -105,18 +105,16 @@ Each paper UUID represents an exam event. The same paper appears in multiple cou
 
 The project has **two database configurations**:
 
-1. **Convex** - Schema defined in `convex/schema.ts`, provider in `main.tsx`
-2. **DynamoDB** - Actual data storage, queries via `convex/dynamo.ts`
+1. **Active stack** - Bun API in `server/app.ts`, Postgres schema in `server/schema.ts`
+2. **Legacy files** - `convex/` and DynamoDB scripts remain as archival references
 
-This creates confusion about the source of truth. Convex is set up but unused for storage.
+This creates confusion about the source of truth unless the runtime path is documented clearly.
 
 ### Recommendation
 
-Either:
-- **Migrate fully to Convex** (simpler, real-time, free tier sufficient)
-- **Remove Convex, keep DynamoDB** (more control, AWS ecosystem)
+Keep Bun + Postgres as the source of truth and clearly mark legacy Convex/Dynamo files as archival.
 
-**See**: [docs/ARCHITECTURE-REVIEW.md](docs/ARCHITECTURE-REVIEW.md) for tech evaluation
+**See**: [docs/ARCHITECTURE-REVIEW.md](docs/ARCHITECTURE-REVIEW.md) for the updated architecture notes
 
 ---
 
@@ -152,7 +150,7 @@ Either:
 7. [ ] Fix mobile navigation menu
 
 ### P2 - Medium Priority
-8. [ ] Resolve Convex vs DynamoDB architecture
+8. [ ] Add client-side caching for API responses
 9. [ ] Add quiz timer feature
 10. [ ] Implement progress persistence (localStorage)
 11. [ ] Add exam analytics/stats page
@@ -169,9 +167,9 @@ Either:
 
 | Debt Item | Location | Effort |
 |-----------|----------|--------|
-| Unused Convex schema | `convex/schema.ts` | Low |
+| Legacy Convex/Dynamo docs | `convex/`, `docs/` | Low |
 | Hardcoded exam mappings | `src/lib/examMapping.ts` | Medium |
-| No pagination in queries | `convex/dynamo.ts` | Medium |
+| No pagination in search/list queries | `server/app.ts` | Medium |
 | No caching layer | All queries | Medium |
 | Missing TypeScript strictness | `tsconfig.json` | Low |
 
@@ -180,14 +178,13 @@ Either:
 ## 8. Resource Constraints
 
 Per user requirements:
-- Stay within **AWS Free Tier** (DynamoDB: 25GB, 25 RCU/WCU)
-- Stay within **Convex Free Tier** (if used)
+- Keep local/dev infra lightweight
 - Minimize compute usage
 
 ### Current Usage Estimate
-- DynamoDB: ~50MB (well under 25GB limit)
+- Postgres: local development database
 - R2 storage: ~1.5GB images (already uploaded)
-- Convex: Minimal (only serving as API layer)
+- Bun API: lightweight read-only JSON endpoints for the frontend
 
 ---
 

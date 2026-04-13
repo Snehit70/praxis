@@ -16,13 +16,14 @@ This file provides context and rules for AI agents working on the Quiz project.
 | Frontend | React 19, Vite 7, Tailwind CSS v4 |
 | Routing | React Router DOM v7 |
 | UI Components | Radix UI + shadcn/ui patterns |
-| Backend | Convex |
+| Backend | Bun API + Postgres |
 | Icons | Lucide React |
 
 ## 3. Routing Structure
 
 ```
 /                              → HomePage (landing with all exam types)
+/search                       → SearchPage (global search across courses and papers)
 /exam/:examId                  → ExamPage (shows courses for an exam)
 /exam/:examId/course/:courseId → CoursePage (shows papers for exam+course)  
 /paper/:paperId                → PaperPage (quiz taking interface)
@@ -40,10 +41,11 @@ This file provides context and rules for AI agents working on the Quiz project.
 
 Required in `.env`:
 ```
-VITE_CONVEX_URL=your-convex-deployment-url
+DATABASE_URL=postgres://postgres@127.0.0.1:5432/postgres
+VITE_API_BASE_URL=http://127.0.0.1:8787
 ```
 
-The app validates this at startup - it will crash without it.
+`VITE_API_BASE_URL` is optional if you use the default local API URL.
 
 ## 5. CDN & Images
 
@@ -74,12 +76,13 @@ Total: 26,652 images (9,186 question + 17,466 option images, ~1.5GB)
 - Currently: button.tsx, card.tsx
 - Use `className` prop for overrides, not style
 
-## 7. Convex Integration
+## 7. Backend Integration
 
-- Schema defined in `convex/schema.ts`
-- Queries in `convex/`
-- Client initialized in `src/main.tsx`
-- Always wrap app with `<ConvexProvider>`
+- API routes live in `server/app.ts`
+- Import pipeline lives in `server/import-db.ts`
+- Schema lives in `server/schema.ts`
+- Runtime data source is Postgres, not Convex
+- Legacy `convex/` and DynamoDB files are archival only unless a task explicitly targets them
 
 ## 8. Common Issues to Avoid
 
@@ -101,7 +104,9 @@ Total: 26,652 images (9,186 question + 17,466 option images, ~1.5GB)
 
 Run tests with:
 ```bash
-bun test
+bun run test:unit
+TEST_DATABASE_URL=postgres://postgres@127.0.0.1:5432/postgres bun run test:integration
+bun run test
 ```
 
 ## 11. Development

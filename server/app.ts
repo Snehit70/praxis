@@ -27,6 +27,14 @@ export function createApiFetchHandler(sql: DbClient) {
     return Array.from(new Set(requested.length > 0 ? requested : [fallbackCourseUuid]));
   }
 
+  function getSearchPattern(searchParams: URLSearchParams) {
+    const query = searchParams.get('q')?.trim() ?? '';
+    return {
+      query,
+      pattern: `%${query.replaceAll(/[%_]/g, '\\$&')}%`,
+    };
+  }
+
   async function resolvePaperVariantId(
     paperUuid: string,
     courseUuid: string | null,
@@ -82,6 +90,109 @@ export function createApiFetchHandler(sql: DbClient) {
         `;
 
         return json(stats);
+      }
+
+      if (url.pathname === '/api/search') {
+        const { query, pattern } = getSearchPattern(url.searchParams);
+
+        if (!query) {
+          return json({ courses: [], papers: [] });
+        }
+
+        const courses = await sql<
+          Array<{
+            uuid: string;
+            courseName: string;
+            courseCode: string;
+            examUuid: string;
+            examName: string;
+            examSlug: string;
+            paperCount: number;
+          }>
+        >`
+          SELECT
+            c.source_uuid AS "uuid",
+            c.course_name AS "courseName",
+            c.course_code AS "courseCode",
+            e.source_uuid AS "examUuid",
+            e.exam_name AS "examName",
+            e.exam_slug AS "examSlug",
+            COUNT(*)::int AS "paperCount"
+          FROM paper_variants p
+          JOIN courses c ON c.source_uuid = p.course_uuid
+          JOIN exams e ON e.source_uuid = p.exam_uuid
+          WHERE c.course_name ILIKE ${pattern} ESCAPE '\\'
+             OR c.course_code ILIKE ${pattern} ESCAPE '\\'
+             OR c.canonical_name ILIKE ${pattern} ESCAPE '\\'
+          GROUP BY c.source_uuid, c.course_name, c.course_code, e.source_uuid, e.exam_name, e.exam_slug
+          ORDER BY
+            CASE
+              WHEN LOWER(c.course_code) = LOWER(${query}) THEN 0
+              WHEN LOWER(c.course_name) = LOWER(${query}) THEN 1
+              WHEN LOWER(c.course_name) LIKE LOWER(${`${query}%`}) THEN 2
+              ELSE 3
+            END,
+            COUNT(*) DESC,
+            c.course_name ASC,
+            e.exam_name ASC
+          LIMIT 24
+        `;
+
+        const papers = await sql<
+          Array<{
+            uuid: string;
+            paperName: string;
+            paperDescription: string;
+            year: number;
+            duration: number;
+            totalScore: string;
+            isNew: number;
+            examUuid: string;
+            examName: string;
+            examSlug: string;
+            courseUuid: string;
+            courseName: string;
+            questionCount: number;
+            calculatedTotalMarks: number;
+          }>
+        >`
+          SELECT
+            p.source_uuid AS "uuid",
+            p.paper_name AS "paperName",
+            p.paper_description AS "paperDescription",
+            p.year,
+            p.duration,
+            p.total_score AS "totalScore",
+            p.is_new AS "isNew",
+            e.source_uuid AS "examUuid",
+            e.exam_name AS "examName",
+            e.exam_slug AS "examSlug",
+            c.source_uuid AS "courseUuid",
+            c.course_name AS "courseName",
+            COUNT(*) FILTER (WHERE q.question_type <> 'COMPREHENSION')::int AS "questionCount",
+            COALESCE(ROUND(SUM(CASE WHEN q.question_type <> 'COMPREHENSION' THEN q.total_mark_value ELSE 0 END)), 0)::int AS "calculatedTotalMarks"
+          FROM paper_variants p
+          JOIN exams e ON e.source_uuid = p.exam_uuid
+          JOIN courses c ON c.source_uuid = p.course_uuid
+          LEFT JOIN questions q ON q.paper_variant_id = p.id
+          WHERE p.paper_name ILIKE ${pattern} ESCAPE '\\'
+             OR p.paper_description ILIKE ${pattern} ESCAPE '\\'
+             OR c.course_name ILIKE ${pattern} ESCAPE '\\'
+             OR c.course_code ILIKE ${pattern} ESCAPE '\\'
+          GROUP BY p.id, e.source_uuid, e.exam_name, e.exam_slug, c.source_uuid, c.course_name
+          ORDER BY
+            CASE
+              WHEN LOWER(p.paper_name) = LOWER(${query}) THEN 0
+              WHEN LOWER(p.paper_name) LIKE LOWER(${`${query}%`}) THEN 1
+              WHEN LOWER(c.course_name) = LOWER(${query}) THEN 2
+              ELSE 3
+            END,
+            p.year DESC,
+            p.created_at DESC NULLS LAST
+          LIMIT 24
+        `;
+
+        return json({ courses, papers });
       }
 
       const examCoursesMatch = url.pathname.match(/^\/api\/exams\/([^/]+)\/courses$/);
