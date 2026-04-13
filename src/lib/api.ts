@@ -25,6 +25,38 @@ export interface CourseRecord {
   label?: string | null;
 }
 
+export interface SearchCourseResult {
+  uuid: string;
+  courseName: string;
+  courseCode: string;
+  examUuid: string;
+  examName: string;
+  examSlug: string;
+  paperCount: number;
+}
+
+export interface SearchPaperResult {
+  uuid: string;
+  paperName: string;
+  paperDescription: string;
+  year: number;
+  duration: number;
+  totalScore: string;
+  isNew: number;
+  examUuid: string;
+  examName: string;
+  examSlug: string;
+  courseUuid: string;
+  courseName: string;
+  questionCount: number;
+  calculatedTotalMarks: number;
+}
+
+export interface SearchResults {
+  courses: SearchCourseResult[];
+  papers: SearchPaperResult[];
+}
+
 export interface PaperSummary {
   _id: string;
   uuid: string;
@@ -69,6 +101,10 @@ async function fetchJson<T>(path: string): Promise<T> {
 
 export function getDatasetStats() {
   return fetchJson<DatasetStats>('/api/stats');
+}
+
+export function getSearchResults(query: string) {
+  return fetchJson<SearchResults>(`/api/search?q=${encodeURIComponent(query)}`);
 }
 
 export function getExamCourses(examUuid: string) {

@@ -1,6 +1,6 @@
 import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, CheckCircle2, XCircle, RotateCcw, Trophy } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, XCircle, RotateCcw, Trophy, Timer, Play, Pause } from 'lucide-react';
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { formatPaperName } from '@/lib/paperUtils';
 import { getExamSlugFromUuid, getExamUuidFromSlug } from '@/lib/examMapping';
@@ -20,6 +20,61 @@ interface QuestionWithChildren extends QuizQuestion {
 }
 
 const OPTION_LABELS = ['A', 'B', 'C', 'D', 'E', 'F'];
+const PAPER_SESSION_STORAGE_PREFIX = 'praxis.paper-session';
+
+interface SavedPaperSession {
+  selectedAnswers: Record<string, string | string[]>;
+  showResults: boolean;
+  timerRunning: boolean;
+  remainingSeconds: number | null;
+  timerEndsAt: number | null;
+}
+
+function getPaperSessionKey(paperId: string, courseId?: string | null, examId?: string | null) {
+  return [PAPER_SESSION_STORAGE_PREFIX, paperId, courseId ?? 'none', examId ?? 'none'].join(':');
+}
+
+function readPaperSession(storageKey: string, durationMinutes: number): SavedPaperSession | null {
+  if (typeof window === 'undefined') return null;
+
+  const saved = window.localStorage.getItem(storageKey);
+  if (!saved) return null;
+
+  try {
+    const parsed = JSON.parse(saved) as Partial<SavedPaperSession>;
+    const durationSeconds = durationMinutes > 0 ? durationMinutes * 60 : null;
+    const timerEndsAt = typeof parsed.timerEndsAt === 'number' ? parsed.timerEndsAt : null;
+    const running = parsed.timerRunning === true && timerEndsAt !== null;
+    const remainingSeconds = running
+      ? Math.max(0, Math.ceil((timerEndsAt - Date.now()) / 1000))
+      : typeof parsed.remainingSeconds === 'number'
+      ? Math.max(0, parsed.remainingSeconds)
+      : durationSeconds;
+    const expiredWhileAway = running && remainingSeconds === 0;
+
+    return {
+      selectedAnswers: parsed.selectedAnswers ?? {},
+      showResults: parsed.showResults === true || expiredWhileAway,
+      timerRunning: running && remainingSeconds !== null && remainingSeconds > 0,
+      remainingSeconds,
+      timerEndsAt: running && remainingSeconds !== null && remainingSeconds > 0 ? timerEndsAt : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function clearPaperSession(storageKey: string) {
+  if (typeof window === 'undefined') return;
+  window.localStorage.removeItem(storageKey);
+}
+
+function formatRemainingTime(totalSeconds: number | null) {
+  if (totalSeconds === null) return '--:--';
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
 
 function LoadingSkeleton() {
   return (
@@ -93,6 +148,69 @@ function StickyProgress({
         <span className="text-xs font-medium text-primary whitespace-nowrap">
           {Math.round(percentage)}%
         </span>
+      </div>
+    </div>
+  );
+}
+
+function TimerPanel({
+  durationMinutes,
+  remainingSeconds,
+  running,
+  onStart,
+  onPause,
+  onReset,
+  expired,
+}: {
+  durationMinutes: number;
+  remainingSeconds: number | null;
+  running: boolean;
+  onStart: () => void;
+  onPause: () => void;
+  onReset: () => void;
+  expired: boolean;
+}) {
+  const totalSeconds = durationMinutes * 60;
+  const completion =
+    totalSeconds > 0 && remainingSeconds !== null
+      ? Math.min(100, Math.max(0, ((totalSeconds - remainingSeconds) / totalSeconds) * 100))
+      : 0;
+
+  return (
+    <div className={`rounded-xl border p-4 ${expired ? 'border-destructive/40 bg-destructive/10' : 'border-border bg-card/70'}`}>
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-2 text-sm font-medium">
+            <Timer className={`h-4 w-4 ${expired ? 'text-destructive' : 'text-primary'}`} />
+            Timed attempt
+          </div>
+          <div className="flex items-end gap-3">
+            <span className="text-3xl font-bold tabular-nums">{formatRemainingTime(remainingSeconds)}</span>
+            <span className="pb-1 text-sm text-muted-foreground">of {durationMinutes} min</span>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            {expired
+              ? 'Time is up. Your answers were submitted automatically.'
+              : running
+              ? 'Timer is running and will continue even if you refresh.'
+              : 'Start when you want to simulate the real exam clock.'}
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <Button onClick={running ? onPause : onStart} variant={running ? 'outline' : 'default'}>
+            {running ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+            {running ? 'Pause' : expired ? 'Restart' : 'Start'}
+          </Button>
+          <Button onClick={onReset} variant="outline">
+            <RotateCcw className="h-4 w-4" />
+            Reset
+          </Button>
+        </div>
+      </div>
+
+      <div className="mt-4 h-2 overflow-hidden rounded-full bg-muted">
+        <div className={`h-full transition-all duration-500 ${expired ? 'bg-destructive' : 'bg-primary'}`} style={{ width: `${completion}%` }} />
       </div>
     </div>
   );
@@ -516,6 +634,10 @@ export default function PaperPage() {
   const courseId = searchParams.get('course');
   const examId = searchParams.get('exam');
   const examUuidFromSearch = examId ? getExamUuidFromSlug(examId) : null;
+  const storageKey = useMemo(
+    () => (paperId ? getPaperSessionKey(paperId, courseId, examId) : null),
+    [courseId, examId, paperId],
+  );
   const [selectedAnswers, setSelectedAnswers] = useState<Record<string, string | string[]>>({});
   const [showResults, setShowResults] = useState(false);
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
@@ -523,6 +645,10 @@ export default function PaperPage() {
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
   const [stickyVisible, setStickyVisible] = useState(false);
+  const [timerRunning, setTimerRunning] = useState(false);
+  const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
+  const [timerEndsAt, setTimerEndsAt] = useState<number | null>(null);
+  const [timeExpired, setTimeExpired] = useState(false);
   const headerRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -546,8 +672,18 @@ export default function PaperPage() {
     ])
       .then(([paperData, questionData]) => {
         if (active) {
+          const savedSession = storageKey
+            ? readPaperSession(storageKey, paperData.duration)
+            : null;
+
           setPaper(paperData);
           setQuestions(questionData);
+          setSelectedAnswers(savedSession?.selectedAnswers ?? {});
+          setShowResults(savedSession?.showResults ?? false);
+          setTimerRunning(savedSession?.timerRunning ?? false);
+          setRemainingSeconds(savedSession?.remainingSeconds ?? paperData.duration * 60);
+          setTimerEndsAt(savedSession?.timerEndsAt ?? null);
+          setTimeExpired((savedSession?.remainingSeconds ?? paperData.duration * 60) === 0);
         }
       })
       .catch((error) => {
@@ -556,6 +692,10 @@ export default function PaperPage() {
           setLoadFailed(true);
           setPaper(null);
           setQuestions([]);
+          setTimerRunning(false);
+          setRemainingSeconds(null);
+          setTimerEndsAt(null);
+          setTimeExpired(false);
         }
       })
       .finally(() => {
@@ -565,7 +705,7 @@ export default function PaperPage() {
     return () => {
       active = false;
     };
-  }, [paperId, courseId, examUuidFromSearch]);
+  }, [paperId, courseId, examUuidFromSearch, storageKey]);
 
   // Sticky progress bar on scroll
   useEffect(() => {
@@ -581,6 +721,43 @@ export default function PaperPage() {
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
   }, [showResults]);
+
+  useEffect(() => {
+    if (!paper || !storageKey) return;
+
+    const payload: SavedPaperSession = {
+      selectedAnswers,
+      showResults,
+      timerRunning,
+      remainingSeconds,
+      timerEndsAt,
+    };
+
+    window.localStorage.setItem(storageKey, JSON.stringify(payload));
+  }, [paper, remainingSeconds, selectedAnswers, showResults, storageKey, timerEndsAt, timerRunning]);
+
+  useEffect(() => {
+    if (!paper || !timerRunning || showResults || timerEndsAt === null) {
+      return;
+    }
+
+    const syncRemaining = () => {
+      const nextRemaining = Math.max(0, Math.ceil((timerEndsAt - Date.now()) / 1000));
+      setRemainingSeconds(nextRemaining);
+
+      if (nextRemaining === 0) {
+        setTimerRunning(false);
+        setTimerEndsAt(null);
+        setTimeExpired(true);
+        setShowResults(true);
+      }
+    };
+
+    syncRemaining();
+    const interval = window.setInterval(syncRemaining, 1000);
+
+    return () => window.clearInterval(interval);
+  }, [paper, showResults, timerEndsAt, timerRunning]);
 
   const examSlug = useMemo(() => {
     if (!paper?.examUuid) return null;
@@ -697,9 +874,46 @@ export default function PaperPage() {
     });
   };
 
+  const handleTimerStart = () => {
+    if (!paper) return;
+
+    const nextRemaining = remainingSeconds ?? paper.duration * 60;
+    if (nextRemaining <= 0) {
+      setRemainingSeconds(paper.duration * 60);
+      setTimeExpired(false);
+      setShowResults(false);
+      setSelectedAnswers({});
+      setTimerEndsAt(Date.now() + paper.duration * 60 * 1000);
+      setTimerRunning(true);
+      return;
+    }
+
+    setTimeExpired(false);
+    setTimerEndsAt(Date.now() + nextRemaining * 1000);
+    setTimerRunning(true);
+  };
+
+  const handleTimerPause = () => {
+    setTimerRunning(false);
+    setTimerEndsAt(null);
+  };
+
+  const handleTimerReset = () => {
+    if (!paper) return;
+    setTimerRunning(false);
+    setTimerEndsAt(null);
+    setRemainingSeconds(paper.duration * 60);
+    setTimeExpired(false);
+  };
+
   const handleTryAgain = () => {
     setSelectedAnswers({});
     setShowResults(false);
+    setTimerRunning(false);
+    setTimerEndsAt(null);
+    setRemainingSeconds(paper ? paper.duration * 60 : null);
+    setTimeExpired(false);
+    if (storageKey) clearPaperSession(storageKey);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -752,6 +966,7 @@ export default function PaperPage() {
   }
 
   const allAnswered = stats.answered === stats.total;
+  const hasTimer = paper.duration > 0;
 
   return (
     <>
@@ -798,6 +1013,18 @@ export default function PaperPage() {
               <ProgressBar answered={stats.answered} total={stats.total} />
             </div>
           )}
+
+          {hasTimer && (
+            <TimerPanel
+              durationMinutes={paper.duration}
+              remainingSeconds={remainingSeconds}
+              running={timerRunning}
+              onStart={handleTimerStart}
+              onPause={handleTimerPause}
+              onReset={handleTimerReset}
+              expired={timeExpired}
+            />
+          )}
         </header>
 
         {/* Results Summary */}
@@ -825,7 +1052,11 @@ export default function PaperPage() {
               <div className="absolute inset-0 -m-3 rounded-2xl bg-background/60 backdrop-blur-sm pointer-events-none" />
               <Button
                 size="lg"
-                onClick={() => setShowResults(true)}
+                onClick={() => {
+                  setShowResults(true);
+                  setTimerRunning(false);
+                  setTimerEndsAt(null);
+                }}
                 disabled={stats.answered === 0}
                 className={`relative shadow-lg gap-2 transition-all ${
                   allAnswered
