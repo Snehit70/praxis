@@ -31,5 +31,7 @@
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noPropertyAccessFromIndexSignature": false
-  }
+  },
+  "include": ["src", "server", "vite.config.ts"],
+  "exclude": ["src/**/*.test.ts", "convex", "scripts", "dist", "node_modules"]
 }

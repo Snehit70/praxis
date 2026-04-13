@@ -1,6 +1,5 @@
 import { Outlet, Link } from "react-router-dom";
-import { BookOpen, User, Menu } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { BookOpen } from "lucide-react";
 import { logger } from "@/lib/logger";
 import { useEffect } from "react";
 
@@ -12,61 +11,27 @@ export default function RootLayout() {
     };
   }, []);
 
-  const handleNavClick = (destination: string) => {
-    logger.info('Navigation clicked', { destination });
-  };
-
-  const handleSignInClick = () => {
-    logger.info('Sign In button clicked');
-  };
-
-  const handleGetStartedClick = () => {
-    logger.info('Get Started button clicked');
-  };
-
-  const handleMenuClick = () => {
-    logger.info('Mobile menu button clicked');
-  };
-
   return (
-    <div className="min-h-screen bg-background text-foreground font-sans flex flex-col">
-      <header className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">
-        <div className="container mx-auto px-4 md:px-8 h-16 flex items-center justify-between">
-          <Link to="/" className="flex items-center gap-2 font-bold text-xl tracking-tight hover:opacity-80 transition-opacity">
-            <BookOpen className="h-6 w-6 text-primary" />
-            <span>Praxis</span>
+    <div className="min-h-screen bg-background text-foreground flex flex-col">
+      <header className="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur-sm">
+        <div className="container mx-auto flex h-14 items-center px-4 md:px-8">
+          <Link to="/" className="flex items-center gap-2.5 transition-opacity hover:opacity-80">
+            <BookOpen className="h-5 w-5 text-primary" />
+            <span className="font-semibold text-foreground">Praxis</span>
           </Link>
-          
-          <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-muted-foreground">
-            <Link to="/" className="hover:text-foreground transition-colors" onClick={() => handleNavClick('home')}>Home</Link>
-            <Link to="/exam/quiz1" className="hover:text-foreground transition-colors" onClick={() => handleNavClick('exams')}>Exams</Link>
-            <Link to="/exam/quiz1" className="hover:text-foreground transition-colors" onClick={() => handleNavClick('practice')}>Practice</Link>
-          </nav>
-
-          <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" className="md:hidden" onClick={handleMenuClick}>
-              <Menu className="h-5 w-5" />
-            </Button>
-            <Button variant="outline" size="sm" className="hidden md:flex gap-2" onClick={handleSignInClick}>
-              <User className="h-4 w-4" />
-              <span>Sign In</span>
-            </Button>
-            <Button size="sm" onClick={handleGetStartedClick}>Get Started</Button>
-          </div>
         </div>
       </header>
 
       <main className="flex-1">
-        <div className="container mx-auto px-4 md:px-8 py-8">
+        <div className="container mx-auto px-4 py-8 md:px-8 md:py-10">
           <Outlet />
         </div>
       </main>
 
-      <footer className="border-t py-6 md:py-0">
-        <div className="container mx-auto px-4 md:px-8 flex flex-col md:flex-row items-center justify-between gap-4 md:h-24">
-          <p className="text-balance text-center text-sm leading-loose text-muted-foreground md:text-left">
-            Built by <a href="#" className="font-medium underline underline-offset-4">Praxis Team</a>. 
-            The source code is available on <a href="#" className="font-medium underline underline-offset-4">GitHub</a>.
+      <footer className="border-t border-border py-5">
+        <div className="container mx-auto px-4 md:px-8">
+          <p className="text-sm text-muted-foreground">
+            Praxis — IITM BS exam paper archive
           </p>
         </div>
       </footer>

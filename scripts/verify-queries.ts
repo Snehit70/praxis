@@ -62,10 +62,14 @@ const papers: string[] = [];
 for (const exam of ["Quiz 1", "Quiz 2", "End Term Quiz", "OPPE"]) {
   const examPath = join(dataDir, exam);
   try {
-    const courses = readdirSync(examPath, { withFileTypes: true }).filter(d => d.isDirectory());
+    const courses = readdirSync(examPath, { withFileTypes: true }).filter(
+      (directory: { isDirectory: () => boolean }) => directory.isDirectory(),
+    );
     for (const course of courses.slice(0, 2)) {
-      const files = readdirSync(join(examPath, course.name)).filter(f => f.endsWith(".json") && f !== "index.json");
-      papers.push(...files.slice(0, 2).map(f => f.replace(".json", "")));
+      const files = readdirSync(join(examPath, course.name)).filter(
+        (file: string) => file.endsWith(".json") && file !== "index.json",
+      );
+      papers.push(...files.slice(0, 2).map((file: string) => file.replace(".json", "")));
     }
   } catch {}
 }

@@ -1,81 +1,586 @@
-import { useParams, Link } from 'react-router-dom';
-import { useAction } from 'convex/react';
-import { api } from '../../convex/_generated/api';
+import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { ArrowLeft, FileText, CheckCircle2, Circle, HelpCircle, Award } from 'lucide-react';
-import { useState, useMemo, useEffect } from 'react';
+import { ArrowLeft, CheckCircle2, XCircle, RotateCcw, Trophy } from 'lucide-react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { formatPaperName } from '@/lib/paperUtils';
-import { getExamSlugFromUuid } from '@/lib/examMapping';
+import { getExamSlugFromUuid, getExamUuidFromSlug } from '@/lib/examMapping';
 import { getDisplayCourseName } from '@/lib/courseMapping';
 import { logger } from '@/lib/logger';
 import { getQuestionImageUrl, getOptionImageUrl } from '@/lib/imageUtils';
+import {
+  getPaperByUuid,
+  getQuestionsByPaperUuid,
+  type PaperDetails,
+} from '@/lib/api';
+import type { QuestionType, QuizQuestion } from '@/lib/dataTransforms';
+import { Skeleton } from '@/components/ui/skeleton';
 
-type QuestionType = 'MCQ' | 'MSQ' | 'SA' | 'COMPREHENSION' | 'OPPE';
-
-interface Option {
-  optionText: string;
-  optionImage?: string;
-  isCorrect: number;
-  optionNumber?: number;
+interface QuestionWithChildren extends QuizQuestion {
+  subQuestions?: QuizQuestion[];
 }
 
-interface Question {
-  uuid: string;
-  questionNumber: number;
-  questionType: QuestionType;
-  totalMark: string;
-  hash: string;
-  questionText1?: string;
-  questionText2?: string;
-  questionText3?: string;
-  questionText4?: string;
-  questionText5?: string;
-  questionImage1?: string;
-  questionImage2?: string;
-  questionImage3?: string;
-  parentQuestionUuid?: string;
-  options: Option[];
+const OPTION_LABELS = ['A', 'B', 'C', 'D', 'E', 'F'];
+
+function LoadingSkeleton() {
+  return (
+    <div className="max-w-3xl mx-auto space-y-6 px-4 sm:px-0">
+      <Skeleton className="h-4 w-24" />
+      <div>
+        <Skeleton className="h-8 w-64 mb-2" />
+        <Skeleton className="h-4 w-48" />
+      </div>
+      <Skeleton className="h-2 w-full rounded-full" />
+      <div className="space-y-4">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="rounded-xl border border-border bg-card p-5 sm:p-6">
+            <div className="flex gap-3 sm:gap-4">
+              <Skeleton className="h-8 w-8 rounded-lg flex-shrink-0" />
+              <div className="flex-1 space-y-3">
+                <Skeleton className="h-5 w-full" />
+                <Skeleton className="h-4 w-3/4" />
+                <div className="space-y-2 pt-2">
+                  {[1, 2, 3, 4].map((j) => (
+                    <Skeleton key={j} className="h-12 w-full rounded-lg" />
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
-interface QuestionWithChildren extends Question {
-  subQuestions?: Question[];
+function ProgressBar({ answered, total }: { answered: number; total: number }) {
+  const percentage = total > 0 ? (answered / total) * 100 : 0;
+  return (
+    <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
+      <div
+        className="h-full bg-primary transition-all duration-500 ease-out"
+        style={{ width: `${percentage}%` }}
+      />
+    </div>
+  );
+}
+
+function StickyProgress({
+  answered,
+  total,
+  visible,
+}: {
+  answered: number;
+  total: number;
+  visible: boolean;
+}) {
+  const percentage = total > 0 ? (answered / total) * 100 : 0;
+  return (
+    <div
+      className={`fixed top-14 left-0 right-0 z-40 transition-transform duration-300 ${
+        visible ? 'translate-y-0' : '-translate-y-full'
+      }`}
+    >
+      <div className="bg-background/95 backdrop-blur border-b border-border px-4 py-2 flex items-center gap-3">
+        <span className="text-xs text-muted-foreground whitespace-nowrap">
+          {answered}/{total}
+        </span>
+        <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+          <div
+            className="h-full bg-primary transition-all duration-300"
+            style={{ width: `${percentage}%` }}
+          />
+        </div>
+        <span className="text-xs font-medium text-primary whitespace-nowrap">
+          {Math.round(percentage)}%
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function ResultsSummary({
+  stats,
+  onTryAgain,
+}: {
+  stats: { correct: number; total: number; scoredMarks: number; totalMarks: number };
+  onTryAgain: () => void;
+}) {
+  const percentage = stats.total > 0 ? Math.round((stats.correct / stats.total) * 100) : 0;
+  const isGood = percentage >= 70;
+  const isOkay = percentage >= 40 && percentage < 70;
+  const scoreColor = isGood
+    ? 'text-green-500'
+    : isOkay
+    ? 'text-yellow-500'
+    : 'text-red-500';
+  const bgColor = isGood
+    ? 'bg-green-500/10 border-green-500/20'
+    : isOkay
+    ? 'bg-yellow-500/10 border-yellow-500/20'
+    : 'bg-red-500/10 border-red-500/20';
+
+  return (
+    <div className={`rounded-xl border ${bgColor} p-5 sm:p-6`}>
+      <div className="flex flex-col sm:flex-row sm:items-center gap-5">
+        <div className="flex items-center gap-4 flex-1">
+          <div className={`flex-shrink-0 w-14 h-14 rounded-full ${isGood ? 'bg-green-500/15' : isOkay ? 'bg-yellow-500/15' : 'bg-red-500/15'} flex items-center justify-center`}>
+            <Trophy className={`h-7 w-7 ${scoreColor}`} />
+          </div>
+          <div>
+            <p className="text-sm text-muted-foreground mb-0.5">Your score</p>
+            {stats.totalMarks > 0 ? (
+              <p className={`text-3xl font-bold leading-none ${scoreColor}`}>
+                {stats.scoredMarks}
+                <span className="text-lg font-normal text-muted-foreground ml-1">
+                  / {stats.totalMarks} marks
+                </span>
+              </p>
+            ) : (
+              <p className={`text-3xl font-bold leading-none ${scoreColor}`}>
+                {stats.correct}
+                <span className="text-lg font-normal text-muted-foreground ml-1">
+                  / {stats.total} correct
+                </span>
+              </p>
+            )}
+            <p className="text-sm text-muted-foreground mt-1.5">
+              {stats.correct} of {stats.total} correct &middot; {percentage}%
+            </p>
+          </div>
+        </div>
+        <Button variant="outline" onClick={onTryAgain} className="gap-2 sm:self-center">
+          <RotateCcw className="h-4 w-4" />
+          Try again
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function QuestionTypeBadge({ type }: { type: string }) {
+  if (type === 'MSQ') {
+    return (
+      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold tracking-wide uppercase bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20">
+        MSQ
+      </span>
+    );
+  }
+  if (type === 'COMPREHENSION') {
+    return (
+      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold tracking-wide uppercase bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
+        Passage
+      </span>
+    );
+  }
+  if (type === 'SA') {
+    return (
+      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold tracking-wide uppercase bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+        Short Answer
+      </span>
+    );
+  }
+  if (type === 'OPPE') {
+    return (
+      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold tracking-wide uppercase bg-teal-500/10 text-teal-600 dark:text-teal-400 border border-teal-500/20">
+        OPPE
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold tracking-wide uppercase bg-muted text-muted-foreground border border-border">
+      MCQ
+    </span>
+  );
+}
+
+function OptionButton({
+  option,
+  optionIndex,
+  isSelected,
+  isCorrect,
+  showResults,
+  isMultiSelect,
+  onClick,
+}: {
+  option: { optionText?: string | null; optionImage?: string | null };
+  optionIndex: number;
+  isSelected: boolean;
+  isCorrect: boolean;
+  showResults: boolean;
+  isMultiSelect: boolean;
+  onClick: () => void;
+}) {
+  const label = OPTION_LABELS[optionIndex] ?? String(optionIndex + 1);
+
+  let containerClass =
+    'w-full flex items-start gap-3 px-4 py-3 rounded-lg border-2 transition-all text-left cursor-pointer ';
+  let indicatorClass =
+    'flex-shrink-0 w-7 h-7 rounded-md flex items-center justify-center text-sm font-bold transition-colors ';
+
+  if (showResults) {
+    if (isCorrect) {
+      containerClass += 'border-green-500 bg-green-500/10';
+      indicatorClass += 'bg-green-500 text-white';
+    } else if (isSelected) {
+      containerClass += 'border-red-500 bg-red-500/10';
+      indicatorClass += 'bg-red-500 text-white';
+    } else {
+      containerClass += 'border-border opacity-50';
+      indicatorClass += 'bg-muted text-muted-foreground';
+    }
+  } else if (isSelected) {
+    containerClass += 'border-primary bg-primary/5';
+    indicatorClass += 'bg-primary text-primary-foreground';
+  } else {
+    containerClass +=
+      'border-border hover:border-primary/40 hover:bg-muted/40 active:bg-muted/60';
+    indicatorClass += 'bg-muted text-muted-foreground group-hover:text-foreground';
+  }
+
+  return (
+    <button
+      onClick={onClick}
+      disabled={showResults}
+      className={`group ${containerClass}`}
+    >
+      <div className={`mt-0.5 ${indicatorClass}`}>
+        {showResults ? (
+          isCorrect ? (
+            <CheckCircle2 className="h-4 w-4" />
+          ) : isSelected ? (
+            <XCircle className="h-4 w-4" />
+          ) : (
+            <span>{label}</span>
+          )
+        ) : (
+          <span>{label}</span>
+        )}
+      </div>
+
+      <div className="flex-1 min-w-0">
+        {option.optionText && (
+          <span
+            className="text-sm text-foreground leading-relaxed"
+            dangerouslySetInnerHTML={{ __html: option.optionText }}
+          />
+        )}
+        {option.optionImage && (
+          <img
+            src={getOptionImageUrl(option.optionImage)}
+            alt={`Option ${label}`}
+            className="mt-2 max-w-full rounded border border-border"
+            loading="lazy"
+            onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+          />
+        )}
+      </div>
+    </button>
+  );
+}
+
+function QuestionCard({
+  question,
+  index,
+  selectedAnswers,
+  showResults,
+  onSelectAnswer,
+  isSubQuestion = false,
+}: {
+  question: QuestionWithChildren;
+  index: number;
+  selectedAnswers: Record<string, string | string[]>;
+  showResults: boolean;
+  onSelectAnswer: (questionId: string, optionIndex: string, questionType: QuestionType) => void;
+  isSubQuestion?: boolean;
+}) {
+  const selectedAnswer = selectedAnswers[question.uuid];
+  const questionTexts = [
+    question.questionText1,
+    question.questionText2,
+    question.questionText3,
+    question.questionText4,
+    question.questionText5,
+  ].filter(Boolean);
+
+  const questionImages = [
+    getQuestionImageUrl(question.questionImage1),
+    getQuestionImageUrl(question.questionImage2),
+    getQuestionImageUrl(question.questionImage3),
+    getQuestionImageUrl(question.questionImage4),
+    getQuestionImageUrl(question.questionImage5),
+    getQuestionImageUrl(question.questionImage6),
+    getQuestionImageUrl(question.questionImage7),
+    getQuestionImageUrl(question.questionImage8),
+    getQuestionImageUrl(question.questionImage9),
+    getQuestionImageUrl(question.questionImage10),
+  ].filter(Boolean);
+
+  const marks = parseFloat(question.totalMark) || 0;
+  const isMultiSelect = question.questionType === 'MSQ';
+  const isComprehension = question.questionType === 'COMPREHENSION';
+  const isShortAnswer = question.questionType === 'SA' || question.questionType === 'OPPE';
+  const hasOptions = question.options.length > 0;
+
+  if (isSubQuestion) {
+    return (
+      <div className="rounded-lg border border-border bg-card/50 p-4">
+        <div className="flex gap-3">
+          <div className="flex-shrink-0 w-6 h-6 rounded-md flex items-center justify-center bg-muted text-muted-foreground text-xs font-bold">
+            {index + 1}
+          </div>
+          <div className="flex-1 min-w-0 space-y-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="space-y-2 flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <QuestionTypeBadge type={question.questionType} />
+                  {marks > 0 && (
+                    <span className="text-xs text-muted-foreground">
+                      {marks} {marks === 1 ? 'mark' : 'marks'}
+                    </span>
+                  )}
+                </div>
+                {questionTexts.map((text, textIndex) => (
+                  <div
+                    key={textIndex}
+                    className="prose prose-sm dark:prose-invert max-w-none text-foreground leading-relaxed"
+                    dangerouslySetInnerHTML={{ __html: text ?? '' }}
+                  />
+                ))}
+                {questionImages.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {questionImages.map((image, imageIndex) => (
+                      <img
+                        key={imageIndex}
+                        src={image}
+                        alt={`Question ${index + 1} image ${imageIndex + 1}`}
+                        className="max-w-full max-h-48 rounded border border-border object-contain"
+                        loading="lazy"
+                        onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+            {!isComprehension && (
+              <div className="space-y-2">
+                {isShortAnswer ? (
+                  <p className="text-xs text-muted-foreground italic px-1">
+                    Written response — answer not available for practice
+                  </p>
+                ) : (
+                  <>
+                    {isMultiSelect && (
+                      <p className="text-xs text-muted-foreground">Select all that apply</p>
+                    )}
+                    {hasOptions && question.options.map((option, optionIndex) => {
+                      const optionId = String(optionIndex);
+                      const isSelected = isMultiSelect
+                        ? ((selectedAnswer as string[]) || []).includes(optionId)
+                        : selectedAnswer === optionId;
+                      const isCorrect = option.isCorrect === 1;
+
+                      return (
+                        <OptionButton
+                          key={optionIndex}
+                          option={option}
+                          optionIndex={optionIndex}
+                          isSelected={isSelected}
+                          isCorrect={isCorrect}
+                          showResults={showResults}
+                          isMultiSelect={isMultiSelect}
+                          onClick={() => onSelectAnswer(question.uuid, optionId, question.questionType)}
+                        />
+                      );
+                    })}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-5 sm:p-6">
+      <div className="flex gap-3 sm:gap-4">
+        {/* Question number */}
+        <div className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center bg-muted text-muted-foreground text-sm font-bold">
+          {index + 1}
+        </div>
+
+        <div className="flex-1 min-w-0 space-y-4">
+          {/* Header row: type badge + marks */}
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <QuestionTypeBadge type={question.questionType} />
+            {marks > 0 && (
+              <span className="text-xs font-medium text-muted-foreground bg-muted px-2 py-0.5 rounded">
+                {marks} {marks === 1 ? 'mark' : 'marks'}
+              </span>
+            )}
+          </div>
+
+          {/* Question text + images */}
+          <div className="space-y-3">
+            {questionTexts.map((text, textIndex) => (
+              <div
+                key={textIndex}
+                className="prose prose-sm dark:prose-invert max-w-none text-foreground leading-relaxed"
+                dangerouslySetInnerHTML={{ __html: text ?? '' }}
+              />
+            ))}
+
+            {questionImages.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {questionImages.map((image, imageIndex) => (
+                  <img
+                    key={imageIndex}
+                    src={image}
+                    alt={`Question ${index + 1} image ${imageIndex + 1}`}
+                    className="max-w-full max-h-64 rounded-lg border border-border object-contain"
+                    loading="lazy"
+                    onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Options */}
+          {!isComprehension && (
+            <div className="space-y-2">
+              {isShortAnswer ? (
+                <p className="text-xs text-muted-foreground italic px-1">
+                  Written response — answer not available for practice
+                </p>
+              ) : (
+                <>
+                  {isMultiSelect && (
+                    <p className="text-xs text-muted-foreground italic">Select all that apply</p>
+                  )}
+                  {hasOptions && question.options.map((option, optionIndex) => {
+                    const optionId = String(optionIndex);
+                    const isSelected = isMultiSelect
+                      ? ((selectedAnswer as string[]) || []).includes(optionId)
+                      : selectedAnswer === optionId;
+                    const isCorrect = option.isCorrect === 1;
+
+                    return (
+                      <OptionButton
+                        key={optionIndex}
+                        option={option}
+                        optionIndex={optionIndex}
+                        isSelected={isSelected}
+                        isCorrect={isCorrect}
+                        showResults={showResults}
+                        isMultiSelect={isMultiSelect}
+                        onClick={() => onSelectAnswer(question.uuid, optionId, question.questionType)}
+                      />
+                    );
+                  })}
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Comprehension sub-questions */}
+          {isComprehension && question.subQuestions && question.subQuestions.length > 0 && (
+            <div className="space-y-3 pt-2 border-t border-border">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                Questions based on the above passage
+              </p>
+              {question.subQuestions.map((subQuestion, subIndex) => (
+                <QuestionCard
+                  key={subQuestion.uuid}
+                  question={subQuestion}
+                  index={subIndex}
+                  selectedAnswers={selectedAnswers}
+                  showResults={showResults}
+                  onSelectAnswer={onSelectAnswer}
+                  isSubQuestion
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function PaperPage() {
-  const { paperId, courseId } = useParams();
+  const { paperId } = useParams();
+  const [searchParams] = useSearchParams();
+  const courseId = searchParams.get('course');
+  const examId = searchParams.get('exam');
+  const examUuidFromSearch = examId ? getExamUuidFromSlug(examId) : null;
   const [selectedAnswers, setSelectedAnswers] = useState<Record<string, string | string[]>>({});
   const [showResults, setShowResults] = useState(false);
-  const [questions, setQuestions] = useState<Question[] | null>(null);
-  const [paper, setPaper] = useState<any | null>(undefined);
-  
-  const getQuestionsAction = useAction(api.dynamo.getQuestionsByPaper);
-  const getPaperAction = useAction(api.dynamo.getPaperByUuid);
+  const [questions, setQuestions] = useState<QuizQuestion[]>([]);
+  const [paper, setPaper] = useState<PaperDetails | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [stickyVisible, setStickyVisible] = useState(false);
+  const headerRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
-    if (paperId) {
-      setPaper(undefined);
-      setQuestions(null);
-      
-      getPaperAction({ paperUuid: paperId })
-        .then((data) => {
-          setPaper(data || null);
-        })
-        .catch((err) => {
-          logger.error('Failed to load paper metadata', err);
-          setPaper(null);
-        });
+    let active = true;
 
-      getQuestionsAction({ paperUuid: paperId, courseUuid: courseId })
-        .then((data) => {
-          setQuestions(data as Question[]);
-        })
-        .catch((err) => {
-          logger.error('Failed to load questions', err);
-          setQuestions([]);
-        });
+    if (!paperId) {
+      setLoading(false);
+      return () => {
+        active = false;
+      };
     }
-  }, [paperId, courseId]);
+
+    setLoading(true);
+    setLoadFailed(false);
+    setSelectedAnswers({});
+    setShowResults(false);
+
+    Promise.all([
+      getPaperByUuid(paperId, courseId, examUuidFromSearch),
+      getQuestionsByPaperUuid(paperId, courseId, examUuidFromSearch),
+    ])
+      .then(([paperData, questionData]) => {
+        if (active) {
+          setPaper(paperData);
+          setQuestions(questionData);
+        }
+      })
+      .catch((error) => {
+        logger.error('Failed to load paper data', error);
+        if (active) {
+          setLoadFailed(true);
+          setPaper(null);
+          setQuestions([]);
+        }
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [paperId, courseId, examUuidFromSearch]);
+
+  // Sticky progress bar on scroll
+  useEffect(() => {
+    if (showResults) {
+      setStickyVisible(false);
+      return;
+    }
+    const handleScroll = () => {
+      if (!headerRef.current) return;
+      const { bottom } = headerRef.current.getBoundingClientRect();
+      setStickyVisible(bottom < 0);
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [showResults]);
 
   const examSlug = useMemo(() => {
     if (!paper?.examUuid) return null;
@@ -93,105 +598,98 @@ export default function PaperPage() {
   }, [paper?.paperName, paper?.year]);
 
   const groupedQuestions = useMemo(() => {
-    if (!questions) return [];
-    
     const parentMap = new Map<string, QuestionWithChildren>();
     const topLevel: QuestionWithChildren[] = [];
-    
-    for (const q of questions) {
-      if (q.questionType === 'COMPREHENSION' || !q.parentQuestionUuid) {
-        parentMap.set(q.uuid, { ...q, subQuestions: [] });
+
+    for (const question of questions) {
+      if (question.questionType === 'COMPREHENSION' || !question.parentQuestionUuid) {
+        parentMap.set(question.uuid, { ...question, subQuestions: [] });
       }
     }
-    
-    for (const q of questions) {
-      if (q.parentQuestionUuid) {
-        const parent = parentMap.get(q.parentQuestionUuid);
-        if (parent) {
-          parent.subQuestions!.push(q);
-        }
+
+    for (const question of questions) {
+      if (!question.parentQuestionUuid) continue;
+      const parent = parentMap.get(question.parentQuestionUuid);
+      if (parent) parent.subQuestions!.push(question);
+    }
+
+    for (const question of questions) {
+      if (!question.parentQuestionUuid) {
+        topLevel.push(parentMap.get(question.uuid) ?? question);
       }
     }
-    
-    for (const q of questions) {
-      if (!q.parentQuestionUuid) {
-        topLevel.push(parentMap.get(q.uuid) || q);
-      }
-    }
-    
+
     return topLevel;
   }, [questions]);
 
   const stats = useMemo(() => {
-    if (!groupedQuestions) return { total: 0, answered: 0, correct: 0, totalMarks: 0, scoredMarks: 0 };
-    
-    // Count all answerable questions (excluding COMPREHENSION wrappers)
     const allQuestionIds = new Set<string>();
-    for (const q of groupedQuestions) {
-      if (q.questionType !== 'COMPREHENSION') {
-        allQuestionIds.add(q.uuid);
+
+    for (const question of groupedQuestions) {
+      if (question.questionType !== 'COMPREHENSION') {
+        allQuestionIds.add(question.uuid);
       }
-      if (q.subQuestions) {
-        q.subQuestions.forEach(subQ => allQuestionIds.add(subQ.uuid));
+      if (question.subQuestions) {
+        question.subQuestions.forEach((sq) => allQuestionIds.add(sq.uuid));
       }
     }
-    const total = allQuestionIds.size;
-    const answered = Object.keys(selectedAnswers).filter(id => allQuestionIds.has(id)).length;
-    
+
+    const answered = Object.keys(selectedAnswers).filter((id) => allQuestionIds.has(id)).length;
     let correct = 0;
     let totalMarks = 0;
     let scoredMarks = 0;
 
-    const countQuestion = (q: Question) => {
-      const mark = parseFloat(q.totalMark) || 0;
-      totalMarks += mark;
+    const countQuestion = (question: QuizQuestion) => {
+      const marks = parseFloat(question.totalMark) || 0;
+      totalMarks += marks;
 
-      if (showResults && selectedAnswers[q.uuid]) {
-        const correctIndices = q.options
-          .map((o, idx) => o.isCorrect === 1 ? String(idx) : null)
-          .filter(Boolean) as string[];
-          
-        const selected = selectedAnswers[q.uuid];
-        
-        if (q.questionType === 'MCQ') {
-          if (correctIndices.includes(selected as string)) {
-            correct++;
-            scoredMarks += mark;
-          }
-        } else if (q.questionType === 'MSQ') {
-          const selectedArr = selected as string[];
-          const isCorrect = correctIndices.length === selectedArr.length && 
-            correctIndices.every(id => selectedArr.includes(id));
-          if (isCorrect) {
-            correct++;
-            scoredMarks += mark;
-          }
+      if (!showResults || !selectedAnswers[question.uuid]) return;
+
+      const correctIndices = question.options
+        .map((option, index) => (option.isCorrect === 1 ? String(index) : null))
+        .filter((value): value is string => value !== null);
+
+      const selected = selectedAnswers[question.uuid];
+
+      if (question.questionType === 'MCQ') {
+        if (correctIndices.includes(selected as string)) {
+          correct++;
+          scoredMarks += marks;
+        }
+      } else if (question.questionType === 'MSQ') {
+        const selectedEntries = selected as string[];
+        const isCorrect =
+          correctIndices.length === selectedEntries.length &&
+          correctIndices.every((v) => selectedEntries.includes(v));
+        if (isCorrect) {
+          correct++;
+          scoredMarks += marks;
         }
       }
     };
 
-    for (const q of groupedQuestions) {
-      if (q.questionType !== 'COMPREHENSION') {
-        countQuestion(q);
-      }
-      if (q.subQuestions) {
-        for (const subQ of q.subQuestions) {
-          countQuestion(subQ);
-        }
+    for (const question of groupedQuestions) {
+      if (question.questionType !== 'COMPREHENSION') countQuestion(question);
+      if (question.subQuestions) {
+        for (const subQuestion of question.subQuestions) countQuestion(subQuestion);
       }
     }
 
-    return { total, answered, correct, totalMarks, scoredMarks };
+    return { total: allQuestionIds.size, answered, correct, totalMarks, scoredMarks };
   }, [groupedQuestions, selectedAnswers, showResults]);
 
-  const handleOptionSelect = (questionId: string, optionIndex: string, questionType: QuestionType) => {
+  const handleOptionSelect = (
+    questionId: string,
+    optionIndex: string,
+    questionType: QuestionType
+  ) => {
     if (showResults) return;
 
-    setSelectedAnswers(prev => {
+    setSelectedAnswers((prev) => {
       if (questionType === 'MSQ') {
         const current = (prev[questionId] as string[]) || [];
         if (current.includes(optionIndex)) {
-          return { ...prev, [questionId]: current.filter(id => id !== optionIndex) };
+          return { ...prev, [questionId]: current.filter((id) => id !== optionIndex) };
         }
         return { ...prev, [questionId]: [...current, optionIndex] };
       }
@@ -199,46 +697,36 @@ export default function PaperPage() {
     });
   };
 
-  const handleSubmit = () => {
-    setShowResults(true);
-  };
-
-  const handleReset = () => {
+  const handleTryAgain = () => {
     setSelectedAnswers({});
     setShowResults(false);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  // Error states
   if (!paperId) {
     return (
-      <div className="text-center py-20 space-y-4">
-        <FileText className="h-16 w-16 text-muted-foreground mx-auto" />
-        <h2 className="text-2xl font-bold">Invalid Paper</h2>
-        <Button asChild>
-          <Link to="/">Go Home</Link>
+      <div className="flex flex-col items-center justify-center py-20 text-center px-4">
+        <h2 className="text-xl font-semibold">Invalid paper</h2>
+        <p className="text-muted-foreground mt-1 mb-4">Paper ID not provided.</p>
+        <Button asChild variant="outline">
+          <Link to="/">Go home</Link>
         </Button>
       </div>
     );
   }
 
-  if (paper === undefined || questions === null) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <div className="text-center space-y-4">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
-          <p className="text-muted-foreground">Loading paper...</p>
-        </div>
-      </div>
-    );
+  if (loading) {
+    return <LoadingSkeleton />;
   }
 
-  if (!paper) {
+  if (loadFailed || !paper) {
     return (
-      <div className="text-center py-20 space-y-4">
-        <FileText className="h-16 w-16 text-muted-foreground mx-auto" />
-        <h2 className="text-2xl font-bold">Paper Not Found</h2>
-        <p className="text-muted-foreground">The paper "{paperId}" does not exist.</p>
-        <Button asChild>
-          <Link to="/">Go Home</Link>
+      <div className="flex flex-col items-center justify-center py-20 text-center px-4">
+        <h2 className="text-xl font-semibold">Unable to load paper</h2>
+        <p className="text-muted-foreground mt-1 mb-4">Could not load this paper.</p>
+        <Button asChild variant="outline">
+          <Link to={examSlug ? `/exam/${examSlug}` : '/'}>Go back</Link>
         </Button>
       </div>
     );
@@ -246,249 +734,117 @@ export default function PaperPage() {
 
   if (questions.length === 0) {
     return (
-      <div className="space-y-6">
-        <Button variant="ghost" size="sm" asChild className="gap-2 -ml-2">
-          <Link to={examSlug && courseId ? `/exam/${examSlug}/course/${courseId}` : '/'}>
+      <div className="max-w-3xl mx-auto space-y-6 px-4 sm:px-0">
+        <Button variant="ghost" size="sm" asChild className="gap-1.5 -ml-2 text-muted-foreground">
+          <Link to={examSlug ? `/exam/${examSlug}/course/${paper.courseUuid}` : '/'}>
             <ArrowLeft className="h-4 w-4" />
-            Back
+            {displayCourseName || 'Back'}
           </Link>
         </Button>
-        
-        <div className="text-center py-20 space-y-4">
-          <FileText className="h-16 w-16 text-muted-foreground mx-auto" />
-          <h2 className="text-2xl font-bold">No Questions Available</h2>
-          <p className="text-muted-foreground">Questions for this paper haven't been loaded yet.</p>
+        <div className="flex flex-col items-center py-16 text-center">
+          <h2 className="text-xl font-semibold">No questions available</h2>
+          <p className="text-muted-foreground mt-1">
+            Questions for this paper haven't been loaded yet.
+          </p>
         </div>
       </div>
     );
   }
 
+  const allAnswered = stats.answered === stats.total;
+
   return (
-    <div className="space-y-6">
-      <div className="space-y-4">
-        <Button variant="ghost" size="sm" asChild className="gap-2 -ml-2">
-          <Link to={examSlug && courseId ? `/exam/${examSlug}/course/${courseId}` : '/'}>
+    <>
+      {/* Sticky progress bar */}
+      <StickyProgress
+        answered={stats.answered}
+        total={stats.total}
+        visible={stickyVisible && !showResults}
+      />
+
+      <div className="max-w-3xl mx-auto space-y-6 px-4 sm:px-0">
+        {/* Header */}
+        <header ref={headerRef} className="space-y-4">
+          <Button
+            variant="ghost"
+            size="sm"
+            asChild
+            className="gap-1.5 -ml-2 text-muted-foreground"
+          >
+          <Link to={examSlug ? `/exam/${examSlug}/course/${paper.courseUuid}` : '/'}>
             <ArrowLeft className="h-4 w-4" />
-            Back to {displayCourseName}
+            {displayCourseName || 'Back'}
           </Link>
         </Button>
 
-        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">{displayPaperName}</h1>
-            <p className="text-muted-foreground mt-1">
-              {displayCourseName} • {paper.examName}
+        <div>
+          <p className="text-sm font-medium text-primary">{paper.examName}</p>
+            <h1 className="text-2xl font-bold tracking-tight mt-1">{displayPaperName}</h1>
+            <p className="text-muted-foreground mt-1 text-sm">
+              {stats.total} {stats.total === 1 ? 'question' : 'questions'}
+              {stats.totalMarks > 0 && <> &middot; {stats.totalMarks} marks</>}
             </p>
           </div>
 
-          <div className="flex items-center gap-4 text-sm">
-            <div className="flex items-center gap-2 px-3 py-2 bg-muted rounded-lg">
-              <HelpCircle className="h-4 w-4 text-muted-foreground" />
-              <span>{stats.answered}/{stats.total} answered</span>
-            </div>
-            {showResults && (
-              <div className="flex items-center gap-2 px-3 py-2 bg-primary/10 text-primary rounded-lg">
-                <Award className="h-4 w-4" />
-                <span>{stats.scoredMarks}/{stats.totalMarks} marks</span>
+          {/* Progress */}
+          {!showResults && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Progress</span>
+                <span className="font-medium">
+                  {stats.answered} / {stats.total} answered
+                </span>
               </div>
-            )}
-          </div>
+              <ProgressBar answered={stats.answered} total={stats.total} />
+            </div>
+          )}
+        </header>
+
+        {/* Results Summary */}
+        {showResults && <ResultsSummary stats={stats} onTryAgain={handleTryAgain} />}
+
+        {/* Questions */}
+        <div className="space-y-4">
+          {groupedQuestions.map((question, index) => (
+            <QuestionCard
+              key={question.uuid}
+              question={question}
+              index={index}
+              selectedAnswers={selectedAnswers}
+              showResults={showResults}
+              onSelectAnswer={handleOptionSelect}
+            />
+          ))}
         </div>
-      </div>
 
-      <div className="space-y-6">
-        {groupedQuestions.map((question, index) => (
-          <QuestionCard
-            key={question.uuid}
-            question={question}
-            index={index}
-            selectedAnswers={selectedAnswers}
-            showResults={showResults}
-            onSelectAnswer={handleOptionSelect}
-          />
-        ))}
-      </div>
-
-      <div className="sticky bottom-4 flex justify-center gap-4">
-        {!showResults ? (
-          <Button 
-            size="lg" 
-            onClick={handleSubmit}
-            disabled={stats.answered === 0}
-            className="shadow-lg"
-          >
-            Submit ({stats.answered}/{stats.total} answered)
-          </Button>
-        ) : (
-          <Button 
-            size="lg" 
-            variant="outline"
-            onClick={handleReset}
-            className="shadow-lg"
-          >
-            Try Again
-          </Button>
+        {/* Submit Button */}
+        {!showResults && (
+          <div className="sticky bottom-4 flex justify-center pt-4 pb-2">
+            <div className="relative">
+              {/* backdrop blur halo so the button doesn't hard-clip over questions */}
+              <div className="absolute inset-0 -m-3 rounded-2xl bg-background/60 backdrop-blur-sm pointer-events-none" />
+              <Button
+                size="lg"
+                onClick={() => setShowResults(true)}
+                disabled={stats.answered === 0}
+                className={`relative shadow-lg gap-2 transition-all ${
+                  allAnswered
+                    ? 'bg-green-600 hover:bg-green-700 text-white'
+                    : stats.answered > 0
+                    ? 'bg-primary/90 hover:bg-primary text-primary-foreground'
+                    : ''
+                }`}
+              >
+                {allAnswered
+                  ? 'Submit answers'
+                  : stats.answered > 0
+                  ? `Submit (${stats.answered} / ${stats.total})`
+                  : 'Answer a question to submit'}
+              </Button>
+            </div>
+          </div>
         )}
       </div>
-    </div>
-  );
-}
-
-function QuestionCard({ 
-  question, 
-  index, 
-  selectedAnswers, 
-  showResults, 
-  onSelectAnswer 
-}: { 
-  question: QuestionWithChildren;
-  index: number;
-  selectedAnswers: Record<string, string | string[]>;
-  showResults: boolean;
-  onSelectAnswer: (questionId: string, optionIndex: string, questionType: QuestionType) => void;
-}) {
-  const selectedAnswer = selectedAnswers[question.uuid];
-  const questionTexts = [
-    question.questionText1,
-    question.questionText2,
-    question.questionText3,
-    question.questionText4,
-    question.questionText5,
-  ].filter(Boolean);
-
-  const questionImages = [
-    getQuestionImageUrl(question.questionImage1),
-    getQuestionImageUrl(question.questionImage2),
-    getQuestionImageUrl(question.questionImage3),
-  ].filter(Boolean);
-
-  const marks = parseFloat(question.totalMark) || 0;
-  const isMultiSelect = question.questionType === 'MSQ';
-  const isComprehension = question.questionType === 'COMPREHENSION';
-
-  return (
-    <Card className="overflow-hidden">
-      <CardContent className="p-6">
-        <div className="flex items-start gap-4">
-          <div className="flex-shrink-0 h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-sm">
-            {index + 1}
-          </div>
-          
-          <div className="flex-1 space-y-4">
-            <div className="flex items-start justify-between gap-4">
-              <div className="space-y-2 flex-1">
-                {questionTexts.map((text, i) => (
-                  <div 
-                    key={i} 
-                    className="prose prose-sm max-w-none dark:prose-invert"
-                    dangerouslySetInnerHTML={{ __html: text || '' }}
-                  />
-                ))}
-                
-                {questionImages.map((img, i) => (
-                  <img 
-                    key={i} 
-                    src={img} 
-                    alt={`Question ${index + 1} image ${i + 1}`}
-                    className="max-w-full rounded-lg border"
-                  />
-                ))}
-              </div>
-              
-              {marks > 0 && (
-                <div className="flex-shrink-0 text-xs text-muted-foreground px-2 py-1 bg-muted rounded">
-                  {marks} {marks === 1 ? 'mark' : 'marks'}
-                </div>
-              )}
-            </div>
-
-            {!isComprehension && (
-              <>
-                {isMultiSelect && (
-                  <p className="text-xs text-muted-foreground">Select all that apply</p>
-                )}
-
-                <div className="space-y-2">
-                  {question.options.map((option, optIndex) => {
-                    const optionId = String(optIndex);
-                    const isSelected = isMultiSelect 
-                      ? (selectedAnswer as string[] || []).includes(optionId)
-                      : selectedAnswer === optionId;
-                    const isCorrect = option.isCorrect === 1;
-                    
-                    let optionStyle = 'border-border hover:border-primary/50 hover:bg-muted/50';
-                    if (showResults) {
-                      if (isCorrect) {
-                        optionStyle = 'border-green-500 bg-green-50 dark:bg-green-950/30';
-                      } else if (isSelected && !isCorrect) {
-                        optionStyle = 'border-red-500 bg-red-50 dark:bg-red-950/30';
-                      }
-                    } else if (isSelected) {
-                      optionStyle = 'border-primary bg-primary/5';
-                    }
-
-                    return (
-                      <button
-                        key={optIndex}
-                        onClick={() => onSelectAnswer(question.uuid, optionId, question.questionType)}
-                        disabled={showResults}
-                        className={`w-full flex items-start gap-3 p-3 rounded-lg border transition-colors text-left ${optionStyle}`}
-                      >
-                        <div className="flex-shrink-0 mt-0.5">
-                          {showResults ? (
-                            isCorrect ? (
-                              <CheckCircle2 className="h-5 w-5 text-green-600" />
-                            ) : isSelected ? (
-                              <Circle className="h-5 w-5 text-red-600" />
-                            ) : (
-                              <Circle className="h-5 w-5 text-muted-foreground" />
-                            )
-                          ) : isSelected ? (
-                            <CheckCircle2 className="h-5 w-5 text-primary" />
-                          ) : (
-                            <Circle className="h-5 w-5 text-muted-foreground" />
-                          )}
-                        </div>
-                        
-                        <div className="flex-1">
-                          {option.optionText && (
-                            <span 
-                              className="text-sm"
-                              dangerouslySetInnerHTML={{ __html: option.optionText }}
-                            />
-                          )}
-                          {option.optionImage && (
-                            <img 
-                              src={getOptionImageUrl(option.optionImage)} 
-                              alt="Option"
-                              className="mt-2 max-w-full rounded border"
-                            />
-                          )}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </>
-            )}
-
-            {isComprehension && question.subQuestions && question.subQuestions.length > 0 && (
-              <div className="ml-4 pl-4 border-l-2 border-primary/20 space-y-4">
-                {question.subQuestions.map((subQ, subIndex) => (
-                  <QuestionCard
-                    key={subQ.uuid}
-                    question={subQ}
-                    index={subIndex}
-                    selectedAnswers={selectedAnswers}
-                    showResults={showResults}
-                    onSelectAnswer={onSelectAnswer}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      </CardContent>
-    </Card>
+    </>
   );
 }
