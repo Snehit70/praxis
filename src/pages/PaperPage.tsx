@@ -50,10 +50,11 @@ function readPaperSession(storageKey: string, durationMinutes: number): SavedPap
       : typeof parsed.remainingSeconds === 'number'
       ? Math.max(0, parsed.remainingSeconds)
       : durationSeconds;
+    const expiredWhileAway = running && remainingSeconds === 0;
 
     return {
       selectedAnswers: parsed.selectedAnswers ?? {},
-      showResults: parsed.showResults === true,
+      showResults: parsed.showResults === true || expiredWhileAway,
       timerRunning: running && remainingSeconds !== null && remainingSeconds > 0,
       remainingSeconds,
       timerEndsAt: running && remainingSeconds !== null && remainingSeconds > 0 ? timerEndsAt : null,

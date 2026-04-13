@@ -29,9 +29,11 @@ export function createApiFetchHandler(sql: DbClient) {
 
   function getSearchPattern(searchParams: URLSearchParams) {
     const query = searchParams.get('q')?.trim() ?? '';
+    const escapedQuery = query.replaceAll(/[%_]/g, '\\$&');
     return {
       query,
-      pattern: `%${query.replaceAll(/[%_]/g, '\\$&')}%`,
+      pattern: `%${escapedQuery}%`,
+      prefixPattern: `${escapedQuery}%`,
     };
   }
 
@@ -93,7 +95,7 @@ export function createApiFetchHandler(sql: DbClient) {
       }
 
       if (url.pathname === '/api/search') {
-        const { query, pattern } = getSearchPattern(url.searchParams);
+        const { query, pattern, prefixPattern } = getSearchPattern(url.searchParams);
 
         if (!query) {
           return json({ courses: [], papers: [] });
@@ -129,7 +131,7 @@ export function createApiFetchHandler(sql: DbClient) {
             CASE
               WHEN LOWER(c.course_code) = LOWER(${query}) THEN 0
               WHEN LOWER(c.course_name) = LOWER(${query}) THEN 1
-              WHEN LOWER(c.course_name) LIKE LOWER(${`${query}%`}) THEN 2
+              WHEN LOWER(c.course_name) LIKE LOWER(${prefixPattern}) ESCAPE '\\' THEN 2
               ELSE 3
             END,
             COUNT(*) DESC,
@@ -183,7 +185,7 @@ export function createApiFetchHandler(sql: DbClient) {
           ORDER BY
             CASE
               WHEN LOWER(p.paper_name) = LOWER(${query}) THEN 0
-              WHEN LOWER(p.paper_name) LIKE LOWER(${`${query}%`}) THEN 1
+              WHEN LOWER(p.paper_name) LIKE LOWER(${prefixPattern}) ESCAPE '\\' THEN 1
               WHEN LOWER(c.course_name) = LOWER(${query}) THEN 2
               ELSE 3
             END,
