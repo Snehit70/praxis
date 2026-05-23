@@ -13,6 +13,7 @@ data-new-image-urls.json
 # Generated analysis outputs
 reports/**/*.json
 reports/**/*.checkpoint.json
+reports/db-provider-trials/*.md
 
 # Environment
 .env

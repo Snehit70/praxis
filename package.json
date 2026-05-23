@@ -6,6 +6,7 @@
     "dev": "vite",
     "api": "bun run server/index.ts",
     "db:import": "bun run server/import-db.ts",
+    "db:trial": "bun run scripts/db-provider-trial.ts",
     "build": "tsc -b && vite build",
     "test": "bun run test:unit && bun run test:integration",
     "test:unit": "bun test ./src",
