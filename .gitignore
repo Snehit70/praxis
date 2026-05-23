@@ -43,3 +43,4 @@ convex/_generated/
 
 # Nested tool dependencies
 tools/**/node_modules/
+.vercel
