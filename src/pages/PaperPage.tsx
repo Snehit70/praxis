@@ -834,11 +834,13 @@ export default function PaperPage() {
 
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
 
     if (!paperId) {
       setLoading(false);
       return () => {
         active = false;
+        controller.abort();
       };
     }
 
@@ -848,8 +850,8 @@ export default function PaperPage() {
     setShowResults(false);
 
     Promise.all([
-      getPaperByUuid(paperId, courseId, examUuidFromSearch),
-      getQuestionsByPaperUuid(paperId, courseId, examUuidFromSearch),
+      getPaperByUuid(paperId, courseId, examUuidFromSearch, { signal: controller.signal }),
+      getQuestionsByPaperUuid(paperId, courseId, examUuidFromSearch, { signal: controller.signal }),
     ])
       .then(([paperData, questionData]) => {
         if (active) {
@@ -868,6 +870,7 @@ export default function PaperPage() {
         }
       })
       .catch((error) => {
+        if (error instanceof DOMException && error.name === 'AbortError') return;
         logger.error('Failed to load paper data', error);
         if (active) {
           setLoadFailed(true);
@@ -885,6 +888,7 @@ export default function PaperPage() {
 
     return () => {
       active = false;
+      controller.abort();
     };
   }, [paperId, courseId, examUuidFromSearch, storageKey]);
 

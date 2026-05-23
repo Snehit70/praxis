@@ -10,6 +10,7 @@
     "build": "tsc -b && vite build",
     "test": "bun run test:unit && bun run test:integration",
     "test:unit": "bun test ./src",
+    "test:api": "bun test ./server/app.test.ts",
     "test:integration": "bun test ./server/app.test.ts",
     "lint": "eslint .",
     "preview": "vite preview"

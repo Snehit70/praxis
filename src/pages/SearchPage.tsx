@@ -113,6 +113,7 @@ export default function SearchPage() {
 
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
 
     if (!query) {
       setCourses([]);
@@ -121,19 +122,21 @@ export default function SearchPage() {
       setLoading(false);
       return () => {
         active = false;
+        controller.abort();
       };
     }
 
     setLoading(true);
     setLoadFailed(false);
 
-    getSearchResults(query)
+    getSearchResults(query, { signal: controller.signal })
       .then((results) => {
         if (!active) return;
         setCourses(results.courses);
         setPapers(results.papers);
       })
       .catch((error) => {
+        if (error instanceof DOMException && error.name === 'AbortError') return;
         logger.error('Failed to load search results', error);
         if (!active) return;
         setLoadFailed(true);
@@ -146,6 +149,7 @@ export default function SearchPage() {
 
     return () => {
       active = false;
+      controller.abort();
     };
   }, [query]);
 

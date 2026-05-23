@@ -34,9 +34,12 @@ Legacy `convex/` and DynamoDB migration files are historical references only. Th
 
 ```bash
 bun run test:unit
+TEST_DATABASE_URL=postgres://postgres@127.0.0.1:5432/postgres bun run test:api
 TEST_DATABASE_URL=postgres://postgres@127.0.0.1:5432/postgres bun run test:integration
 bun run test
 ```
+
+Testing details, database isolation, and CI behavior are documented in [docs/TESTING.md](docs/TESTING.md).
 
 ## Build
 
@@ -75,3 +78,7 @@ Expected production stats after the current import:
 - `116704` questions
 
 Full deployment and recovery notes are in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+
+## Data Source
+
+Production reads from Postgres and R2, but the canonical offline source should stay clean under `data-new/` and `images-new/`. The expected directory shape and cleanup rules are in [docs/DATA-SOURCE.md](docs/DATA-SOURCE.md).

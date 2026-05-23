@@ -142,20 +142,25 @@ export default function ExamPage() {
 
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
 
     if (!examUuid) {
       setLoading(false);
-      return () => { active = false; };
+      return () => {
+        active = false;
+        controller.abort();
+      };
     }
 
     setLoading(true);
     setLoadFailed(false);
 
-    getExamCourses(examUuid)
+    getExamCourses(examUuid, { signal: controller.signal })
       .then((data) => {
         if (active) setCourses(data);
       })
       .catch((error) => {
+        if (error instanceof DOMException && error.name === 'AbortError') return;
         logger.error('Failed to load courses', error);
         if (active) {
           setLoadFailed(true);
@@ -166,7 +171,10 @@ export default function ExamPage() {
         if (active) setLoading(false);
       });
 
-    return () => { active = false; };
+    return () => {
+      active = false;
+      controller.abort();
+    };
   }, [examUuid]);
 
   const deduplicatedCourses = useMemo(() => deduplicateCourses(courses), [courses]);

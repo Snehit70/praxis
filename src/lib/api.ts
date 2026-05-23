@@ -90,8 +90,14 @@ export interface PaperDetails {
   courseUuid: string;
 }
 
-async function fetchJson<T>(path: string): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`);
+interface ApiRequestOptions {
+  signal?: AbortSignal;
+}
+
+async function fetchJson<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    signal: options.signal,
+  });
   if (!response.ok) {
     throw new Error(`API request failed (${response.status}): ${path}`);
   }
@@ -99,29 +105,34 @@ async function fetchJson<T>(path: string): Promise<T> {
   return (await response.json()) as T;
 }
 
-export function getDatasetStats() {
-  return fetchJson<DatasetStats>('/api/stats');
+export function getDatasetStats(options?: ApiRequestOptions) {
+  return fetchJson<DatasetStats>('/api/stats', options);
 }
 
-export function getSearchResults(query: string) {
-  return fetchJson<SearchResults>(`/api/search?q=${encodeURIComponent(query)}`);
+export function getSearchResults(query: string, options?: ApiRequestOptions) {
+  return fetchJson<SearchResults>(`/api/search?q=${encodeURIComponent(query)}`, options);
 }
 
-export function getExamCourses(examUuid: string) {
-  return fetchJson<CourseSummary[]>(`/api/exams/${encodeURIComponent(examUuid)}/courses`);
+export function getExamCourses(examUuid: string, options?: ApiRequestOptions) {
+  return fetchJson<CourseSummary[]>(`/api/exams/${encodeURIComponent(examUuid)}/courses`, options);
 }
 
-export function getCourseByUuid(examUuid: string, courseUuid: string) {
+export function getCourseByUuid(examUuid: string, courseUuid: string, options?: ApiRequestOptions) {
   return fetchJson<CourseRecord>(
     `/api/exams/${encodeURIComponent(examUuid)}/courses/${encodeURIComponent(courseUuid)}`,
+    options,
   );
 }
 
-export function getPapersByExamAndCourse(examUuid: string, courseUuid: string) {
-  return getPapersByExamAndCourseUuids(examUuid, [courseUuid]);
+export function getPapersByExamAndCourse(examUuid: string, courseUuid: string, options?: ApiRequestOptions) {
+  return getPapersByExamAndCourseUuids(examUuid, [courseUuid], options);
 }
 
-export function getPapersByExamAndCourseUuids(examUuid: string, courseUuids: string[]) {
+export function getPapersByExamAndCourseUuids(
+  examUuid: string,
+  courseUuids: string[],
+  options?: ApiRequestOptions,
+) {
   const params = new URLSearchParams();
   if (courseUuids.length > 0) {
     params.set('courseUuids', courseUuids.join(','));
@@ -130,6 +141,7 @@ export function getPapersByExamAndCourseUuids(examUuid: string, courseUuids: str
   const suffix = params.toString() ? `?${params.toString()}` : '';
   return fetchJson<PaperSummary[]>(
     `/api/exams/${encodeURIComponent(examUuid)}/courses/${encodeURIComponent(courseUuids[0] ?? '')}/papers${suffix}`,
+    options,
   );
 }
 
@@ -142,7 +154,11 @@ export interface PaperBundle {
   papers: PaperSummary[];
 }
 
-export function getPaperBundlesByExamAndCourseUuids(examUuid: string, courseUuids: string[]) {
+export function getPaperBundlesByExamAndCourseUuids(
+  examUuid: string,
+  courseUuids: string[],
+  options?: ApiRequestOptions,
+) {
   const params = new URLSearchParams();
   if (courseUuids.length > 0) {
     params.set('courseUuids', courseUuids.join(','));
@@ -151,26 +167,15 @@ export function getPaperBundlesByExamAndCourseUuids(examUuid: string, courseUuid
   const suffix = params.toString() ? `?${params.toString()}` : '';
   return fetchJson<PaperBundle[]>(
     `/api/exams/${encodeURIComponent(examUuid)}/courses/${encodeURIComponent(courseUuids[0] ?? '')}/bundles${suffix}`,
+    options,
   );
 }
 
-export function getPaperByUuid(paperUuid: string, courseUuid?: string | null, examUuid?: string | null) {
-  const params = new URLSearchParams();
-  if (courseUuid) {
-    params.set('courseUuid', courseUuid);
-  }
-  if (examUuid) {
-    params.set('examUuid', examUuid);
-  }
-
-  const suffix = params.toString() ? `?${params.toString()}` : '';
-  return fetchJson<PaperDetails>(`/api/papers/${encodeURIComponent(paperUuid)}${suffix}`);
-}
-
-export function getQuestionsByPaperUuid(
+export function getPaperByUuid(
   paperUuid: string,
   courseUuid?: string | null,
   examUuid?: string | null,
+  options?: ApiRequestOptions,
 ) {
   const params = new URLSearchParams();
   if (courseUuid) {
@@ -181,5 +186,26 @@ export function getQuestionsByPaperUuid(
   }
 
   const suffix = params.toString() ? `?${params.toString()}` : '';
-  return fetchJson<QuizQuestion[]>(`/api/papers/${encodeURIComponent(paperUuid)}/questions${suffix}`);
+  return fetchJson<PaperDetails>(`/api/papers/${encodeURIComponent(paperUuid)}${suffix}`, options);
+}
+
+export function getQuestionsByPaperUuid(
+  paperUuid: string,
+  courseUuid?: string | null,
+  examUuid?: string | null,
+  options?: ApiRequestOptions,
+) {
+  const params = new URLSearchParams();
+  if (courseUuid) {
+    params.set('courseUuid', courseUuid);
+  }
+  if (examUuid) {
+    params.set('examUuid', examUuid);
+  }
+
+  const suffix = params.toString() ? `?${params.toString()}` : '';
+  return fetchJson<QuizQuestion[]>(
+    `/api/papers/${encodeURIComponent(paperUuid)}/questions${suffix}`,
+    options,
+  );
 }

@@ -129,7 +129,39 @@ jobs:
             sudo systemctl enable --now nginx
           fi
 
-          sudo tee /etc/nginx/conf.d/praxis-api.conf >/dev/null <<'NGINX'
+          if sudo test -f "/etc/letsencrypt/live/${API_SERVER_NAME}/fullchain.pem"; then
+            sudo tee /etc/nginx/conf.d/praxis-api.conf >/dev/null <<'NGINX'
+          server {
+            listen 80;
+            listen [::]:80;
+            server_name __PRAXIS_API_SERVER_NAME__;
+            return 301 https://$host$request_uri;
+          }
+
+          server {
+            listen 443 ssl;
+            listen [::]:443 ssl;
+            server_name __PRAXIS_API_SERVER_NAME__;
+
+            ssl_certificate /etc/letsencrypt/live/__PRAXIS_API_SERVER_NAME__/fullchain.pem;
+            ssl_certificate_key /etc/letsencrypt/live/__PRAXIS_API_SERVER_NAME__/privkey.pem;
+
+            location /api/ {
+              proxy_pass http://127.0.0.1:8787;
+              proxy_http_version 1.1;
+              proxy_set_header Host $host;
+              proxy_set_header X-Real-IP $remote_addr;
+              proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+              proxy_set_header X-Forwarded-Proto $scheme;
+            }
+
+            location / {
+              return 404;
+            }
+          }
+          NGINX
+          else
+            sudo tee /etc/nginx/conf.d/praxis-api.conf >/dev/null <<'NGINX'
           server {
             listen 80;
             listen [::]:80;
@@ -149,6 +181,7 @@ jobs:
             }
           }
           NGINX
+          fi
           sudo sed -i "s/__PRAXIS_API_SERVER_NAME__/${API_SERVER_NAME}/g" /etc/nginx/conf.d/praxis-api.conf
 
           sudo nginx -t

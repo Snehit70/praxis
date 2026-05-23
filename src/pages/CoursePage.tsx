@@ -129,10 +129,13 @@ export default function CoursePage() {
 
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
+
     if (!examUuid || !courseId) {
       setLoading(false);
       return () => {
         active = false;
+        controller.abort();
       };
     }
 
@@ -140,8 +143,8 @@ export default function CoursePage() {
     setLoadFailed(false);
 
     Promise.all([
-      getCourseByUuid(examUuid, courseId),
-      getPaperBundlesByExamAndCourseUuids(examUuid, courseUuids),
+      getCourseByUuid(examUuid, courseId, { signal: controller.signal }),
+      getPaperBundlesByExamAndCourseUuids(examUuid, courseUuids, { signal: controller.signal }),
     ])
       .then(([courseData, bundleData]) => {
         if (!active) return;
@@ -149,6 +152,7 @@ export default function CoursePage() {
         setBundles(bundleData);
       })
       .catch((error) => {
+        if (error instanceof DOMException && error.name === 'AbortError') return;
         logger.error('Failed to load bundle data', error);
         if (!active) return;
         setLoadFailed(true);
@@ -161,6 +165,7 @@ export default function CoursePage() {
 
     return () => {
       active = false;
+      controller.abort();
     };
   }, [courseId, courseUuids, examUuid]);
 
