@@ -12,16 +12,19 @@ export default function HomePage() {
 
   useEffect(() => {
     logger.info('HomePage mounted');
+    const controller = new AbortController();
 
-    getDatasetStats()
+    getDatasetStats({ signal: controller.signal })
       .then((data) => {
         setStats(data);
       })
       .catch((error) => {
+        if (error instanceof DOMException && error.name === 'AbortError') return;
         logger.error('Failed to load dataset stats', error);
       });
 
     return () => {
+      controller.abort();
       logger.debug('HomePage unmounted');
     };
   }, []);
