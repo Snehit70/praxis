@@ -1,118 +1,53 @@
-# Project Agents Guidelines
+# Agent Guide
 
-This file provides context and rules for AI agents working on the Quiz project.
+Keep this file short and stateless. Put durable project details in `README.md` or `docs/`.
 
-## 1. Project Overview
+## Source Of Truth
 
-- **Name**: Quiz (Praxis)
-- **Purpose**: IIT Madras BS program exam practice platform
-- **Target Users**: Students preparing for quizzes and exams
+- Active app path: `src/` -> `server/` -> Postgres.
+- Runtime data source: Postgres.
+- Offline canonical scrape source: `data-new/`.
+- Images: Cloudflare R2, referenced through `src/lib/imageUtils.ts`.
+- Legacy `convex/` and DynamoDB scripts are archival unless a task explicitly targets them.
 
-## 2. Tech Stack
+## Stack
 
-| Layer | Technology |
-|-------|------------|
-| Runtime | Bun |
-| Frontend | React 19, Vite 7, Tailwind CSS v4 |
-| Routing | React Router DOM v7 |
-| UI Components | Radix UI + shadcn/ui patterns |
-| Backend | Bun API + Postgres |
-| Icons | Lucide React |
+- Bun runtime and test runner.
+- React 19, Vite 7, Tailwind CSS v4.
+- React Router routes:
+  - `/`
+  - `/search`
+  - `/exam/:examId`
+  - `/exam/:examId/course/:courseId`
+  - `/paper/:paperId`
+- Bun API in `server/`.
+- Postgres schema in `server/schema.ts`.
+- Import pipeline in `server/import-db.ts`.
 
-## 3. Routing Structure
+## Working Rules
 
-```
-/                              → HomePage (landing with all exam types)
-/search                       → SearchPage (global search across courses and papers)
-/exam/:examId                  → ExamPage (shows courses for an exam)
-/exam/:examId/course/:courseId → CoursePage (shows papers for exam+course)  
-/paper/:paperId                → PaperPage (quiz taking interface)
-```
+- Check whether a server is already running before starting another one.
+- Read files before editing them.
+- Use `rg` / `rg --files` for discovery.
+- Prefer focused changes and narrow validation.
+- Do not revert unrelated local changes.
+- Never commit secrets, scraped data, dumps, images, reports, `.env*`, or `.vercel/`.
 
-**Exam Types**: quiz1, quiz2, end-term, oppe
+## Commands
 
-**Important**: 
-- Course route is nested under exam to preserve hierarchy
-- There is NO `/practice` or `/courses` route
-- All links must point to existing routes
-- Routing preserves exam→course→paper data relationship
-
-## 4. Environment Variables
-
-Required in `.env`:
-```
-DATABASE_URL=postgres://postgres@127.0.0.1:5432/postgres
-VITE_API_BASE_URL=http://127.0.0.1:8787
-```
-
-`VITE_API_BASE_URL` is optional if you use the default local API URL.
-
-## 5. CDN & Images
-
-Images are stored in Cloudflare R2 bucket `praxis-images` and served via public URL:
-
-**R2 Public URL**: `https://pub-38cbed42a577473eb75ea45c187c8d6f.r2.dev`
-
-Image paths:
-- Question images: `https://pub-38cbed42a577473eb75ea45c187c8d6f.r2.dev/question_images/{filename}`
-- Option images: `https://pub-38cbed42a577473eb75ea45c187c8d6f.r2.dev/option_images/{filename}`
-
-Total: 26,652 images (9,186 question + 17,466 option images, ~1.5GB)
-
-## 6. Code Standards
-
-### Component Patterns
-- Use `function Component()` not arrow functions for components
-- Use `@/` path aliases (defined in tsconfig.json)
-- Colocate components with their styles when possible
-
-### Tailwind CSS v4
-- Uses CSS variables for theming (see `src/index.css`)
-- Use `bg-background`, `text-foreground`, `text-muted-foreground` etc.
-- Avoid hardcoded colors - use design tokens
-
-### shadcn/ui Components
-- Located in `src/components/ui/`
-- Currently: button.tsx, card.tsx
-- Use `className` prop for overrides, not style
-
-## 7. Backend Integration
-
-- API routes live in `server/app.ts`
-- Import pipeline lives in `server/import-db.ts`
-- Schema lives in `server/schema.ts`
-- Runtime data source is Postgres, not Convex
-- Legacy `convex/` and DynamoDB files are archival only unless a task explicitly targets them
-
-## 8. Common Issues to Avoid
-
-| Issue | Solution |
-|-------|----------|
-| Broken links | Check App.tsx routes before adding Link |
-| Null refs | Always check `document.getElementById()` returns before using |
-| Missing env | Validate `import.meta.env.VITE_*` at startup |
-| Build fails | Run `bun run build` before committing |
-
-## 9. Git Workflow
-
-- Branch: `feat/...` or `fix/...`
-- Commit: conventional (`feat:`, `fix:`, `chore:`)
-- Never commit to main directly
-- Run `bun run build` before committing
-
-## 10. Testing
-
-Run tests with:
 ```bash
+bun install
+bun run dev
+bun run api
+bun run build
 bun run test:unit
-TEST_DATABASE_URL=postgres://postgres@127.0.0.1:5432/postgres bun run test:integration
+TEST_DATABASE_URL=postgres://postgres@127.0.0.1:5432/postgres bun run test:api
 bun run test
 ```
 
-## 11. Development
+## Documentation
 
-```bash
-bun install    # Install deps
-bun run dev   # Start dev server
-bun run build # Production build
-```
+- Deployment: `docs/DEPLOYMENT.md`
+- Testing: `docs/TESTING.md`
+- Live parity: `docs/live-parity-check.md`
+- Course/data modeling: `docs/course-assessment-and-ui-model.md`

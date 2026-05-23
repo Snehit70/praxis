@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { createApiFetchHandler } from './app';
 import { createDbClient, type DbClient } from './db';
 import { ensureSchema } from './schema';
 
@@ -20,6 +21,14 @@ export interface IsolatedTestDatabase {
   adminSql: DbClient;
   sql: DbClient;
   schemaName: string;
+  dispose: () => Promise<void>;
+}
+
+export interface ApiTestContext {
+  database: IsolatedTestDatabase;
+  fetchHandler: ReturnType<typeof createApiFetchHandler>;
+  get: (path: string) => Promise<Response>;
+  getJson: <T = unknown>(path: string) => Promise<{ response: Response; json: T }>;
   dispose: () => Promise<void>;
 }
 
@@ -49,6 +58,30 @@ export async function createIsolatedTestDatabase(): Promise<IsolatedTestDatabase
       await sql.close({ timeout: 1 });
       await adminSql.unsafe(`DROP SCHEMA IF EXISTS "${schemaName}" CASCADE`);
       await adminSql.close({ timeout: 1 });
+    },
+  };
+}
+
+export async function createApiTestContext(): Promise<ApiTestContext> {
+  const database = await createIsolatedTestDatabase();
+  await seedIntegrationFixture(database.sql);
+  const fetchHandler = createApiFetchHandler(database.sql);
+
+  return {
+    database,
+    fetchHandler,
+    get(path: string) {
+      return fetchHandler(new Request(`http://local.test${path}`));
+    },
+    async getJson<T = unknown>(path: string) {
+      const response = await fetchHandler(new Request(`http://local.test${path}`));
+      return {
+        response,
+        json: (await response.json()) as T,
+      };
+    },
+    dispose() {
+      return database.dispose();
     },
   };
 }
@@ -204,5 +237,76 @@ export async function seedIntegrationFixture(sql: DbClient) {
       ('variant-2025:q-main:1', 'variant-2025:q-main', '2', '1', 1, 1),
       ('variant-2025:q-main:2', 'variant-2025:q-main', '3', '0', 0, 2),
       ('variant-2024:q-old:1', 'variant-2024:q-old', 'Legacy option', '1', 1, 1)
+  `;
+}
+
+export async function seedAliasCourseFixture(sql: DbClient) {
+  await sql`
+    INSERT INTO courses (source_uuid, course_name, course_code, program_id, label, canonical_name)
+    VALUES ('course-2', 'Computational Thinking (New)', 'CT', 1, 'Foundation', 'Computational Thinking')
+  `;
+
+  await sql`
+    INSERT INTO paper_variants (
+      id,
+      source_uuid,
+      exam_uuid,
+      course_uuid,
+      group_id,
+      total_score,
+      duration,
+      paper_name,
+      paper_description,
+      year,
+      is_new,
+      source_path
+    )
+    VALUES (
+      'variant-2023',
+      'paper-2023',
+      'exam-1',
+      'course-2',
+      1,
+      '2',
+      45,
+      'Computational Thinking Quiz 1 2023',
+      'Alias fixture paper',
+      2023,
+      0,
+      'fixtures/paper-2023.json'
+    )
+  `;
+
+  await sql`
+    INSERT INTO questions (
+      id,
+      source_uuid,
+      paper_variant_id,
+      question_number,
+      question_type,
+      total_mark,
+      total_mark_value,
+      hash,
+      question_text_1,
+      parent_question_uuid,
+      is_markdown,
+      have_answers,
+      question_num_long
+    )
+    VALUES (
+      'variant-2023:q-alias',
+      'q-alias',
+      'variant-2023',
+      1,
+      'MCQ',
+      '2',
+      2,
+      'hash-alias',
+      'Alias question',
+      NULL,
+      0,
+      1,
+      1
+    )
   `;
 }

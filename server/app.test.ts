@@ -1,35 +1,23 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { createApiFetchHandler } from './app';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
-  createIsolatedTestDatabase,
-  seedIntegrationFixture,
-  type IsolatedTestDatabase,
+  createApiTestContext,
+  seedAliasCourseFixture,
+  type ApiTestContext,
 } from './testHelpers';
 
-let database: IsolatedTestDatabase;
-let fetchHandler: ReturnType<typeof createApiFetchHandler>;
+let context: ApiTestContext;
 
-async function getJson(path: string) {
-  const response = await fetchHandler(new Request(`http://local.test${path}`));
-  return {
-    response,
-    json: await response.json(),
-  };
-}
-
-beforeAll(async () => {
-  database = await createIsolatedTestDatabase();
-  await seedIntegrationFixture(database.sql);
-  fetchHandler = createApiFetchHandler(database.sql);
+beforeEach(async () => {
+  context = await createApiTestContext();
 });
 
-afterAll(async () => {
-  await database.dispose();
+afterEach(async () => {
+  await context.dispose();
 });
 
 describe('Praxis API integration', () => {
-  test('returns dataset stats from the isolated database', async () => {
-    const { response, json } = await getJson('/api/stats');
+  test('returns dataset stats from an isolated database', async () => {
+    const { response, json } = await context.getJson('/api/stats');
 
     expect(response.status).toBe(200);
     expect(json).toEqual({
@@ -40,8 +28,18 @@ describe('Praxis API integration', () => {
     });
   });
 
+  test('sets public API response headers', async () => {
+    const response = await context.get('/api/health');
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toBe('application/json');
+    expect(response.headers.get('access-control-allow-origin')).toBe('*');
+  });
+
   test('lists courses for an exam with paper counts', async () => {
-    const { response, json } = await getJson('/api/exams/exam-1/courses');
+    const { response, json } = await context.getJson<Array<Record<string, unknown>>>(
+      '/api/exams/exam-1/courses',
+    );
 
     expect(response.status).toBe(200);
     expect(json).toHaveLength(1);
@@ -54,7 +52,10 @@ describe('Praxis API integration', () => {
   });
 
   test('returns global search results for matching courses and papers', async () => {
-    const { response, json } = await getJson('/api/search?q=computational');
+    const { response, json } = await context.getJson<{
+      courses: Array<Record<string, unknown>>;
+      papers: Array<Record<string, unknown>>;
+    }>('/api/search?q=computational');
 
     expect(response.status).toBe(200);
     expect(json.courses).toEqual([
@@ -79,14 +80,16 @@ describe('Praxis API integration', () => {
   });
 
   test('returns empty search results when query is blank', async () => {
-    const { response, json } = await getJson('/api/search?q=');
+    const { response, json } = await context.getJson('/api/search?q=');
 
     expect(response.status).toBe(200);
     expect(json).toEqual({ courses: [], papers: [] });
   });
 
   test('lists papers ordered by most recent year and computes marks', async () => {
-    const { response, json } = await getJson('/api/exams/exam-1/courses/course-1/papers');
+    const { response, json } = await context.getJson<Array<Record<string, unknown>>>(
+      '/api/exams/exam-1/courses/course-1/papers',
+    );
 
     expect(response.status).toBe(200);
     expect(json).toHaveLength(2);
@@ -106,82 +109,15 @@ describe('Praxis API integration', () => {
   });
 
   test('lists merged papers when course aliases are provided', async () => {
-    await database.sql`
-      INSERT INTO courses (source_uuid, course_name, course_code, program_id, label, canonical_name)
-      VALUES ('course-2', 'Computational Thinking (New)', 'CT', 1, 'Foundation', 'Computational Thinking')
-    `;
+    await seedAliasCourseFixture(context.database.sql);
 
-    await database.sql`
-      INSERT INTO paper_variants (
-        id,
-        source_uuid,
-        exam_uuid,
-        course_uuid,
-        group_id,
-        total_score,
-        duration,
-        paper_name,
-        paper_description,
-        year,
-        is_new,
-        source_path
-      )
-      VALUES (
-        'variant-2023',
-        'paper-2023',
-        'exam-1',
-        'course-2',
-        1,
-        '2',
-        45,
-        'Computational Thinking Quiz 1 2023',
-        'Alias fixture paper',
-        2023,
-        0,
-        'fixtures/paper-2023.json'
-      )
-    `;
-
-    await database.sql`
-      INSERT INTO questions (
-        id,
-        source_uuid,
-        paper_variant_id,
-        question_number,
-        question_type,
-        total_mark,
-        total_mark_value,
-        hash,
-        question_text_1,
-        parent_question_uuid,
-        is_markdown,
-        have_answers,
-        question_num_long
-      )
-      VALUES (
-        'variant-2023:q-alias',
-        'q-alias',
-        'variant-2023',
-        1,
-        'MCQ',
-        '2',
-        2,
-        'hash-alias',
-        'Alias question',
-        NULL,
-        0,
-        1,
-        1
-      )
-    `;
-
-    const { response, json } = await getJson(
+    const { response, json } = await context.getJson<Array<{ uuid: string; courseUuid: string }>>(
       '/api/exams/exam-1/courses/course-1/papers?courseUuids=course-1,course-2',
     );
 
     expect(response.status).toBe(200);
     expect(json).toHaveLength(3);
-    expect(json.map((paper: { uuid: string }) => paper.uuid)).toEqual([
+    expect(json.map((paper) => paper.uuid)).toEqual([
       'paper-2025',
       'paper-2024',
       'paper-2023',
@@ -194,8 +130,34 @@ describe('Praxis API integration', () => {
     });
   });
 
+  test('groups paper bundles with variant counts', async () => {
+    await seedAliasCourseFixture(context.database.sql);
+
+    const { response, json } = await context.getJson<
+      Array<{
+        groupId: number;
+        bundleLabel: string;
+        variantCount: number;
+        papers: Array<{ uuid: string }>;
+      }>
+    >('/api/exams/exam-1/courses/course-1/bundles?courseUuids=course-1,course-2');
+
+    expect(response.status).toBe(200);
+    expect(json).toHaveLength(1);
+    expect(json[0]).toMatchObject({
+      groupId: 1,
+      bundleLabel: 'Others',
+      variantCount: 3,
+    });
+    expect(json[0]?.papers.map((paper) => paper.uuid)).toEqual([
+      'paper-2025',
+      'paper-2024',
+      'paper-2023',
+    ]);
+  });
+
   test('returns paper details only for the requested exam and course context', async () => {
-    const { response, json } = await getJson(
+    const { response, json } = await context.getJson(
       '/api/papers/paper-2025?courseUuid=course-1&examUuid=exam-1',
     );
 
@@ -208,13 +170,15 @@ describe('Praxis API integration', () => {
       courseName: 'Computational Thinking',
     });
 
-    const missing = await getJson('/api/papers/paper-2025?courseUuid=course-1&examUuid=wrong-exam');
+    const missing = await context.getJson(
+      '/api/papers/paper-2025?courseUuid=course-1&examUuid=wrong-exam',
+    );
     expect(missing.response.status).toBe(404);
     expect(missing.json).toEqual({ error: 'Paper not found' });
   });
 
   test('returns paper questions with ordered options and parent linkage', async () => {
-    const { response, json } = await getJson(
+    const { response, json } = await context.getJson<Array<Record<string, unknown>>>(
       '/api/papers/paper-2025/questions?courseUuid=course-1&examUuid=exam-1',
     );
 
@@ -232,7 +196,7 @@ describe('Praxis API integration', () => {
       uuid: 'q-main',
       questionType: 'MCQ',
     });
-    expect(json[2].options).toEqual([
+    expect(json[2]?.options).toEqual([
       {
         optionText: '2',
         score: '1',
@@ -249,7 +213,7 @@ describe('Praxis API integration', () => {
   });
 
   test('returns not found for unknown routes', async () => {
-    const { response, json } = await getJson('/api/not-real');
+    const { response, json } = await context.getJson('/api/not-real');
 
     expect(response.status).toBe(404);
     expect(json).toEqual({ error: 'Route not found' });
