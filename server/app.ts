@@ -179,6 +179,11 @@ export function createApiFetchHandler(sql: DbClient) {
         return json({ ok: true });
       }
 
+      if (url.pathname === '/api/health/db') {
+        const [row] = await sql<Array<{ ok: number }>>`SELECT 1 AS ok`;
+        return json({ ok: row?.ok === 1 });
+      }
+
       if (url.pathname === '/api/stats') {
         const [stats] = await sql<
           Array<{

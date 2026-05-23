@@ -313,7 +313,7 @@ function QuestionTypeBadge({ type }: { type: string }) {
 }
 
 function normalizeMarkup(text: string) {
-  return text
+  const normalized = text
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/p>\s*<p>/gi, '\n\n')
     .replace(/<\/?p>/gi, '')
@@ -321,12 +321,46 @@ function normalizeMarkup(text: string) {
     .replace(/<strong>(.*?)<\/strong>/gis, '**$1**')
     .replace(/<i>(.*?)<\/i>/gis, '*$1*')
     .replace(/<em>(.*?)<\/em>/gis, '*$1*')
-    .replace(/<\/?u>/gi, '`');
+    .replace(/<u>(.*?)<\/u>/gis, '__$1__');
+
+  return decodeHtmlEntities(normalized);
+}
+
+function decodeHtmlEntities(text: string) {
+  const namedEntities: Record<string, string> = {
+    amp: '&',
+    apos: "'",
+    cent: '¢',
+    copy: '©',
+    deg: '°',
+    divide: '÷',
+    gt: '>',
+    le: '≤',
+    lt: '<',
+    minus: '−',
+    nbsp: ' ',
+    plusmn: '±',
+    quot: '"',
+    reg: '®',
+    times: '×',
+  };
+
+  return text.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (entity, value: string) => {
+    const lowerValue = value.toLowerCase();
+    if (lowerValue.startsWith('#x')) {
+      return String.fromCodePoint(Number.parseInt(lowerValue.slice(2), 16));
+    }
+    if (lowerValue.startsWith('#')) {
+      return String.fromCodePoint(Number.parseInt(lowerValue.slice(1), 10));
+    }
+
+    return namedEntities[lowerValue] ?? entity;
+  });
 }
 
 function renderInlineMarkdown(text: string) {
   const nodes: React.ReactNode[] = [];
-  const pattern = /(`[^`]+`|\*\*[^*]+\*\*)/g;
+  const pattern = /(`[^`]+`|\*\*[^*]+\*\*|__[^_]+__|\*[^*]+\*)/g;
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
@@ -342,8 +376,12 @@ function renderInlineMarkdown(text: string) {
           {token.slice(1, -1)}
         </code>,
       );
-    } else {
+    } else if (token.startsWith('**')) {
       nodes.push(<strong key={nodes.length}>{token.slice(2, -2)}</strong>);
+    } else if (token.startsWith('__')) {
+      nodes.push(<span key={nodes.length} className="underline underline-offset-2">{token.slice(2, -2)}</span>);
+    } else {
+      nodes.push(<em key={nodes.length}>{token.slice(1, -1)}</em>);
     }
 
     lastIndex = match.index + token.length;
@@ -359,6 +397,13 @@ function renderInlineMarkdown(text: string) {
 function RichText({ text, compact = false }: { text: string; compact?: boolean }) {
   const normalized = normalizeMarkup(text);
   const nodes: React.ReactNode[] = [];
+  const renderLines = (paragraph: string) =>
+    paragraph.split('\n').flatMap((line, index) => {
+      const rendered = renderInlineMarkdown(line);
+      if (index === 0) return rendered;
+      return [<br key={`br-${nodes.length}-${index}`} />, ...rendered];
+    });
+
   const renderParagraphs = (value: string) => {
     const paragraphs = value
       .split(/\n{2,}/)
@@ -368,7 +413,7 @@ function RichText({ text, compact = false }: { text: string; compact?: boolean }
     for (const paragraph of paragraphs) {
       nodes.push(
         <p key={`p-${nodes.length}`} className={compact ? 'my-0' : 'my-2'}>
-          {renderInlineMarkdown(paragraph)}
+          {renderLines(paragraph)}
         </p>,
       );
     }
