@@ -1,5 +1,9 @@
 # DB Provider Trial Plan
 
+> Status: superseded by the AWS self-hosted Postgres deployment.
+>
+> This document is kept for historical provider-evaluation context. The current production path is Vercel frontend -> AWS-hosted Bun API -> Docker Postgres, with images in Cloudflare R2. See `docs/DEPLOYMENT.md` for the active runbook.
+
 This project should test Aiven PostgreSQL and CockroachDB side-by-side before choosing the production database.
 
 ## Target Architecture
