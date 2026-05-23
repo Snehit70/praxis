@@ -2,6 +2,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { shouldIncludeQuestion, type RawPaperFile, type RawQuestion } from '../src/lib/dataTransforms';
+import { getCourseLevel } from '../src/lib/courseMapping';
 
 type SourceCourse = {
   id: number;
@@ -215,11 +216,25 @@ function isTargetCourse(course: LocalCourse | SourceCourse) {
   if (AUDIT_SCOPE === 'foundation') {
     return FOUNDATION_REMAINING_COURSES.has(normalizedName) || FOUNDATION_REMAINING_COURSES.has(normalizedCode);
   }
+  if (AUDIT_SCOPE === 'diploma') {
+    const nameLevel = getCourseLevel(name);
+    const codeLevel = getCourseLevel(code);
+    return nameLevel.startsWith('Diploma') || codeLevel.startsWith('Diploma');
+  }
+  if (AUDIT_SCOPE === 'degree') {
+    return getCourseLevel(name) === 'Degree' || getCourseLevel(code) === 'Degree';
+  }
   return `${name} ${code}`.toLowerCase().includes('python');
 }
 
 function selectedExams() {
   if (AUDIT_SCOPE === 'foundation') {
+    return EXAMS.filter((exam) => exam.name !== 'OPPE');
+  }
+  if (AUDIT_SCOPE === 'diploma') {
+    return EXAMS.filter((exam) => exam.name !== 'OPPE');
+  }
+  if (AUDIT_SCOPE === 'degree') {
     return EXAMS.filter((exam) => exam.name !== 'OPPE');
   }
   return EXAMS.filter((exam) => exam.name !== 'Quiz 2');
@@ -502,11 +517,27 @@ function markdownTable(headers: string[], rows: Array<Array<string | number>>) {
 function writeReport(audits: CourseAudit[]) {
   const generatedAt = new Date().toISOString();
   const ok = audits.every((audit) => audit.ok);
-  const title = AUDIT_SCOPE === 'foundation' ? 'Foundation Course Data Audit' : 'Python Course Data Audit';
-  const verdictSubject = AUDIT_SCOPE === 'foundation' ? 'Remaining foundation courses' : 'Python';
+  const title = AUDIT_SCOPE === 'foundation'
+    ? 'Foundation Course Data Audit'
+    : AUDIT_SCOPE === 'diploma'
+      ? 'Diploma Course Data Audit'
+      : AUDIT_SCOPE === 'degree'
+        ? 'Degree Course Data Audit'
+      : 'Python Course Data Audit';
+  const verdictSubject = AUDIT_SCOPE === 'foundation'
+    ? 'Remaining foundation courses'
+    : AUDIT_SCOPE === 'diploma'
+      ? 'Diploma courses'
+      : AUDIT_SCOPE === 'degree'
+        ? 'Degree courses'
+      : 'Python';
   const scopeText = AUDIT_SCOPE === 'foundation'
     ? 'Compared remaining foundation-level course labels in Quiz 1, Quiz 2, and End Term Quiz against live QuizPractice source pages. Python is excluded because it already has its own clean audit.'
-    : 'Compared Python-labelled courses in Quiz 1, End Term Quiz, and OPPE against live QuizPractice source pages.';
+    : AUDIT_SCOPE === 'diploma'
+      ? 'Compared local courses classified as Diploma in Programming or Diploma in Data Science by `src/lib/courseMapping.ts` against live QuizPractice source pages.'
+      : AUDIT_SCOPE === 'degree'
+        ? 'Compared local courses classified as Degree by `src/lib/courseMapping.ts` against live QuizPractice source pages.'
+      : 'Compared Python-labelled courses in Quiz 1, End Term Quiz, and OPPE against live QuizPractice source pages.';
   const rows = audits.map((audit) => [
     audit.examName,
     audit.courseName,
@@ -589,11 +620,17 @@ ${issueSections || 'No parity issues found.'}
 ## Repeatable Command
 
 \`\`\`bash
-${AUDIT_SCOPE === 'foundation' ? 'AUDIT_SCOPE=foundation bun run scripts/audit-python-course.ts' : 'bun run scripts/audit-python-course.ts'}
+${AUDIT_SCOPE === 'python' ? 'bun run scripts/audit-python-course.ts' : `AUDIT_SCOPE=${AUDIT_SCOPE} bun run scripts/audit-python-course.ts`}
 \`\`\`
 `;
 
-  const baseName = AUDIT_SCOPE === 'foundation' ? 'foundation-course' : 'python-course';
+  const baseName = AUDIT_SCOPE === 'foundation'
+    ? 'foundation-course'
+    : AUDIT_SCOPE === 'diploma'
+      ? 'diploma-course'
+      : AUDIT_SCOPE === 'degree'
+        ? 'degree-course'
+        : 'python-course';
   writeFileSync(path.join(OUT_DIR, `${baseName}-audit.json`), `${JSON.stringify({ generatedAt, ok, audits }, null, 2)}\n`);
   writeFileSync(path.join(OUT_DIR, `${baseName}-report.md`), report);
   writeFileSync(path.join(OUT_DIR, 'report.md'), report);
@@ -640,7 +677,13 @@ async function main() {
 
   writeReport(audits);
   const failed = audits.filter((audit) => !audit.ok).length;
-  const baseName = AUDIT_SCOPE === 'foundation' ? 'foundation-course' : 'python-course';
+  const baseName = AUDIT_SCOPE === 'foundation'
+    ? 'foundation-course'
+    : AUDIT_SCOPE === 'diploma'
+      ? 'diploma-course'
+      : AUDIT_SCOPE === 'degree'
+        ? 'degree-course'
+        : 'python-course';
   console.log(`${AUDIT_SCOPE} audit complete: ${audits.length - failed}/${audits.length} course-exam pairs clean`);
   console.log(`Report: ${path.join(OUT_DIR, `${baseName}-report.md`)}`);
   console.log(`Handoff report: ${path.join(OUT_DIR, 'report.md')}`);
