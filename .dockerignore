@@ -1,0 +1,15 @@
+.git
+.github
+node_modules
+dist
+data
+data-new
+data-new-stale-*
+images
+images-new
+reports
+tools/rescrape/node_modules
+*.log
+.env
+.env.*
+tsconfig.tsbuildinfo

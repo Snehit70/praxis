@@ -1,6 +1,7 @@
 import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, CheckCircle2, XCircle, RotateCcw, Trophy, Timer, Play, Pause } from 'lucide-react';
+import type React from 'react';
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { formatPaperName } from '@/lib/paperUtils';
 import { getExamSlugFromUuid, getExamUuidFromSlug } from '@/lib/examMapping';
@@ -311,6 +312,135 @@ function QuestionTypeBadge({ type }: { type: string }) {
   );
 }
 
+function normalizeMarkup(text: string) {
+  const normalized = text
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>\s*<p>/gi, '\n\n')
+    .replace(/<\/?p>/gi, '')
+    .replace(/<b>(.*?)<\/b>/gis, '**$1**')
+    .replace(/<strong>(.*?)<\/strong>/gis, '**$1**')
+    .replace(/<i>(.*?)<\/i>/gis, '*$1*')
+    .replace(/<em>(.*?)<\/em>/gis, '*$1*')
+    .replace(/<u>(.*?)<\/u>/gis, '__$1__');
+
+  return decodeHtmlEntities(normalized);
+}
+
+function decodeHtmlEntities(text: string) {
+  const namedEntities: Record<string, string> = {
+    amp: '&',
+    apos: "'",
+    cent: '¢',
+    copy: '©',
+    deg: '°',
+    divide: '÷',
+    gt: '>',
+    le: '≤',
+    lt: '<',
+    minus: '−',
+    nbsp: ' ',
+    plusmn: '±',
+    quot: '"',
+    reg: '®',
+    times: '×',
+  };
+
+  return text.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (entity, value: string) => {
+    const lowerValue = value.toLowerCase();
+    if (lowerValue.startsWith('#x')) {
+      return String.fromCodePoint(Number.parseInt(lowerValue.slice(2), 16));
+    }
+    if (lowerValue.startsWith('#')) {
+      return String.fromCodePoint(Number.parseInt(lowerValue.slice(1), 10));
+    }
+
+    return namedEntities[lowerValue] ?? entity;
+  });
+}
+
+function renderInlineMarkdown(text: string) {
+  const nodes: React.ReactNode[] = [];
+  const pattern = /(`[^`]+`|\*\*[^*]+\*\*|__[^_]+__|\*[^*]+\*)/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      nodes.push(text.slice(lastIndex, match.index));
+    }
+
+    const token = match[0];
+    if (token.startsWith('`')) {
+      nodes.push(
+        <code key={nodes.length} className="rounded bg-muted px-1 py-0.5 font-mono text-[0.9em]">
+          {token.slice(1, -1)}
+        </code>,
+      );
+    } else if (token.startsWith('**')) {
+      nodes.push(<strong key={nodes.length}>{token.slice(2, -2)}</strong>);
+    } else if (token.startsWith('__')) {
+      nodes.push(<span key={nodes.length} className="underline underline-offset-2">{token.slice(2, -2)}</span>);
+    } else {
+      nodes.push(<em key={nodes.length}>{token.slice(1, -1)}</em>);
+    }
+
+    lastIndex = match.index + token.length;
+  }
+
+  if (lastIndex < text.length) {
+    nodes.push(text.slice(lastIndex));
+  }
+
+  return nodes;
+}
+
+function RichText({ text, compact = false }: { text: string; compact?: boolean }) {
+  const normalized = normalizeMarkup(text);
+  const nodes: React.ReactNode[] = [];
+  const renderLines = (paragraph: string) =>
+    paragraph.split('\n').flatMap((line, index) => {
+      const rendered = renderInlineMarkdown(line);
+      if (index === 0) return rendered;
+      return [<br key={`br-${nodes.length}-${index}`} />, ...rendered];
+    });
+
+  const renderParagraphs = (value: string) => {
+    const paragraphs = value
+      .split(/\n{2,}/)
+      .map((part) => part.trim())
+      .filter(Boolean);
+
+    for (const paragraph of paragraphs) {
+      nodes.push(
+        <p key={`p-${nodes.length}`} className={compact ? 'my-0' : 'my-2'}>
+          {renderLines(paragraph)}
+        </p>,
+      );
+    }
+  };
+
+  const fencePattern = /```(?:\w+)?\n?([\s\S]*?)```/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = fencePattern.exec(normalized)) !== null) {
+    renderParagraphs(normalized.slice(lastIndex, match.index));
+    nodes.push(
+      <pre
+        key={`code-${nodes.length}`}
+        className="my-3 overflow-x-auto rounded-md border border-border bg-muted/60 p-3 text-sm leading-relaxed"
+      >
+        <code className="font-mono whitespace-pre">{(match[1] ?? '').trimEnd()}</code>
+      </pre>,
+    );
+    lastIndex = match.index + match[0].length;
+  }
+
+  renderParagraphs(normalized.slice(lastIndex));
+
+  if (nodes.length === 0) return null;
+  return <div className="max-w-none text-foreground leading-relaxed">{nodes}</div>;
+}
+
 function OptionButton({
   option,
   optionIndex,
@@ -329,6 +459,9 @@ function OptionButton({
   onClick: () => void;
 }) {
   const label = OPTION_LABELS[optionIndex] ?? String(optionIndex + 1);
+  const optionText = option.optionText?.trim() ?? '';
+  const hasOptionText = optionText.length > 0;
+  const hasOptionImage = Boolean(option.optionImage);
 
   let containerClass =
     'w-full flex items-start gap-3 px-4 py-3 rounded-lg border-2 transition-all text-left cursor-pointer ';
@@ -376,20 +509,24 @@ function OptionButton({
       </div>
 
       <div className="flex-1 min-w-0">
-        {option.optionText && (
-          <span
-            className="text-sm text-foreground leading-relaxed"
-            dangerouslySetInnerHTML={{ __html: option.optionText }}
-          />
+        {hasOptionText && (
+          <div className="text-sm">
+            <RichText text={optionText} compact />
+          </div>
         )}
-        {option.optionImage && (
+        {hasOptionImage && (
           <img
-            src={getOptionImageUrl(option.optionImage)}
+            src={getOptionImageUrl(option.optionImage ?? undefined)}
             alt={`Option ${label}`}
             className="mt-2 max-w-full rounded border border-border"
             loading="lazy"
             onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
           />
+        )}
+        {!hasOptionText && !hasOptionImage && (
+          <span className="text-sm text-muted-foreground italic">
+            Option content unavailable
+          </span>
         )}
       </div>
     </button>
@@ -402,6 +539,7 @@ function QuestionCard({
   selectedAnswers,
   showResults,
   onSelectAnswer,
+  onShortAnswerChange,
   isSubQuestion = false,
 }: {
   question: QuestionWithChildren;
@@ -409,6 +547,7 @@ function QuestionCard({
   selectedAnswers: Record<string, string | string[]>;
   showResults: boolean;
   onSelectAnswer: (questionId: string, optionIndex: string, questionType: QuestionType) => void;
+  onShortAnswerChange: (questionId: string, answer: string) => void;
   isSubQuestion?: boolean;
 }) {
   const selectedAnswer = selectedAnswers[question.uuid];
@@ -437,6 +576,15 @@ function QuestionCard({
   const isMultiSelect = question.questionType === 'MSQ';
   const isComprehension = question.questionType === 'COMPREHENSION';
   const isShortAnswer = question.questionType === 'SA' || question.questionType === 'OPPE';
+  const responseType = question.responseType?.toLowerCase() ?? '';
+  const answerType = question.answerType?.toLowerCase() ?? '';
+  const isNumericShortAnswer =
+    responseType.includes('number') ||
+    responseType.includes('numeric') ||
+    answerType.includes('number') ||
+    answerType.includes('numeric') ||
+    question.valueStart !== undefined ||
+    question.valueEnd !== undefined;
   const hasOptions = question.options.length > 0;
 
   if (isSubQuestion) {
@@ -461,8 +609,9 @@ function QuestionCard({
                   <div
                     key={textIndex}
                     className="prose prose-sm dark:prose-invert max-w-none text-foreground leading-relaxed"
-                    dangerouslySetInnerHTML={{ __html: text ?? '' }}
-                  />
+                  >
+                    <RichText text={text ?? ''} />
+                  </div>
                 ))}
                 {questionImages.length > 0 && (
                   <div className="flex flex-wrap gap-2">
@@ -483,9 +632,19 @@ function QuestionCard({
             {!isComprehension && (
               <div className="space-y-2">
                 {isShortAnswer ? (
-                  <p className="text-xs text-muted-foreground italic px-1">
-                    Written response — answer not available for practice
-                  </p>
+                  <div className="space-y-2 px-1">
+                    <input
+                      type={isNumericShortAnswer ? 'number' : 'text'}
+                      value={typeof selectedAnswer === 'string' ? selectedAnswer : ''}
+                      disabled={showResults}
+                      onChange={(event) => onShortAnswerChange(question.uuid, event.target.value)}
+                      placeholder={isNumericShortAnswer ? 'Enter numeric answer' : 'Enter your answer'}
+                      className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40"
+                    />
+                    <p className="text-xs text-muted-foreground italic">
+                      Manual-evaluation answer type. Your response is saved locally.
+                    </p>
+                  </div>
                 ) : (
                   <>
                     {isMultiSelect && (
@@ -511,6 +670,11 @@ function QuestionCard({
                         />
                       );
                     })}
+                    {!hasOptions && (
+                      <p className="text-xs text-muted-foreground italic px-1">
+                        No options available for this question.
+                      </p>
+                    )}
                   </>
                 )}
               </div>
@@ -546,8 +710,9 @@ function QuestionCard({
               <div
                 key={textIndex}
                 className="prose prose-sm dark:prose-invert max-w-none text-foreground leading-relaxed"
-                dangerouslySetInnerHTML={{ __html: text ?? '' }}
-              />
+              >
+                <RichText text={text ?? ''} />
+              </div>
             ))}
 
             {questionImages.length > 0 && (
@@ -570,9 +735,19 @@ function QuestionCard({
           {!isComprehension && (
             <div className="space-y-2">
               {isShortAnswer ? (
-                <p className="text-xs text-muted-foreground italic px-1">
-                  Written response — answer not available for practice
-                </p>
+                <div className="space-y-2 px-1">
+                  <input
+                    type={isNumericShortAnswer ? 'number' : 'text'}
+                    value={typeof selectedAnswer === 'string' ? selectedAnswer : ''}
+                    disabled={showResults}
+                    onChange={(event) => onShortAnswerChange(question.uuid, event.target.value)}
+                    placeholder={isNumericShortAnswer ? 'Enter numeric answer' : 'Enter your answer'}
+                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40"
+                  />
+                  <p className="text-xs text-muted-foreground italic">
+                    Manual-evaluation answer type. Your response is saved locally.
+                  </p>
+                </div>
               ) : (
                 <>
                   {isMultiSelect && (
@@ -598,6 +773,11 @@ function QuestionCard({
                       />
                     );
                   })}
+                  {!hasOptions && (
+                    <p className="text-xs text-muted-foreground italic px-1">
+                      No options available for this question.
+                    </p>
+                  )}
                 </>
               )}
             </div>
@@ -617,6 +797,7 @@ function QuestionCard({
                   selectedAnswers={selectedAnswers}
                   showResults={showResults}
                   onSelectAnswer={onSelectAnswer}
+                  onShortAnswerChange={onShortAnswerChange}
                   isSubQuestion
                 />
               ))}
@@ -771,7 +952,7 @@ export default function PaperPage() {
 
   const displayPaperName = useMemo(() => {
     if (!paper?.paperName) return '';
-    return formatPaperName(paper.paperName, paper.year);
+    return formatPaperName(paper.paperName, paper.year ?? undefined);
   }, [paper?.paperName, paper?.year]);
 
   const groupedQuestions = useMemo(() => {
@@ -872,6 +1053,11 @@ export default function PaperPage() {
       }
       return { ...prev, [questionId]: optionIndex };
     });
+  };
+
+  const handleShortAnswerChange = (questionId: string, answer: string) => {
+    if (showResults) return;
+    setSelectedAnswers((prev) => ({ ...prev, [questionId]: answer }));
   };
 
   const handleTimerStart = () => {
@@ -1040,6 +1226,7 @@ export default function PaperPage() {
               selectedAnswers={selectedAnswers}
               showResults={showResults}
               onSelectAnswer={handleOptionSelect}
+              onShortAnswerChange={handleShortAnswerChange}
             />
           ))}
         </div>

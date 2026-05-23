@@ -1,0 +1,19 @@
+services:
+  praxis-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: praxis-api
+    restart: unless-stopped
+    env_file:
+      - .env.api
+    environment:
+      PORT: "8787"
+    ports:
+      - "127.0.0.1:8787:8787"
+    networks:
+      - praxis-net
+
+networks:
+  praxis-net:
+    external: true

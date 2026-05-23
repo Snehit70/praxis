@@ -1,0 +1,168 @@
+name: Deploy API (AWS via SSH)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "server/**"
+      - "src/lib/**"
+      - "Dockerfile.api"
+      - "docker-compose.api.yml"
+      - "package.json"
+      - "bun.lock"
+      - ".github/workflows/deploy-api-aws-ssh.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-api-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Deploy Praxis API on AWS host over SSH
+    runs-on: ubuntu-latest
+    env:
+      DEPLOY_PATH: ${{ secrets.PRAXIS_DEPLOY_PATH }}
+      AWS_SSH_HOST: ${{ secrets.AWS_SSH_HOST }}
+      AWS_SSH_USER: ${{ secrets.AWS_SSH_USER }}
+      AWS_SSH_PORT: ${{ secrets.AWS_SSH_PORT }}
+      API_DATABASE_URL: ${{ secrets.PRAXIS_API_DATABASE_URL }}
+      API_ALLOWED_ORIGIN: ${{ secrets.PRAXIS_API_ALLOWED_ORIGIN }}
+      API_SERVER_NAME: ${{ secrets.PRAXIS_API_SERVER_NAME }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate deploy secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${AWS_SSH_HOST}" || { echo "AWS_SSH_HOST missing"; exit 1; }
+          test -n "${AWS_SSH_USER}" || { echo "AWS_SSH_USER missing"; exit 1; }
+          test -n "${AWS_SSH_PORT}" || { echo "AWS_SSH_PORT missing"; exit 1; }
+          test -n "${DEPLOY_PATH}" || { echo "PRAXIS_DEPLOY_PATH missing"; exit 1; }
+          test -n "${API_DATABASE_URL}" || { echo "PRAXIS_API_DATABASE_URL missing"; exit 1; }
+          [[ "${AWS_SSH_PORT}" =~ ^[0-9]+$ ]] || { echo "AWS_SSH_PORT must be numeric"; exit 1; }
+          [[ "${DEPLOY_PATH}" = /* ]] || { echo "PRAXIS_DEPLOY_PATH must be absolute"; exit 1; }
+          [[ "${AWS_SSH_HOST}" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "AWS_SSH_HOST has invalid characters"; exit 1; }
+          [[ "${AWS_SSH_USER}" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "AWS_SSH_USER has invalid characters"; exit 1; }
+
+      - name: Prepare SSH key
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          cat > ~/.ssh/id_ed25519 <<'KEY'
+          ${{ secrets.AWS_SSH_PRIVATE_KEY }}
+          KEY
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -p "${AWS_SSH_PORT}" -H "${AWS_SSH_HOST}" >> ~/.ssh/known_hosts
+
+      - name: Sync repository to server
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 -p "${AWS_SSH_PORT}" "${AWS_SSH_USER}@${AWS_SSH_HOST}" "mkdir -p '${DEPLOY_PATH}'"
+          rsync -az --delete \
+            --exclude=.git \
+            --exclude=node_modules \
+            --exclude=dist \
+            --exclude=data \
+            --exclude=data-new \
+            --exclude='data-new-stale-*' \
+            --exclude=images \
+            --exclude=images-new \
+            --exclude=reports \
+            --exclude=tools/rescrape/node_modules \
+            --exclude=.env \
+            --exclude='.env.*' \
+            -e "ssh -i ~/.ssh/id_ed25519 -p ${AWS_SSH_PORT}" \
+            ./ "${AWS_SSH_USER}@${AWS_SSH_HOST}:${DEPLOY_PATH}/"
+
+      - name: Write API env on server
+        shell: bash
+        run: |
+          set -euo pipefail
+          tmp_env="$(mktemp)"
+          trap 'rm -f "${tmp_env}"' EXIT
+          cat > "${tmp_env}" <<EOF
+          DATABASE_URL=${API_DATABASE_URL}
+          PORT=8787
+          API_ALLOWED_ORIGIN=${API_ALLOWED_ORIGIN}
+          EOF
+          chmod 600 "${tmp_env}"
+          scp -i ~/.ssh/id_ed25519 -P "${AWS_SSH_PORT}" "${tmp_env}" "${AWS_SSH_USER}@${AWS_SSH_HOST}:${DEPLOY_PATH}/.env.api"
+
+      - name: Build and restart API on server
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 -p "${AWS_SSH_PORT}" "${AWS_SSH_USER}@${AWS_SSH_HOST}" "DEPLOY_PATH='${DEPLOY_PATH}' bash -s" <<'EOF'
+          set -euo pipefail
+          cd "${DEPLOY_PATH}"
+          if docker info >/dev/null 2>&1; then
+            DOCKER_SUDO=""
+          elif sudo docker info >/dev/null 2>&1; then
+            DOCKER_SUDO="sudo"
+          else
+            echo "Docker is unavailable"
+            exit 1
+          fi
+
+          ${DOCKER_SUDO} docker network create praxis-net >/dev/null 2>&1 || true
+          if ${DOCKER_SUDO} docker ps --format '{{.Names}}' | grep -qx praxis-postgres; then
+            ${DOCKER_SUDO} docker network connect praxis-net praxis-postgres >/dev/null 2>&1 || true
+          fi
+
+          ${DOCKER_SUDO} docker compose -f docker-compose.api.yml up -d --build
+          ${DOCKER_SUDO} docker compose -f docker-compose.api.yml ps
+          EOF
+
+      - name: Configure nginx reverse proxy
+        if: env.API_SERVER_NAME != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 -p "${AWS_SSH_PORT}" "${AWS_SSH_USER}@${AWS_SSH_HOST}" "API_SERVER_NAME='${API_SERVER_NAME}' bash -s" <<'EOF'
+          set -euo pipefail
+          if ! sudo nginx -v >/dev/null 2>&1; then
+            sudo dnf install -y nginx
+            sudo systemctl enable --now nginx
+          fi
+
+          sudo tee /etc/nginx/conf.d/praxis-api.conf >/dev/null <<'NGINX'
+          server {
+            listen 80;
+            listen [::]:80;
+            server_name __PRAXIS_API_SERVER_NAME__;
+
+            location /api/ {
+              proxy_pass http://127.0.0.1:8787;
+              proxy_http_version 1.1;
+              proxy_set_header Host $host;
+              proxy_set_header X-Real-IP $remote_addr;
+              proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+              proxy_set_header X-Forwarded-Proto $scheme;
+            }
+
+            location / {
+              return 404;
+            }
+          }
+          NGINX
+          sudo sed -i "s/__PRAXIS_API_SERVER_NAME__/${API_SERVER_NAME}/g" /etc/nginx/conf.d/praxis-api.conf
+
+          sudo nginx -t
+          sudo systemctl reload nginx || sudo systemctl restart nginx
+          EOF
+
+      - name: Verify API
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 -p "${AWS_SSH_PORT}" "${AWS_SSH_USER}@${AWS_SSH_HOST}" \
+            "curl --fail --show-error --silent --retry 8 --retry-connrefused --retry-delay 2 http://127.0.0.1:8787/api/health && echo && curl --fail --show-error --silent --retry 8 --retry-connrefused --retry-delay 2 http://127.0.0.1:8787/api/health/db && echo && curl --fail --show-error --silent --retry 8 --retry-connrefused --retry-delay 2 http://127.0.0.1:8787/api/stats"
+          if [[ -n "${API_SERVER_NAME}" ]]; then
+            curl --fail --show-error --silent --retry 8 --retry-connrefused --retry-delay 2 "http://${API_SERVER_NAME}/api/health"
+            curl --fail --show-error --silent --retry 8 --retry-connrefused --retry-delay 2 "http://${API_SERVER_NAME}/api/health/db"
+            curl --fail --show-error --silent --retry 8 --retry-connrefused --retry-delay 2 "http://${API_SERVER_NAME}/api/stats"
+          fi

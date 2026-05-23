@@ -1,0 +1,24 @@
+{
+  "name": "praxis-rescrape-tools",
+  "version": "1.0.0",
+  "description": "Recovered QuizPractice rescrape tools for Praxis",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "scrape": "bun run src/index.ts",
+    "discover-site": "bun run src/discover-site.ts",
+    "probe-endpoints": "bun run src/probe-endpoints.ts",
+    "extract-images": "bun run src/extract-images.ts",
+    "download-images": "bun run src/download-images.ts"
+  },
+  "dependencies": {
+    "axios": "^1.13.4",
+    "axios-cookiejar-support": "^6.0.5",
+    "cheerio": "^1.2.0",
+    "tough-cookie": "^6.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.1.0",
+    "typescript": "^5.9.3"
+  }
+}
