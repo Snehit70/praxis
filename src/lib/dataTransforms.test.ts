@@ -1,18 +1,71 @@
 import { expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
 import {
   getQuestionStats,
   transformRawQuestions,
-  type RawPaperFile,
+  type RawQuestion,
 } from '@/lib/dataTransforms';
 
-function readPaperFixture(path: string): RawPaperFile {
-  return JSON.parse(readFileSync(path, 'utf8')) as RawPaperFile;
+function question(overrides: Partial<RawQuestion>): RawQuestion {
+  return {
+    uuid: 'question-uuid',
+    question_number: 1,
+    question_type: 'MCQ',
+    total_mark: '1',
+    hash: 'hash',
+    question_text_1: 'Question text',
+    is_markdown: 0,
+    have_answers: 1,
+    question_num_long: 1,
+    options: [
+      {
+        option_text: 'Option A',
+        score: '1',
+        is_correct: 1,
+        option_number: 1,
+      },
+    ],
+    ...overrides,
+  };
 }
 
 test('transformRawQuestions filters instructional zero-mark prompts', () => {
-  const paper = readPaperFixture('data/Quiz 1/CT/a3d88545-398.json');
-  const questions = transformRawQuestions(paper.questions);
+  const questions = transformRawQuestions([
+    question({
+      uuid: 'hall-ticket-prompt',
+      question_number: 1,
+      total_mark: '0',
+      question_text_1: 'Please cross check the HALL TICKET registered by you.',
+      options: [],
+    }),
+    question({
+      uuid: 'useful-data-prompt',
+      question_number: 2,
+      total_mark: '0',
+      question_text_1: 'Useful data',
+      options: [
+        {
+          option_text: 'Useful Data has been mentioned above',
+          score: '0',
+          is_correct: 0,
+          option_number: 1,
+        },
+      ],
+    }),
+    question({
+      uuid: 'answerable-question',
+      question_number: 3,
+      total_mark: '2',
+      question_text_1: 'What is 1 + 1?',
+      options: [
+        {
+          option_text: '2',
+          score: '2',
+          is_correct: 1,
+          option_number: 1,
+        },
+      ],
+    }),
+  ]);
 
   expect(questions.some((question) => question.questionText1?.includes('HALL TICKET'))).toBe(false);
   expect(
@@ -27,8 +80,25 @@ test('transformRawQuestions filters instructional zero-mark prompts', () => {
 });
 
 test('transformRawQuestions preserves comprehension parent linkage', () => {
-  const paper = readPaperFixture('data/Quiz 1/CT/a21ea62e-1aa0-4a13-b6a5-0237e8a10895.json');
-  const questions = transformRawQuestions(paper.questions);
+  const comprehensionUuid = 'comprehension-parent';
+  const questions = transformRawQuestions([
+    question({
+      uuid: comprehensionUuid,
+      question_number: 1,
+      question_type: 'COMPREHENSION',
+      total_mark: '0',
+      question_text_1: 'Read the passage.',
+      options: [],
+    }),
+    question({
+      uuid: 'child-question',
+      question_number: 2,
+      question_type: 'MCQ',
+      total_mark: '1',
+      parent_question: { uuid: comprehensionUuid },
+      question_text_1: 'Question based on passage.',
+    }),
+  ]);
 
   const comprehension = questions.find((question) => question.questionType === 'COMPREHENSION');
   const childQuestion = questions.find((question) => question.parentQuestionUuid === comprehension?.uuid);
