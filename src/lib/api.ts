@@ -63,7 +63,7 @@ export interface PaperSummary {
   courseUuid: string;
   paperName: string;
   paperDescription: string;
-  year: number;
+  year: number | null;
   duration: number;
   totalScore: string;
   isNew: number;
@@ -78,7 +78,7 @@ export interface PaperDetails {
   uuid: string;
   paperName: string;
   paperDescription: string;
-  year: number;
+  year: number | null;
   duration: number;
   totalScore: string;
   isNew: number;
@@ -130,6 +130,27 @@ export function getPapersByExamAndCourseUuids(examUuid: string, courseUuids: str
   const suffix = params.toString() ? `?${params.toString()}` : '';
   return fetchJson<PaperSummary[]>(
     `/api/exams/${encodeURIComponent(examUuid)}/courses/${encodeURIComponent(courseUuids[0] ?? '')}/papers${suffix}`,
+  );
+}
+
+export interface PaperBundle {
+  groupId: number;
+  bundleLabel: string;
+  dateLabel: string;
+  termLabel: string | null;
+  variantCount: number;
+  papers: PaperSummary[];
+}
+
+export function getPaperBundlesByExamAndCourseUuids(examUuid: string, courseUuids: string[]) {
+  const params = new URLSearchParams();
+  if (courseUuids.length > 0) {
+    params.set('courseUuids', courseUuids.join(','));
+  }
+
+  const suffix = params.toString() ? `?${params.toString()}` : '';
+  return fetchJson<PaperBundle[]>(
+    `/api/exams/${encodeURIComponent(examUuid)}/courses/${encodeURIComponent(courseUuids[0] ?? '')}/bundles${suffix}`,
   );
 }
 

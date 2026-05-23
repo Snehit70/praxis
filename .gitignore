@@ -4,6 +4,14 @@ node_modules/
 # Scraped data (too large for git)
 data/
 images/
+data-new/
+images-new/
+data-new-stale-foundation-local-only/
+data-new-image-urls.json
+
+# Generated analysis outputs
+reports/**/*.json
+reports/**/*.checkpoint.json
 
 # Environment
 .env
@@ -11,6 +19,8 @@ images/
 
 # Logs
 *.log
+*.nohup.log
+scraper-state.json
 
 # OS
 .DS_Store
@@ -28,3 +38,6 @@ tsconfig.tsbuildinfo
 
 # Convex
 convex/_generated/
+
+# Nested tool dependencies
+tools/**/node_modules/

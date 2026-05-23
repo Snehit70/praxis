@@ -32,7 +32,7 @@ export async function ensureSchema(sql: DbClient) {
       duration INTEGER NOT NULL,
       paper_name TEXT NOT NULL,
       paper_description TEXT NOT NULL,
-      year INTEGER NOT NULL,
+      year INTEGER,
       is_new INTEGER NOT NULL,
       created_at TIMESTAMPTZ,
       updated_at TIMESTAMPTZ,
@@ -95,12 +95,19 @@ export async function ensureSchema(sql: DbClient) {
       score TEXT NOT NULL,
       is_correct INTEGER NOT NULL,
       option_number BIGINT,
+      option_position INTEGER NOT NULL DEFAULT 0,
       created_at TIMESTAMPTZ,
       updated_at TIMESTAMPTZ
     );
 
+    ALTER TABLE options
+      ADD COLUMN IF NOT EXISTS option_position INTEGER NOT NULL DEFAULT 0;
+
     CREATE INDEX IF NOT EXISTS idx_options_question
-      ON options (question_id, option_number);
+      ON options (question_id, option_number, option_position);
+
+    ALTER TABLE paper_variants
+      ALTER COLUMN year DROP NOT NULL;
   `);
 }
 
