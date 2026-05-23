@@ -2,6 +2,8 @@ import type { DbClient } from './db';
 
 export async function ensureSchema(sql: DbClient) {
   await sql.unsafe(`
+    CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
     CREATE TABLE IF NOT EXISTS exams (
       source_uuid TEXT PRIMARY KEY,
       exam_name TEXT NOT NULL,
@@ -45,6 +47,18 @@ export async function ensureSchema(sql: DbClient) {
     CREATE INDEX IF NOT EXISTS idx_paper_variants_source_uuid
       ON paper_variants (source_uuid);
 
+    CREATE INDEX IF NOT EXISTS idx_paper_variants_source_context
+      ON paper_variants (source_uuid, course_uuid, exam_uuid, year DESC, created_at DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_paper_variants_course_exam_group
+      ON paper_variants (exam_uuid, course_uuid, group_id, created_at DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_paper_variants_search_name_trgm
+      ON paper_variants USING gin (paper_name gin_trgm_ops);
+
+    CREATE INDEX IF NOT EXISTS idx_paper_variants_search_description_trgm
+      ON paper_variants USING gin (paper_description gin_trgm_ops);
+
     CREATE TABLE IF NOT EXISTS questions (
       id TEXT PRIMARY KEY,
       source_uuid TEXT NOT NULL,
@@ -87,6 +101,9 @@ export async function ensureSchema(sql: DbClient) {
     CREATE INDEX IF NOT EXISTS idx_questions_parent
       ON questions (paper_variant_id, parent_question_uuid);
 
+    CREATE INDEX IF NOT EXISTS idx_questions_source_uuid
+      ON questions (source_uuid);
+
     CREATE TABLE IF NOT EXISTS options (
       id TEXT PRIMARY KEY,
       question_id TEXT NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
@@ -108,6 +125,15 @@ export async function ensureSchema(sql: DbClient) {
 
     ALTER TABLE paper_variants
       ALTER COLUMN year DROP NOT NULL;
+
+    CREATE INDEX IF NOT EXISTS idx_courses_search_name_trgm
+      ON courses USING gin (course_name gin_trgm_ops);
+
+    CREATE INDEX IF NOT EXISTS idx_courses_search_code_trgm
+      ON courses USING gin (course_code gin_trgm_ops);
+
+    CREATE INDEX IF NOT EXISTS idx_courses_search_canonical_trgm
+      ON courses USING gin (canonical_name gin_trgm_ops);
   `);
 }
 

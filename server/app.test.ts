@@ -34,6 +34,16 @@ describe('Praxis API integration', () => {
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toBe('application/json');
     expect(response.headers.get('access-control-allow-origin')).toBe('*');
+    expect(response.headers.get('cache-control')).toBe(
+      'public, max-age=60, s-maxage=300, stale-while-revalidate=600',
+    );
+  });
+
+  test('does not cache error responses', async () => {
+    const response = await context.get('/api/not-real');
+
+    expect(response.status).toBe(404);
+    expect(response.headers.get('cache-control')).toBeNull();
   });
 
   test('lists courses for an exam with paper counts', async () => {

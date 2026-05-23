@@ -1,14 +1,23 @@
 import type { DbClient } from './db';
 
+const allowedOrigin = process.env.API_ALLOWED_ORIGIN?.trim() || '*';
+const cacheableApiResponse = 'public, max-age=60, s-maxage=300, stale-while-revalidate=600';
+
 function json(data: unknown, status = 200) {
+  const headers: Record<string, string> = {
+    'content-type': 'application/json',
+    'access-control-allow-origin': allowedOrigin,
+    'access-control-allow-methods': 'GET,OPTIONS',
+    'access-control-allow-headers': 'content-type',
+  };
+
+  if (status === 200) {
+    headers['cache-control'] = cacheableApiResponse;
+  }
+
   return new Response(JSON.stringify(data), {
     status,
-    headers: {
-      'content-type': 'application/json',
-      'access-control-allow-origin': '*',
-      'access-control-allow-methods': 'GET,OPTIONS',
-      'access-control-allow-headers': 'content-type',
-    },
+    headers,
   });
 }
 

@@ -129,6 +129,13 @@ jobs:
             sudo systemctl enable --now nginx
           fi
 
+          if sudo test -f "/etc/letsencrypt/live/${API_SERVER_NAME}/fullchain.pem"; then
+            echo "Existing Let's Encrypt certificate found for ${API_SERVER_NAME}; preserving current nginx TLS config."
+            sudo nginx -t
+            sudo systemctl reload nginx || sudo systemctl restart nginx
+            exit 0
+          fi
+
           sudo tee /etc/nginx/conf.d/praxis-api.conf >/dev/null <<'NGINX'
           server {
             listen 80;
