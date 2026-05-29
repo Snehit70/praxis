@@ -111,13 +111,18 @@ export default function HomePage() {
 
           {/* Search Bar */}
           <form onSubmit={handleSearch} className="mt-8">
+            <label htmlFor="home-course-search" className="sr-only">
+              Search courses
+            </label>
             <div className="relative">
-              <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
+              <Search aria-hidden="true" className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
               <input
+                id="home-course-search"
                 type="text"
                 placeholder="Search for a course..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
+                autoComplete="off"
                 className="w-full rounded-xl border border-border bg-card py-4 pl-12 pr-4 text-base text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
               />
               <button
@@ -151,7 +156,7 @@ export default function HomePage() {
                 <div className="flex items-start justify-between">
                   <div className="flex items-start gap-4">
                     <div className={`flex h-12 w-12 items-center justify-center rounded-xl ${exam.bgColor} ${exam.color} transition-colors`}>
-                      <Icon className="h-6 w-6" />
+                      <Icon aria-hidden="true" className="h-6 w-6" />
                     </div>
                     <div>
                       <h3 className="text-lg font-semibold text-foreground group-hover:text-primary transition-colors">
@@ -162,7 +167,7 @@ export default function HomePage() {
                       </p>
                     </div>
                   </div>
-                  <ArrowRight className="h-5 w-5 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all flex-shrink-0" />
+                  <ArrowRight aria-hidden="true" className="h-5 w-5 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all flex-shrink-0" />
                 </div>
               </Link>
             );
@@ -218,7 +223,7 @@ export default function HomePage() {
             return (
               <div key={index} className="space-y-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                  <Icon className="h-5 w-5" />
+                  <Icon aria-hidden="true" className="h-5 w-5" />
                 </div>
                 <h3 className="font-medium text-foreground">{feature.title}</h3>
                 <p className="text-sm text-muted-foreground leading-relaxed">

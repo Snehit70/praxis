@@ -40,6 +40,7 @@ bun run test
 ```
 
 Testing details, database isolation, and CI behavior are documented in [docs/TESTING.md](docs/TESTING.md).
+Primary UX route behavior/state matrix/QA checklist is documented in [docs/PRIMARY-FLOW-UX-PLAN.md](docs/PRIMARY-FLOW-UX-PLAN.md).
 
 ## Build
 

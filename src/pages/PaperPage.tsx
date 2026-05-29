@@ -15,6 +15,7 @@ import {
 } from '@/lib/api';
 import type { QuestionType, QuizQuestion } from '@/lib/dataTransforms';
 import { Skeleton } from '@/components/ui/skeleton';
+import { StatePanel } from '@/components/ui/state-panel';
 
 interface QuestionWithChildren extends QuizQuestion {
   subQuestions?: QuizQuestion[];
@@ -79,7 +80,7 @@ function formatRemainingTime(totalSeconds: number | null) {
 
 function LoadingSkeleton() {
   return (
-    <div className="max-w-3xl mx-auto space-y-6 px-4 sm:px-0">
+    <div className="max-w-3xl mx-auto space-y-6 px-4 sm:px-0" role="status" aria-live="polite" aria-label="Loading paper">
       <Skeleton className="h-4 w-24" />
       <div>
         <Skeleton className="h-8 w-64 mb-2" />
@@ -221,10 +222,17 @@ function ResultsSummary({
   stats,
   onTryAgain,
 }: {
-  stats: { correct: number; total: number; scoredMarks: number; totalMarks: number };
+  stats: {
+    correct: number;
+    gradableTotal: number;
+    scoredMarks: number;
+    totalMarks: number;
+    manualEvalCount: number;
+  };
   onTryAgain: () => void;
 }) {
-  const percentage = stats.total > 0 ? Math.round((stats.correct / stats.total) * 100) : 0;
+  const percentage =
+    stats.gradableTotal > 0 ? Math.round((stats.correct / stats.gradableTotal) * 100) : 0;
   const isGood = percentage >= 70;
   const isOkay = percentage >= 40 && percentage < 70;
   const scoreColor = isGood
@@ -258,13 +266,18 @@ function ResultsSummary({
               <p className={`text-3xl font-bold leading-none ${scoreColor}`}>
                 {stats.correct}
                 <span className="text-lg font-normal text-muted-foreground ml-1">
-                  / {stats.total} correct
+                  / {stats.gradableTotal} correct
                 </span>
               </p>
             )}
             <p className="text-sm text-muted-foreground mt-1.5">
-              {stats.correct} of {stats.total} correct &middot; {percentage}%
+              {stats.correct} of {stats.gradableTotal} auto-graded correct &middot; {percentage}%
             </p>
+            {stats.manualEvalCount > 0 && (
+              <p className="text-sm text-muted-foreground mt-1">
+                {stats.manualEvalCount} response{stats.manualEvalCount === 1 ? '' : 's'} require manual evaluation.
+              </p>
+            )}
           </div>
         </div>
         <Button variant="outline" onClick={onTryAgain} className="gap-2 sm:self-center">
@@ -490,8 +503,11 @@ function OptionButton({
 
   return (
     <button
+      type="button"
       onClick={onClick}
       disabled={showResults}
+      aria-pressed={!showResults ? isSelected : undefined}
+      aria-label={`Option ${label}${isSelected ? ', selected' : ''}${showResults ? isCorrect ? ', correct' : isSelected ? ', incorrect' : '' : ''}`}
       className={`group ${containerClass}`}
     >
       <div className={`mt-0.5 ${indicatorClass}`}>
@@ -634,6 +650,7 @@ function QuestionCard({
                 {isShortAnswer ? (
                   <div className="space-y-2 px-1">
                     <input
+                      aria-label={isNumericShortAnswer ? 'Numeric short answer' : 'Short answer'}
                       type={isNumericShortAnswer ? 'number' : 'text'}
                       value={typeof selectedAnswer === 'string' ? selectedAnswer : ''}
                       disabled={showResults}
@@ -737,6 +754,7 @@ function QuestionCard({
               {isShortAnswer ? (
                 <div className="space-y-2 px-1">
                   <input
+                    aria-label={isNumericShortAnswer ? 'Numeric short answer' : 'Short answer'}
                     type={isNumericShortAnswer ? 'number' : 'text'}
                     value={typeof selectedAnswer === 'string' ? selectedAnswer : ''}
                     disabled={showResults}
@@ -830,6 +848,7 @@ export default function PaperPage() {
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
   const [timerEndsAt, setTimerEndsAt] = useState<number | null>(null);
   const [timeExpired, setTimeExpired] = useState(false);
+  const [retryNonce, setRetryNonce] = useState(0);
   const headerRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -890,7 +909,7 @@ export default function PaperPage() {
       active = false;
       controller.abort();
     };
-  }, [paperId, courseId, examUuidFromSearch, storageKey]);
+  }, [paperId, courseId, examUuidFromSearch, storageKey, retryNonce]);
 
   // Sticky progress bar on scroll
   useEffect(() => {
@@ -985,27 +1004,53 @@ export default function PaperPage() {
   }, [questions]);
 
   const stats = useMemo(() => {
+    const hasMeaningfulAnswer = (value: string | string[] | undefined) => {
+      if (value === undefined) return false;
+      if (Array.isArray(value)) return value.length > 0;
+      return value.trim().length > 0;
+    };
+
     const allQuestionIds = new Set<string>();
+    let manualEvalCount = 0;
+    let gradableTotal = 0;
 
     for (const question of groupedQuestions) {
       if (question.questionType !== 'COMPREHENSION') {
         allQuestionIds.add(question.uuid);
+        if (question.questionType === 'SA' || question.questionType === 'OPPE') {
+          manualEvalCount++;
+        } else {
+          gradableTotal++;
+        }
       }
       if (question.subQuestions) {
-        question.subQuestions.forEach((sq) => allQuestionIds.add(sq.uuid));
+        question.subQuestions.forEach((sq) => {
+          allQuestionIds.add(sq.uuid);
+          if (sq.questionType === 'SA' || sq.questionType === 'OPPE') {
+            manualEvalCount++;
+          } else {
+            gradableTotal++;
+          }
+        });
       }
     }
 
-    const answered = Object.keys(selectedAnswers).filter((id) => allQuestionIds.has(id)).length;
+    const answered = Object.keys(selectedAnswers).filter((id) => {
+      if (!allQuestionIds.has(id)) return false;
+      return hasMeaningfulAnswer(selectedAnswers[id]);
+    }).length;
     let correct = 0;
     let totalMarks = 0;
     let scoredMarks = 0;
 
     const countQuestion = (question: QuizQuestion) => {
+      const isManualEval = question.questionType === 'SA' || question.questionType === 'OPPE';
+      if (isManualEval) return;
+
       const marks = parseFloat(question.totalMark) || 0;
       totalMarks += marks;
 
-      if (!showResults || !selectedAnswers[question.uuid]) return;
+      if (!showResults || !hasMeaningfulAnswer(selectedAnswers[question.uuid])) return;
 
       const correctIndices = question.options
         .map((option, index) => (option.isCorrect === 1 ? String(index) : null))
@@ -1037,7 +1082,15 @@ export default function PaperPage() {
       }
     }
 
-    return { total: allQuestionIds.size, answered, correct, totalMarks, scoredMarks };
+    return {
+      totalQuestions: allQuestionIds.size,
+      answered,
+      correct,
+      gradableTotal,
+      totalMarks,
+      scoredMarks,
+      manualEvalCount,
+    };
   }, [groupedQuestions, selectedAnswers, showResults]);
 
   const handleOptionSelect = (
@@ -1110,13 +1163,17 @@ export default function PaperPage() {
   // Error states
   if (!paperId) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 text-center px-4">
-        <h2 className="text-xl font-semibold">Invalid paper</h2>
-        <p className="text-muted-foreground mt-1 mb-4">Paper ID not provided.</p>
-        <Button asChild variant="outline">
-          <Link to="/">Go home</Link>
-        </Button>
-      </div>
+      <StatePanel
+        compact
+        title="Invalid paper"
+        description="Paper ID not provided."
+        actions={(
+          <Button asChild variant="outline">
+            <Link to="/">Go home</Link>
+          </Button>
+        )}
+        announce
+      />
     );
   }
 
@@ -1126,13 +1183,23 @@ export default function PaperPage() {
 
   if (loadFailed || !paper) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 text-center px-4">
-        <h2 className="text-xl font-semibold">Unable to load paper</h2>
-        <p className="text-muted-foreground mt-1 mb-4">Could not load this paper.</p>
-        <Button asChild variant="outline">
-          <Link to={examSlug ? `/exam/${examSlug}` : '/'}>Go back</Link>
-        </Button>
-      </div>
+      <StatePanel
+        compact
+        tone="error"
+        title="Unable to load paper"
+        description="Could not load this paper."
+        actions={(
+          <>
+            <Button variant="default" onClick={() => setRetryNonce((value) => value + 1)}>
+              Retry
+            </Button>
+            <Button asChild variant="outline">
+              <Link to={examSlug ? `/exam/${examSlug}` : '/'}>Go back</Link>
+            </Button>
+          </>
+        )}
+        announce
+      />
     );
   }
 
@@ -1145,17 +1212,17 @@ export default function PaperPage() {
             {displayCourseName || 'Back'}
           </Link>
         </Button>
-        <div className="flex flex-col items-center py-16 text-center">
-          <h2 className="text-xl font-semibold">No questions available</h2>
-          <p className="text-muted-foreground mt-1">
-            Questions for this paper haven't been loaded yet.
-          </p>
-        </div>
+        <StatePanel
+          compact
+          title="No questions available"
+          description="Questions for this paper haven't been loaded yet."
+          announce
+        />
       </div>
     );
   }
 
-  const allAnswered = stats.answered === stats.total;
+  const allAnswered = stats.answered === stats.totalQuestions;
   const hasTimer = paper.duration > 0;
 
   return (
@@ -1163,7 +1230,7 @@ export default function PaperPage() {
       {/* Sticky progress bar */}
       <StickyProgress
         answered={stats.answered}
-        total={stats.total}
+        total={stats.totalQuestions}
         visible={stickyVisible && !showResults}
       />
 
@@ -1186,7 +1253,7 @@ export default function PaperPage() {
           <p className="text-sm font-medium text-primary">{paper.examName}</p>
             <h1 className="text-2xl font-bold tracking-tight mt-1">{displayPaperName}</h1>
             <p className="text-muted-foreground mt-1 text-sm">
-              {stats.total} {stats.total === 1 ? 'question' : 'questions'}
+              {stats.totalQuestions} {stats.totalQuestions === 1 ? 'question' : 'questions'}
               {stats.totalMarks > 0 && <> &middot; {stats.totalMarks} marks</>}
             </p>
           </div>
@@ -1197,10 +1264,10 @@ export default function PaperPage() {
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">Progress</span>
                 <span className="font-medium">
-                  {stats.answered} / {stats.total} answered
+                  {stats.answered} / {stats.totalQuestions} answered
                 </span>
               </div>
-              <ProgressBar answered={stats.answered} total={stats.total} />
+              <ProgressBar answered={stats.answered} total={stats.totalQuestions} />
             </div>
           )}
 
@@ -1260,7 +1327,7 @@ export default function PaperPage() {
                 {allAnswered
                   ? 'Submit answers'
                   : stats.answered > 0
-                  ? `Submit (${stats.answered} / ${stats.total})`
+                  ? `Submit (${stats.answered} / ${stats.totalQuestions})`
                   : 'Answer a question to submit'}
               </Button>
             </div>

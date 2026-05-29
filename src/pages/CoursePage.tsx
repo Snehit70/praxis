@@ -14,6 +14,7 @@ import {
   type PaperSummary,
 } from '@/lib/api';
 import { Skeleton } from '@/components/ui/skeleton';
+import { StatePanel } from '@/components/ui/state-panel';
 
 function PaperVariantCard({
   paper,
@@ -75,7 +76,7 @@ function BundleCard({
 
 function LoadingSkeleton({ examId, examName }: { examId: string; examName: string | null }) {
   return (
-    <div className="space-y-8">
+    <div className="space-y-8" role="status" aria-live="polite" aria-label="Loading paper bundles">
       <header className="space-y-4">
         <Button variant="ghost" size="sm" asChild className="gap-1.5 -ml-2 text-muted-foreground">
           <Link to={`/exam/${examId}`}>
@@ -111,6 +112,7 @@ export default function CoursePage() {
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [retryNonce, setRetryNonce] = useState(0);
 
   const courseUuids = useMemo(() => {
     if (!courseId) return [];
@@ -167,7 +169,7 @@ export default function CoursePage() {
       active = false;
       controller.abort();
     };
-  }, [courseId, courseUuids, examUuid]);
+  }, [courseId, courseUuids, examUuid, retryNonce]);
 
   const filteredBundles = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -203,13 +205,17 @@ export default function CoursePage() {
 
   if (!examUuid || !courseId) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 text-center">
-        <h2 className="text-xl font-semibold">Invalid course</h2>
-        <p className="text-muted-foreground mt-1 mb-4">Course not found.</p>
-        <Button asChild variant="outline">
-          <Link to="/">Go home</Link>
-        </Button>
-      </div>
+      <StatePanel
+        compact
+        title="Invalid course"
+        description="Course not found."
+        actions={(
+          <Button asChild variant="outline">
+            <Link to="/">Go home</Link>
+          </Button>
+        )}
+        announce
+      />
     );
   }
 
@@ -219,31 +225,49 @@ export default function CoursePage() {
 
   if (loadFailed) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 text-center">
-        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-destructive/10 mb-4">
-          <FileText className="h-7 w-7 text-destructive" />
-        </div>
-        <h2 className="text-xl font-semibold">Unable to load bundles</h2>
-        <p className="text-muted-foreground mt-1 mb-4">Could not load papers for this course.</p>
-        <Button asChild variant="outline">
-          <Link to={`/exam/${examId}`}>Back to {examName}</Link>
-        </Button>
-      </div>
+      <StatePanel
+        compact
+        tone="error"
+        icon={(
+          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-destructive/10">
+            <FileText className="h-7 w-7 text-destructive" />
+          </div>
+        )}
+        title="Unable to load bundles"
+        description="Could not load papers for this course."
+        actions={(
+          <>
+            <Button variant="default" onClick={() => setRetryNonce((value) => value + 1)}>
+              Retry
+            </Button>
+            <Button asChild variant="outline">
+              <Link to={`/exam/${examId}`}>Back to {examName}</Link>
+            </Button>
+          </>
+        )}
+        announce
+      />
     );
   }
 
   if (!course || bundles.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 text-center">
-        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted mb-4">
-          <FileText className="h-7 w-7 text-muted-foreground" />
-        </div>
-        <h2 className="text-xl font-semibold">No papers found</h2>
-        <p className="text-muted-foreground mt-1 mb-4">No papers available for this course in {examName}.</p>
-        <Button asChild variant="outline">
-          <Link to={`/exam/${examId}`}>Back to {examName}</Link>
-        </Button>
-      </div>
+      <StatePanel
+        compact
+        icon={(
+          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
+            <FileText className="h-7 w-7 text-muted-foreground" />
+          </div>
+        )}
+        title="No papers found"
+        description={`No papers available for this course in ${examName}.`}
+        actions={(
+          <Button asChild variant="outline">
+            <Link to={`/exam/${examId}`}>Back to {examName}</Link>
+          </Button>
+        )}
+        announce
+      />
     );
   }
 
@@ -268,20 +292,27 @@ export default function CoursePage() {
           </div>
 
           <div className="relative w-full md:w-72">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <label htmlFor="bundle-search-input" className="sr-only">
+              Filter bundles and papers
+            </label>
+            <Search aria-hidden="true" className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <input
+              id="bundle-search-input"
               type="text"
               placeholder="Search bundles or papers..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
+              autoComplete="off"
               className="w-full rounded-lg border border-border bg-card py-2.5 pl-10 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
             />
             {searchQuery && (
               <button
+                type="button"
                 onClick={() => setSearchQuery('')}
+                aria-label="Clear bundle search"
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
               >
-                <X className="h-4 w-4" />
+                <X aria-hidden="true" className="h-4 w-4" />
               </button>
             )}
           </div>
@@ -290,9 +321,9 @@ export default function CoursePage() {
 
       {filteredBundles.length === 0 ? (
         <div className="flex flex-col items-center py-16 text-center">
-          <Layers className="h-12 w-12 text-muted-foreground mb-4" />
+          <Layers aria-hidden="true" className="h-12 w-12 text-muted-foreground mb-4" />
           <p className="text-lg font-medium">No bundles match "{searchQuery}"</p>
-          <button onClick={() => setSearchQuery('')} className="mt-2 text-primary hover:underline">
+          <button type="button" onClick={() => setSearchQuery('')} className="mt-2 text-primary hover:underline">
             Clear search
           </button>
         </div>

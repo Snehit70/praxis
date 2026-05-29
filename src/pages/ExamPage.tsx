@@ -14,6 +14,7 @@ import {
 } from '@/lib/courseMapping';
 import { getExamCourses, type CourseSummary } from '@/lib/api';
 import { Skeleton } from '@/components/ui/skeleton';
+import { StatePanel } from '@/components/ui/state-panel';
 
 const LEVEL_INFO: Record<CourseLevel, { label: string; accent: string }> = {
   'Foundation': { label: 'Foundation Level', accent: 'border-l-blue-500' },
@@ -83,7 +84,7 @@ function LevelSection({
 
 function LoadingSkeleton({ examName }: { examName: string | null }) {
   return (
-    <div className="space-y-8">
+    <div className="space-y-8" role="status" aria-live="polite" aria-label="Loading exam courses">
       <header className="space-y-4">
         <Button variant="ghost" size="sm" asChild className="gap-1.5 -ml-2 text-muted-foreground">
           <Link to="/">
@@ -132,6 +133,7 @@ export default function ExamPage() {
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
   const [searchQuery, setSearchQuery] = useState(initialSearch);
+  const [retryNonce, setRetryNonce] = useState(0);
 
   useEffect(() => {
     logger.info('ExamPage mounted', { examId, examUuid, examName });
@@ -139,6 +141,10 @@ export default function ExamPage() {
       logger.debug('ExamPage unmounted');
     };
   }, [examId, examUuid, examName]);
+
+  useEffect(() => {
+    setSearchQuery(initialSearch);
+  }, [initialSearch]);
 
   useEffect(() => {
     let active = true;
@@ -175,7 +181,7 @@ export default function ExamPage() {
       active = false;
       controller.abort();
     };
-  }, [examUuid]);
+  }, [examUuid, retryNonce]);
 
   const deduplicatedCourses = useMemo(() => deduplicateCourses(courses), [courses]);
 
@@ -202,14 +208,18 @@ export default function ExamPage() {
   // Error states
   if (!examUuid) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 text-center">
-        <BookOpen className="h-12 w-12 text-muted-foreground mb-4" />
-        <h2 className="text-xl font-semibold">Invalid exam</h2>
-        <p className="text-muted-foreground mt-1 mb-4">"{examId}" is not a valid exam type.</p>
-        <Button asChild variant="outline">
-          <Link to="/">Go home</Link>
-        </Button>
-      </div>
+      <StatePanel
+        compact
+        icon={<BookOpen className="h-12 w-12 text-muted-foreground" />}
+        title="Invalid exam"
+        description={`"${examId}" is not a valid exam type.`}
+        actions={(
+          <Button asChild variant="outline">
+            <Link to="/">Go home</Link>
+          </Button>
+        )}
+        announce
+      />
     );
   }
 
@@ -219,35 +229,49 @@ export default function ExamPage() {
 
   if (loadFailed) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 text-center">
-        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-destructive/10 mb-4">
-          <BookOpen className="h-7 w-7 text-destructive" />
-        </div>
-        <h2 className="text-xl font-semibold">Unable to load courses</h2>
-        <p className="text-muted-foreground mt-1 mb-4">
-          Could not load courses for {examName}. Please try again.
-        </p>
-        <Button asChild variant="outline">
-          <Link to="/">Go home</Link>
-        </Button>
-      </div>
+      <StatePanel
+        compact
+        tone="error"
+        icon={(
+          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-destructive/10">
+            <BookOpen className="h-7 w-7 text-destructive" />
+          </div>
+        )}
+        title="Unable to load courses"
+        description={`Could not load courses for ${examName}. Please try again.`}
+        actions={(
+          <>
+            <Button variant="default" onClick={() => setRetryNonce((value) => value + 1)}>
+              Retry
+            </Button>
+            <Button asChild variant="outline">
+              <Link to="/">Go home</Link>
+            </Button>
+          </>
+        )}
+        announce
+      />
     );
   }
 
   if (courses.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 text-center">
-        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted mb-4">
-          <BookOpen className="h-7 w-7 text-muted-foreground" />
-        </div>
-        <h2 className="text-xl font-semibold">No courses found</h2>
-        <p className="text-muted-foreground mt-1 mb-4">
-          No courses available for {examName}.
-        </p>
-        <Button asChild variant="outline">
-          <Link to="/">Go home</Link>
-        </Button>
-      </div>
+      <StatePanel
+        compact
+        icon={(
+          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
+            <BookOpen className="h-7 w-7 text-muted-foreground" />
+          </div>
+        )}
+        title="No courses found"
+        description={`No courses available for ${examName}.`}
+        actions={(
+          <Button asChild variant="outline">
+            <Link to="/">Go home</Link>
+          </Button>
+        )}
+        announce
+      />
     );
   }
 
@@ -273,20 +297,27 @@ export default function ExamPage() {
 
           {/* Search */}
           <div className="relative w-full md:w-72">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <label htmlFor="exam-course-search" className="sr-only">
+              Filter courses
+            </label>
+            <Search aria-hidden="true" className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <input
+              id="exam-course-search"
               type="text"
               placeholder="Search courses..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
+              autoComplete="off"
               className="w-full rounded-lg border border-border bg-card py-2.5 pl-10 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
             />
             {searchQuery && (
               <button
+                type="button"
                 onClick={() => setSearchQuery('')}
+                aria-label="Clear course search"
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
               >
-                <X className="h-4 w-4" />
+                <X aria-hidden="true" className="h-4 w-4" />
               </button>
             )}
           </div>
@@ -296,9 +327,10 @@ export default function ExamPage() {
       {/* Course List */}
       {searchQuery && filteredCourses.length === 0 ? (
         <div className="flex flex-col items-center py-16 text-center">
-          <Search className="h-12 w-12 text-muted-foreground mb-4" />
+          <Search aria-hidden="true" className="h-12 w-12 text-muted-foreground mb-4" />
           <p className="text-lg font-medium">No courses match "{searchQuery}"</p>
           <button
+            type="button"
             onClick={() => setSearchQuery('')}
             className="mt-2 text-primary hover:underline"
           >
