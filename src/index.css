@@ -126,6 +126,33 @@
   }
 }
 
+/* Drifting petal / light-mote float for the parallax hero foreground.
+   Individual motes loop this with staggered durations/delays; the layer they
+   live in is separately parallaxed by pointer, so the two motions compose. */
+@keyframes praxis-mote {
+  0% {
+    transform: translateY(6px) translateX(0);
+    opacity: 0;
+  }
+  12% {
+    opacity: var(--mote-opacity, 0.55);
+  }
+  88% {
+    opacity: var(--mote-opacity, 0.55);
+  }
+  100% {
+    transform: translateY(-42px) translateX(10px);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .praxis-mote {
+    animation: none !important;
+    opacity: 0 !important;
+  }
+}
+
 /* Subtle fade used by overlays/dialogs (no tailwindcss-animate dependency). */
 @keyframes praxis-fade-in {
   from {
