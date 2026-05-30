@@ -2,6 +2,7 @@
 
 @theme {
   --font-body: var(--body-font);
+  --font-display: var(--display-font);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -26,7 +27,8 @@
 @layer base {
   /* Light theme (secondary) */
   :root {
-    --body-font: "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    --body-font: "Geist Variable", "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    --display-font: "Instrument Serif", Georgia, "Times New Roman", serif;
     --background: #fcfbf8;
     --foreground: rgba(0, 0, 0, 0.92);
     --card: #ffffff;
@@ -104,4 +106,101 @@
   ::selection {
     background: rgba(98, 174, 240, 0.2);
   }
+}
+
+/* Slow Ken-Burns drift for hero background imagery. Reduced-motion safe:
+   the animation only applies when the user has no motion preference set. */
+@keyframes kenburns {
+  from {
+    transform: scale(1);
+  }
+  to {
+    transform: scale(1.08);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .animate-kenburns {
+    animation: kenburns 18s ease-out forwards;
+    will-change: transform;
+  }
+}
+
+/* Subtle fade used by overlays/dialogs (no tailwindcss-animate dependency). */
+@keyframes praxis-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.animate-fade-in {
+  animation: praxis-fade-in 0.2s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in {
+    animation: none;
+  }
+}
+
+/* Praxis-themed Clerk sign-in modal: the "reaching hand" still is set as the
+   full card background in src/lib/clerkAppearance.ts (with a gradient scrim).
+   Make the inner sections transparent so the background shows through the whole
+   card instead of being covered by Clerk's default header/footer fills. */
+.cl-cardBox,
+.cl-card,
+.cl-header,
+.cl-main,
+.cl-footer {
+  background-color: transparent !important;
+}
+
+/* Frosted-glass layer: sits between the hand background and the form content.
+   The hand image is visible as a soft motif; text and inputs stay legible. */
+.cl-card {
+  position: relative !important;
+}
+
+.cl-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  background: linear-gradient(
+    to bottom,
+    rgba(18, 16, 14, 0.45) 0%,
+    rgba(18, 16, 14, 0.55) 55%,
+    rgba(18, 16, 14, 0.72) 100%
+  );
+  pointer-events: none;
+}
+
+/* Lift all form sections above the frosted layer */
+.cl-header,
+.cl-main,
+.cl-footer {
+  position: relative !important;
+  z-index: 1 !important;
+}
+
+/* Stronger text contrast — multi-directional shadow simulates a soft dark border
+   so the title reads cleanly against both light and dark areas of the hand image */
+.cl-headerTitle {
+  text-shadow:
+    -1px -1px 2px rgba(0, 0, 0, 0.85),
+    1px -1px 2px rgba(0, 0, 0, 0.85),
+    -1px 1px 2px rgba(0, 0, 0, 0.85),
+    1px 1px 2px rgba(0, 0, 0, 0.85),
+    0 2px 14px rgba(0, 0, 0, 0.8) !important;
+}
+
+.cl-headerSubtitle {
+  text-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.9),
+    0 2px 10px rgba(0, 0, 0, 0.75) !important;
 }

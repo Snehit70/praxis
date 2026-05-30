@@ -1,260 +1,370 @@
-import { ArrowRight, FileText, Code, GraduationCap, Search, BookOpen, Clock, Award } from "lucide-react";
-import { Link, useNavigate } from "react-router-dom";
-import { logger } from "@/lib/logger";
-import { useEffect, useState } from "react";
-import { getDatasetStats, type DatasetStats } from "@/lib/api";
-import { Skeleton } from "@/components/ui/skeleton";
+import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { useUser } from '@clerk/clerk-react';
+import { BookMarked, Clock, Pencil, Plus, Search, X } from 'lucide-react';
+
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
+import { StatePanel } from '@/components/ui/state-panel';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { CourseCard } from '@/components/CourseCard';
+import { CourseSelector } from '@/components/CourseSelector';
+import { useEnrolledCourses } from '@/hooks/useEnrolledCourses';
+import { getAllCourses, type CatalogueCourse } from '@/lib/api';
+import { buildCatalogue, LEVEL_META, type CatalogueEntry } from '@/lib/courseCatalogue';
+import { LEVEL_ORDER, type CourseLevel } from '@/lib/courseMapping';
+import { cn } from '@/lib/utils';
+import { logger } from '@/lib/logger';
+
+/**
+ * Asset filenames contain spaces / commas / unicode, which break plain ES
+ * imports — resolve them through Vite's glob and look them up by name (same
+ * pattern as the landing page).
+ */
+const assetUrls = import.meta.glob('../assets/*', {
+  eager: true,
+  query: '?url',
+  import: 'default',
+}) as Record<string, string>;
+
+const asset = (name: string): string => {
+  const hit = Object.entries(assetUrls).find(([path]) => path.endsWith('/' + name));
+  return hit?.[1] ?? '';
+};
+
+// Header banner: Frieren under an open sky — the source portrait rotated to a
+// 16:9 landscape so the full frame shows in the banner without cropping.
+const headerImg = asset('Frieren-banner.jpeg');
+// Empty state: a quiet, contemplative frame inviting the first selection.
+const emptyArt = asset('feature-frieren-pray.jpeg');
+// Page backdrop: a soft, light-filled Ep.18 frame held behind the whole
+// dashboard — dimmed so the dark UI stays legible (DESIGN.md image-first).
+const pageBg = asset('Sousou no Frieren - Ep. 18_ First-Class Mage Exam - 00_00.png');
+
+/** Frosted-glass control styling for use over imagery (DESIGN.md secondary CTA). */
+const glassControl =
+  'inline-flex items-center gap-1.5 rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 text-sm font-medium text-white backdrop-blur-md transition-colors hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50';
+
+function DashboardSkeleton() {
+  return (
+    <div className="space-y-8" role="status" aria-live="polite" aria-label="Loading your courses">
+      <div className="mx-auto w-full max-w-4xl">
+        <Skeleton className="aspect-[16/9] w-full rounded-2xl" />
+      </div>
+      <Skeleton className="h-9 w-72" />
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {[1, 2, 3, 4, 5, 6].map((i) => (
+          <Skeleton key={i} className="h-32 w-full rounded-xl" />
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export default function HomePage() {
-  const [stats, setStats] = useState<DatasetStats | null>(null);
-  const [searchQuery, setSearchQuery] = useState("");
-  const navigate = useNavigate();
+  const { user } = useUser();
+  const {
+    level,
+    courseKeys,
+    enrolled,
+    loading: enrollLoading,
+    failed: enrollFailed,
+    saving,
+    save,
+    reload,
+  } = useEnrolledCourses();
+
+  const [catalogue, setCatalogue] = useState<CatalogueEntry[] | null>(null);
+  const [catalogueFailed, setCatalogueFailed] = useState(false);
+  const [selectorOpen, setSelectorOpen] = useState(false);
+  const [autoOpened, setAutoOpened] = useState(false);
+  const [archiveQuery, setArchiveQuery] = useState('');
 
   useEffect(() => {
-    logger.info('HomePage mounted');
+    logger.info('Dashboard mounted');
     const controller = new AbortController();
-
-    getDatasetStats({ signal: controller.signal })
-      .then((data) => {
-        setStats(data);
-      })
+    getAllCourses({ signal: controller.signal })
+      .then((rows: CatalogueCourse[]) => setCatalogue(buildCatalogue(rows)))
       .catch((error) => {
         if (error instanceof DOMException && error.name === 'AbortError') return;
-        logger.error('Failed to load dataset stats', error);
+        logger.error('Failed to load course catalogue', error);
+        setCatalogueFailed(true);
       });
-
-    return () => {
-      controller.abort();
-      logger.debug('HomePage unmounted');
-    };
+    return () => controller.abort();
   }, []);
 
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (searchQuery.trim()) {
-      navigate(`/search?q=${encodeURIComponent(searchQuery.trim())}`);
+  // First-time setup: if the catalogue and enrollment have both loaded and the
+  // user has no courses yet, open the selector once.
+  useEffect(() => {
+    if (autoOpened) return;
+    if (catalogue && !enrollLoading && !enrollFailed && courseKeys.length === 0) {
+      setSelectorOpen(true);
+      setAutoOpened(true);
     }
+  }, [autoOpened, catalogue, enrollLoading, enrollFailed, courseKeys.length]);
+
+  const enrolledCourses = useMemo(
+    () => (catalogue ?? []).filter((entry) => enrolled.has(entry.key)),
+    [catalogue, enrolled],
+  );
+
+  const archiveByLevel = useMemo(() => {
+    const q = archiveQuery.trim().toLowerCase();
+    const groups = {} as Record<CourseLevel, CatalogueEntry[]>;
+    for (const lvl of LEVEL_ORDER) groups[lvl] = [];
+    for (const entry of catalogue ?? []) {
+      if (q && !entry.displayName.toLowerCase().includes(q) && !entry.courseCode.toLowerCase().includes(q)) {
+        continue;
+      }
+      groups[entry.level].push(entry);
+    }
+    return groups;
+  }, [catalogue, archiveQuery]);
+
+  const archiveTotal = LEVEL_ORDER.reduce((sum, lvl) => sum + archiveByLevel[lvl].length, 0);
+
+  const handleToggleEnroll = (course: CatalogueEntry) => {
+    const next = new Set(enrolled);
+    if (next.has(course.key)) next.delete(course.key);
+    else next.add(course.key);
+    void save({ level, courseKeys: Array.from(next) });
   };
 
-  const exams = [
-    {
-      slug: 'quiz1',
-      name: 'Quiz 1',
-      description: 'Mid-term assessment covering the first half of each course',
-      icon: FileText,
-      color: 'text-blue-400',
-      bgColor: 'bg-blue-500/10',
-    },
-    {
-      slug: 'quiz2',
-      name: 'Quiz 2',
-      description: 'Mid-term assessment covering the second half of each course',
-      icon: FileText,
-      color: 'text-purple-400',
-      bgColor: 'bg-purple-500/10',
-    },
-    {
-      slug: 'end-term',
-      name: 'End Term',
-      description: 'Comprehensive final exam covering the entire course syllabus',
-      icon: GraduationCap,
-      color: 'text-emerald-400',
-      bgColor: 'bg-emerald-500/10',
-    },
-    {
-      slug: 'oppe',
-      name: 'OPPE',
-      description: 'Online Programming Practical Exam with hands-on coding questions',
-      icon: Code,
-      color: 'text-orange-400',
-      bgColor: 'bg-orange-500/10',
-    },
-  ];
+  const handleSaveSelection = async (payload: { level: string | null; courseKeys: string[] }) => {
+    const ok = await save(payload);
+    if (ok) setSelectorOpen(false);
+  };
 
-  const features = [
-    {
-      icon: BookOpen,
-      title: "Browse by course",
-      description: "Find papers organized by course and program level",
-    },
-    {
-      icon: Clock,
-      title: "Practice anytime",
-      description: "Access questions with instant answer feedback",
-    },
-    {
-      icon: Award,
-      title: "Track progress",
-      description: "See your score and review correct answers",
-    },
-  ];
+  if (catalogueFailed) {
+    return (
+      <StatePanel
+        tone="error"
+        title="Couldn't load courses"
+        description="We couldn't reach the course catalogue. Please try again in a moment."
+        actions={<Button onClick={() => window.location.reload()}>Reload</Button>}
+        announce
+      />
+    );
+  }
+
+  if (!catalogue || enrollLoading) {
+    return <DashboardSkeleton />;
+  }
+
+  const greetingName = user?.firstName?.trim();
+  const levelLabel = level ? (LEVEL_META[level as CourseLevel]?.label ?? level) : null;
 
   return (
-    <div className="space-y-16 pb-8">
-      {/* Hero Section */}
-      <section className="pt-8 md:pt-12">
-        <div className="max-w-2xl">
-          <h1 className="text-4xl font-bold tracking-tight md:text-5xl lg:text-6xl">
-            IITM BS exam archive
-          </h1>
-          <p className="mt-4 text-lg text-muted-foreground leading-relaxed">
-            Practice with{' '}
-            <span className="text-foreground font-medium">
-              {stats?.paperVariantCount?.toLocaleString() ?? '3,800+'}
-            </span>{' '}
-            past papers from{' '}
-            <span className="text-foreground font-medium">
-              {stats?.courseCount ? `${stats.courseCount}+` : '120+'}
-            </span>{' '}
-            courses. Browse by exam type, filter by year, and test yourself with real questions.
-          </p>
+    <div className="relative isolate space-y-8">
+      {/* Page backdrop — a soft, light-filled frame held still behind the whole
+          dashboard so it reads as cinematic ground; dimmed for legibility. The
+          `isolate` + `-z-10` keeps it above the app's opaque background but
+          below the content, without affecting other routes. */}
+      <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+        <img src={pageBg} alt="" className="h-full w-full object-cover object-center" />
+        <div className="absolute inset-0 bg-gradient-to-b from-background/80 via-background/88 to-background/95" />
+      </div>
 
-          {/* Search Bar */}
-          <form onSubmit={handleSearch} className="mt-8">
-            <label htmlFor="home-course-search" className="sr-only">
-              Search courses
-            </label>
-            <div className="relative">
-              <Search aria-hidden="true" className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
-              <input
-                id="home-course-search"
-                type="text"
-                placeholder="Search for a course..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                autoComplete="off"
-                className="w-full rounded-xl border border-border bg-card py-4 pl-12 pr-4 text-base text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+      {/* Header banner — a contained card whose 16:9 frame matches the image's
+          aspect ratio, so Frieren is shown in full with no crop. The greeting
+          sits over the lower edge; the page backdrop breathes around it. */}
+      <header>
+        <div className="relative mx-auto w-full max-w-4xl overflow-hidden rounded-2xl border border-border shadow-xl shadow-black/30">
+          <div className="aspect-[16/9] w-full">
+            <img
+              src={headerImg}
+              alt=""
+              aria-hidden="true"
+              fetchPriority="high"
+              className="animate-kenburns h-full w-full object-cover object-center"
+            />
+          </div>
+          {/* Legibility scrims for the overlaid greeting. */}
+          <div className="absolute inset-0 bg-gradient-to-t from-background/95 via-background/10 to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-r from-background/40 via-transparent to-transparent" />
+
+          {/* Actions — glass over the image, top-right. */}
+          <div className="absolute right-4 top-4 z-10 flex items-center gap-2">
+            <Link to="/saved" className={glassControl}>
+              <BookMarked className="h-4 w-4" />
+              <span className="hidden sm:inline">Saved</span>
+            </Link>
+            <button type="button" onClick={() => setSelectorOpen(true)} className={glassControl}>
+              <Pencil className="h-4 w-4" />
+              <span className="hidden sm:inline">Edit courses</span>
+            </button>
+          </div>
+
+          {/* Greeting — pinned to the bottom of the banner. */}
+          <div className="absolute inset-x-0 bottom-0 p-5 sm:p-6 md:p-8">
+            <p className="mb-1 text-xs font-semibold uppercase tracking-[0.22em] text-primary">
+              IITM BS · This term
+            </p>
+            <h1 className="font-display text-3xl font-normal leading-[1.05] tracking-tight text-foreground sm:text-4xl md:text-5xl">
+              {greetingName ? `Welcome back, ${greetingName}` : 'Welcome back'}
+            </h1>
+            <p className="mt-1.5 text-sm text-muted-foreground sm:text-base">
+              {levelLabel ? `${levelLabel} · ` : ''}
+              {enrolledCourses.length} {enrolledCourses.length === 1 ? 'course' : 'courses'} this term
+            </p>
+          </div>
+        </div>
+      </header>
+
+      <Tabs defaultValue="mine" className="space-y-6">
+        <TabsList className="inline-flex gap-1 rounded-lg border border-border bg-card p-1">
+          <TabsTrigger
+            value="mine"
+            className="rounded-md px-4 py-1.5 text-sm data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+          >
+            My Courses
+          </TabsTrigger>
+          <TabsTrigger
+            value="archive"
+            className="rounded-md px-4 py-1.5 text-sm data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+          >
+            Archives
+          </TabsTrigger>
+        </TabsList>
+
+        {/* My Courses */}
+        <TabsContent value="mine">
+          {enrolledCourses.length === 0 ? (
+            <div className="relative flex min-h-[380px] overflow-hidden rounded-2xl border border-border md:min-h-[440px]">
+              <img
+                src={emptyArt}
+                alt=""
+                aria-hidden="true"
+                className="absolute inset-0 h-full w-full object-cover object-center"
               />
-              <button
-                type="submit"
-                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
-              >
-                Search
-              </button>
-            </div>
-          </form>
-        </div>
-      </section>
-
-      {/* Exam Types Grid */}
-      <section className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold uppercase tracking-widest text-muted-foreground">
-            Browse by exam type
-          </h2>
-        </div>
-
-        <div className="grid gap-4 sm:grid-cols-2">
-          {exams.map((exam) => {
-            const Icon = exam.icon;
-            return (
-              <Link
-                key={exam.slug}
-                to={`/exam/${exam.slug}`}
-                className="group relative overflow-hidden rounded-xl border border-border bg-card p-6 transition-all hover:border-primary/40 hover:shadow-lg hover:shadow-primary/5"
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex items-start gap-4">
-                    <div className={`flex h-12 w-12 items-center justify-center rounded-xl ${exam.bgColor} ${exam.color} transition-colors`}>
-                      <Icon aria-hidden="true" className="h-6 w-6" />
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-semibold text-foreground group-hover:text-primary transition-colors">
-                        {exam.name}
-                      </h3>
-                      <p className="mt-1 text-sm text-muted-foreground leading-relaxed">
-                        {exam.description}
-                      </p>
-                    </div>
-                  </div>
-                  <ArrowRight aria-hidden="true" className="h-5 w-5 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all flex-shrink-0" />
-                </div>
-              </Link>
-            );
-          })}
-        </div>
-      </section>
-
-      {/* Stats Section */}
-      <section className="rounded-xl border border-border bg-card/50 p-8">
-        <div className="grid gap-8 sm:grid-cols-3">
-          <div className="text-center sm:text-left">
-            {stats ? (
-              <p className="text-3xl font-bold text-foreground tabular-nums">
-                {stats.paperVariantCount?.toLocaleString()}
-              </p>
-            ) : (
-              <Skeleton className="h-9 w-24 mb-1" />
-            )}
-            <p className="mt-1 text-sm text-muted-foreground">Past papers</p>
-          </div>
-          <div className="text-center sm:text-left">
-            {stats ? (
-              <p className="text-3xl font-bold text-foreground tabular-nums">
-                {stats.questionCount?.toLocaleString()}
-              </p>
-            ) : (
-              <Skeleton className="h-9 w-32 mb-1" />
-            )}
-            <p className="mt-1 text-sm text-muted-foreground">Practice questions</p>
-          </div>
-          <div className="text-center sm:text-left">
-            {stats ? (
-              <p className="text-3xl font-bold text-foreground tabular-nums">
-                {stats.courseCount}
-              </p>
-            ) : (
-              <Skeleton className="h-9 w-16 mb-1" />
-            )}
-            <p className="mt-1 text-sm text-muted-foreground">Courses covered</p>
-          </div>
-        </div>
-      </section>
-
-      {/* Features Section */}
-      <section className="space-y-6">
-        <h2 className="text-sm font-semibold uppercase tracking-widest text-muted-foreground">
-          How it works
-        </h2>
-
-        <div className="grid gap-6 sm:grid-cols-3">
-          {features.map((feature, index) => {
-            const Icon = feature.icon;
-            return (
-              <div key={index} className="space-y-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                  <Icon aria-hidden="true" className="h-5 w-5" />
-                </div>
-                <h3 className="font-medium text-foreground">{feature.title}</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  {feature.description}
+              {/* Dark on the text side, image breathing on the right. */}
+              <div className="absolute inset-0 bg-gradient-to-r from-background via-background/90 to-background/30" />
+              <div className="absolute inset-0 bg-gradient-to-t from-background/60 to-transparent" />
+              <div className="relative z-10 flex max-w-lg flex-col justify-center p-8 md:p-12">
+                <h2 className="font-display text-3xl font-normal tracking-tight text-foreground md:text-4xl">
+                  Your journey starts here
+                </h2>
+                <p className="mt-3 max-w-md text-pretty leading-relaxed text-muted-foreground">
+                  Add the courses you&apos;re taking this term and they&apos;ll live here for quick
+                  practice — sit any past paper, review it, and arrive at the exam already ready.
                 </p>
+                <div className="mt-6">
+                  <Button size="lg" onClick={() => setSelectorOpen(true)} className="gap-1.5 shadow-lg shadow-primary/20">
+                    <Plus className="h-4 w-4" />
+                    Choose your courses
+                  </Button>
+                </div>
               </div>
-            );
-          })}
-        </div>
-      </section>
-
-      {/* Programs Section */}
-      <section className="rounded-xl border border-border bg-card/50 p-8">
-        <h2 className="text-sm font-semibold uppercase tracking-widest text-muted-foreground mb-6">
-          Programs covered
-        </h2>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {[
-            { name: 'Foundation', courses: '8 courses', desc: 'Math, Stats, Programming, English' },
-            { name: 'Diploma in Programming', courses: '6 courses', desc: 'DBMS, PDSA, App Dev, Java' },
-            { name: 'Diploma in Data Science', courses: '7 courses', desc: 'ML, Analytics, Data Management' },
-            { name: 'Degree Level', courses: '40+ electives', desc: 'Advanced topics & specializations' },
-          ].map((program) => (
-            <div key={program.name} className="space-y-1">
-              <p className="font-medium text-foreground">{program.name}</p>
-              <p className="text-sm text-muted-foreground">{program.courses}</p>
-              <p className="text-xs text-muted-foreground/70">{program.desc}</p>
             </div>
-          ))}
-        </div>
-      </section>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {enrolledCourses.map((course) => (
+                <CourseCard
+                  key={course.key}
+                  course={course}
+                  enrolled
+                  onToggleEnroll={handleToggleEnroll}
+                />
+              ))}
+            </div>
+          )}
+        </TabsContent>
+
+        {/* Archives */}
+        <TabsContent value="archive" className="space-y-6">
+          <div className="relative max-w-md">
+            <Search aria-hidden="true" className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="text"
+              value={archiveQuery}
+              onChange={(event) => setArchiveQuery(event.target.value)}
+              placeholder="Search all courses..."
+              autoComplete="off"
+              aria-label="Search all courses"
+              className="w-full rounded-lg border border-border bg-card py-2.5 pl-10 pr-9 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+            />
+            {archiveQuery && (
+              <button
+                type="button"
+                onClick={() => setArchiveQuery('')}
+                aria-label="Clear search"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+
+          {archiveTotal === 0 ? (
+            <StatePanel
+              dashed
+              icon={<Search className="h-10 w-10 text-muted-foreground/70" />}
+              title="No courses match"
+              description="Try a broader course name or code."
+            />
+          ) : (
+            <div className="space-y-10">
+              {LEVEL_ORDER.map((lvl) => {
+                const entries = archiveByLevel[lvl];
+                if (entries.length === 0) return null;
+                const meta = LEVEL_META[lvl];
+                return (
+                  <section key={lvl} className={`border-l-4 ${meta.accent} pl-4 md:pl-6`}>
+                    <div className="mb-4 flex items-center gap-3">
+                      <img
+                        src={meta.image}
+                        alt=""
+                        aria-hidden="true"
+                        loading="lazy"
+                        className={cn('h-9 w-9 rounded-lg object-cover object-top ring-2', meta.ring)}
+                      />
+                      <div>
+                        <h2 className={cn('text-lg font-semibold', meta.text)}>{meta.label}</h2>
+                        <p className="text-sm text-muted-foreground">
+                          {entries.length} {entries.length === 1 ? 'course' : 'courses'}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                      {entries.map((course) => (
+                        <CourseCard
+                          key={course.key}
+                          course={course}
+                          enrolled={enrolled.has(course.key)}
+                          onToggleEnroll={handleToggleEnroll}
+                        />
+                      ))}
+                    </div>
+                  </section>
+                );
+              })}
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
+
+      {enrollFailed && (
+        <p className="text-sm text-muted-foreground" role="status">
+          <Clock className="mr-1 inline h-3.5 w-3.5" />
+          We couldn&apos;t load your saved courses.{' '}
+          <button type="button" onClick={reload} className="text-primary hover:underline">
+            Retry
+          </button>
+        </p>
+      )}
+
+      {selectorOpen && (
+        <CourseSelector
+          open={selectorOpen}
+          onOpenChange={setSelectorOpen}
+          catalogue={catalogue}
+          initialLevel={level}
+          initialCourseKeys={courseKeys}
+          saving={saving}
+          mandatory={courseKeys.length === 0 && !enrollFailed}
+          onSave={handleSaveSelection}
+        />
+      )}
     </div>
   );
 }

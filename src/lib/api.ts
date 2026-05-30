@@ -105,8 +105,22 @@ async function fetchJson<T>(path: string, options: ApiRequestOptions = {}): Prom
   return (await response.json()) as T;
 }
 
+export interface CatalogueCourse {
+  uuid: string;
+  courseName: string;
+  courseCode: string;
+  programId: number;
+  paperCount: number;
+  examSlugs: string[];
+}
+
 export function getDatasetStats(options?: ApiRequestOptions) {
   return fetchJson<DatasetStats>('/api/stats', options);
+}
+
+/** Every course (across all exam types) with paper counts — for the dashboard. */
+export function getAllCourses(options?: ApiRequestOptions) {
+  return fetchJson<CatalogueCourse[]>('/api/courses', options);
 }
 
 export function getSearchResults(query: string, options?: ApiRequestOptions) {
@@ -208,4 +222,105 @@ export function getQuestionsByPaperUuid(
     `/api/papers/${encodeURIComponent(paperUuid)}/questions${suffix}`,
     options,
   );
+}
+
+// --- Authenticated (per-user) API -----------------------------------------
+
+/** A function that returns a Clerk session token, e.g. Clerk's `getToken`. */
+export type TokenGetter = () => Promise<string | null>;
+
+export interface SavedPaper {
+  id: string;
+  uuid: string;
+  paperName: string;
+  examUuid: string;
+  examName: string;
+  courseUuid: string;
+  courseName: string;
+  year: number | null;
+  savedAt: string | null;
+}
+
+export interface HistoryItem {
+  id: string;
+  uuid: string;
+  paperName: string;
+  examUuid: string;
+  examName: string;
+  courseUuid: string;
+  courseName: string;
+  year: number | null;
+  viewedAt: string | null;
+}
+
+async function fetchAuthedJson<T>(
+  path: string,
+  getToken: TokenGetter,
+  init: RequestInit = {},
+): Promise<T> {
+  const token = await getToken();
+  if (!token) {
+    throw new Error('Not authenticated');
+  }
+
+  const headers = new Headers(init.headers);
+  headers.set('authorization', `Bearer ${token}`);
+  if (init.body && !headers.has('content-type')) {
+    headers.set('content-type', 'application/json');
+  }
+
+  const response = await fetch(`${API_BASE_URL}${path}`, { ...init, headers });
+  if (!response.ok) {
+    throw new Error(`API request failed (${response.status}): ${path}`);
+  }
+
+  return (await response.json()) as T;
+}
+
+export function getSavedPapers(getToken: TokenGetter) {
+  return fetchAuthedJson<SavedPaper[]>('/api/me/saved', getToken);
+}
+
+export function addSavedPaper(paperId: string, getToken: TokenGetter) {
+  return fetchAuthedJson<{ ok: boolean; paperId: string }>('/api/me/saved', getToken, {
+    method: 'POST',
+    body: JSON.stringify({ paperId }),
+  });
+}
+
+export function removeSavedPaper(paperId: string, getToken: TokenGetter) {
+  return fetchAuthedJson<{ ok: boolean; paperId: string }>(
+    `/api/me/saved/${encodeURIComponent(paperId)}`,
+    getToken,
+    { method: 'DELETE' },
+  );
+}
+
+export function getHistory(getToken: TokenGetter) {
+  return fetchAuthedJson<HistoryItem[]>('/api/me/history', getToken);
+}
+
+export function recordView(paperId: string, getToken: TokenGetter) {
+  return fetchAuthedJson<{ ok: boolean; paperId: string }>('/api/me/history', getToken, {
+    method: 'POST',
+    body: JSON.stringify({ paperId }),
+  });
+}
+
+export interface EnrolledCourses {
+  /** Program level the user selected (e.g. "Foundation"), or null if unset. */
+  level: string | null;
+  /** Canonical course names the user is taking this term. */
+  courseKeys: string[];
+}
+
+export function getEnrolledCourses(getToken: TokenGetter) {
+  return fetchAuthedJson<EnrolledCourses>('/api/me/courses', getToken);
+}
+
+export function saveEnrolledCourses(payload: EnrolledCourses, getToken: TokenGetter) {
+  return fetchAuthedJson<{ ok: boolean } & EnrolledCourses>('/api/me/courses', getToken, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
 }

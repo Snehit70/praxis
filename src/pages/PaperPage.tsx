@@ -1,8 +1,9 @@
-import { useParams, Link, useSearchParams } from 'react-router-dom';
+import { useParams, Link, useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, CheckCircle2, XCircle, RotateCcw, Trophy, Timer, Play, Pause } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, XCircle, RotateCcw, Trophy, Timer, Play, Pause, ChevronLeft, ChevronRight } from 'lucide-react';
 import type React from 'react';
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
+import { cn } from '@/lib/utils';
 import { formatPaperName } from '@/lib/paperUtils';
 import { getExamSlugFromUuid, getExamUuidFromSlug } from '@/lib/examMapping';
 import { getDisplayCourseName } from '@/lib/courseMapping';
@@ -11,11 +12,15 @@ import { getQuestionImageUrl, getOptionImageUrl } from '@/lib/imageUtils';
 import {
   getPaperByUuid,
   getQuestionsByPaperUuid,
+  recordView,
   type PaperDetails,
 } from '@/lib/api';
 import type { QuestionType, QuizQuestion } from '@/lib/dataTransforms';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StatePanel } from '@/components/ui/state-panel';
+import { SaveButton } from '@/components/SaveButton';
+import { useAuth } from '@clerk/clerk-react';
+import pageBg from '@/assets/Sousou no Frieren - Ep. 11_ Winter in the Northern Lands - 00_22.png';
 
 interface QuestionWithChildren extends QuizQuestion {
   subQuestions?: QuizQuestion[];
@@ -23,6 +28,9 @@ interface QuestionWithChildren extends QuizQuestion {
 
 const OPTION_LABELS = ['A', 'B', 'C', 'D', 'E', 'F'];
 const PAPER_SESSION_STORAGE_PREFIX = 'praxis.paper-session';
+// Stored per-paper durations are placeholder values, so the timed attempt is
+// normalized to a standard 60-minute exam clock.
+const EXAM_DURATION_MINUTES = 60;
 
 interface SavedPaperSession {
   selectedAnswers: Record<string, string | string[]>;
@@ -121,41 +129,12 @@ function ProgressBar({ answered, total }: { answered: number; total: number }) {
   );
 }
 
-function StickyProgress({
-  answered,
-  total,
-  visible,
-}: {
-  answered: number;
-  total: number;
-  visible: boolean;
-}) {
-  const percentage = total > 0 ? (answered / total) * 100 : 0;
-  return (
-    <div
-      className={`fixed top-14 left-0 right-0 z-40 transition-transform duration-300 ${
-        visible ? 'translate-y-0' : '-translate-y-full'
-      }`}
-    >
-      <div className="bg-background/95 backdrop-blur border-b border-border px-4 py-2 flex items-center gap-3">
-        <span className="text-xs text-muted-foreground whitespace-nowrap">
-          {answered}/{total}
-        </span>
-        <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-          <div
-            className="h-full bg-primary transition-all duration-300"
-            style={{ width: `${percentage}%` }}
-          />
-        </div>
-        <span className="text-xs font-medium text-primary whitespace-nowrap">
-          {Math.round(percentage)}%
-        </span>
-      </div>
-    </div>
-  );
-}
-
-function TimerPanel({
+/**
+ * Compact timer that sits inline on the right of the progress line. Shows the
+ * remaining time with start/pause + reset controls, and turns destructive when
+ * the clock runs out.
+ */
+function CompactTimer({
   durationMinutes,
   remainingSeconds,
   running,
@@ -172,48 +151,42 @@ function TimerPanel({
   onReset: () => void;
   expired: boolean;
 }) {
-  const totalSeconds = durationMinutes * 60;
-  const completion =
-    totalSeconds > 0 && remainingSeconds !== null
-      ? Math.min(100, Math.max(0, ((totalSeconds - remainingSeconds) / totalSeconds) * 100))
-      : 0;
-
   return (
-    <div className={`rounded-xl border p-4 ${expired ? 'border-destructive/40 bg-destructive/10' : 'border-border bg-card/70'}`}>
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div className="space-y-1.5">
-          <div className="flex items-center gap-2 text-sm font-medium">
-            <Timer className={`h-4 w-4 ${expired ? 'text-destructive' : 'text-primary'}`} />
-            Timed attempt
-          </div>
-          <div className="flex items-end gap-3">
-            <span className="text-3xl font-bold tabular-nums">{formatRemainingTime(remainingSeconds)}</span>
-            <span className="pb-1 text-sm text-muted-foreground">of {durationMinutes} min</span>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            {expired
-              ? 'Time is up. Your answers were submitted automatically.'
-              : running
-              ? 'Timer is running and will continue even if you refresh.'
-              : 'Start when you want to simulate the real exam clock.'}
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <Button onClick={running ? onPause : onStart} variant={running ? 'outline' : 'default'}>
-            {running ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-            {running ? 'Pause' : expired ? 'Restart' : 'Start'}
-          </Button>
-          <Button onClick={onReset} variant="outline">
-            <RotateCcw className="h-4 w-4" />
-            Reset
-          </Button>
-        </div>
-      </div>
-
-      <div className="mt-4 h-2 overflow-hidden rounded-full bg-muted">
-        <div className={`h-full transition-all duration-500 ${expired ? 'bg-destructive' : 'bg-primary'}`} style={{ width: `${completion}%` }} />
-      </div>
+    <div
+      title={
+        expired
+          ? 'Time is up — answers were submitted automatically.'
+          : running
+          ? 'Timer is running (survives a refresh).'
+          : 'Start to simulate the real exam clock.'
+      }
+      className={cn(
+        'flex shrink-0 items-center gap-2 rounded-lg border px-2.5 py-1.5',
+        expired ? 'border-destructive/40 bg-destructive/10' : 'border-border bg-card/70',
+      )}
+    >
+      <Timer className={cn('h-4 w-4', expired ? 'text-destructive' : 'text-primary')} aria-hidden="true" />
+      <span className={cn('text-base font-semibold tabular-nums', expired && 'text-destructive')}>
+        {formatRemainingTime(remainingSeconds)}
+      </span>
+      <span className="hidden text-xs text-muted-foreground sm:inline">/ {durationMinutes}m</span>
+      <span className="mx-0.5 h-4 w-px bg-border" aria-hidden="true" />
+      <button
+        type="button"
+        onClick={running ? onPause : onStart}
+        aria-label={running ? 'Pause timer' : expired ? 'Restart timer' : 'Start timer'}
+        className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      >
+        {running ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+      </button>
+      <button
+        type="button"
+        onClick={onReset}
+        aria-label="Reset timer"
+        className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      >
+        <RotateCcw className="h-4 w-4" />
+      </button>
     </div>
   );
 }
@@ -549,6 +522,109 @@ function OptionButton({
   );
 }
 
+/** Keep only a single optional leading minus, digits, and one decimal point. */
+function sanitizeNumeric(raw: string): string {
+  let cleaned = raw.replace(/[^0-9.-]/g, '');
+  const negative = cleaned.startsWith('-');
+  cleaned = cleaned.replace(/-/g, '');
+  const firstDot = cleaned.indexOf('.');
+  if (firstDot !== -1) {
+    cleaned = cleaned.slice(0, firstDot + 1) + cleaned.slice(firstDot + 1).replace(/\./g, '');
+  }
+  return (negative ? '-' : '') + cleaned;
+}
+
+const KEYPAD_KEYS = ['7', '8', '9', '4', '5', '6', '1', '2', '3', '-', '0', '.'];
+
+/** On-screen numeric keypad for numeric short-answer questions. */
+function NumericKeypad({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+}) {
+  const press = (key: string) => {
+    let next = value;
+    if (key === '-') {
+      next = value.startsWith('-') ? value.slice(1) : `-${value}`;
+    } else if (key === '.') {
+      next = value.includes('.') ? value : `${value}.`;
+    } else {
+      next = value + key;
+    }
+    onChange(sanitizeNumeric(next));
+  };
+
+  const keyClass =
+    'rounded-md border border-border bg-card/70 py-2.5 text-base font-medium text-foreground backdrop-blur-sm transition-colors hover:border-primary/40 hover:bg-muted active:bg-muted/70';
+
+  return (
+    <div className="max-w-[260px]">
+      <div className="grid grid-cols-3 gap-2">
+        {KEYPAD_KEYS.map((key) => (
+          <button key={key} type="button" onClick={() => press(key)} aria-label={`Type ${key}`} className={keyClass}>
+            {key}
+          </button>
+        ))}
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={() => onChange(value.slice(0, -1))}
+          aria-label="Backspace"
+          className={keyClass}
+        >
+          ⌫
+        </button>
+        <button
+          type="button"
+          onClick={() => onChange('')}
+          aria-label="Clear answer"
+          className={keyClass}
+        >
+          Clear
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** Short-answer input. Numeric questions are restricted to numeric input and
+ *  get an on-screen keypad; non-numeric (e.g. OPPE) keep a free-text field. */
+function ShortAnswerField({
+  value,
+  numeric,
+  disabled,
+  onChange,
+}: {
+  value: string;
+  numeric: boolean;
+  disabled: boolean;
+  onChange: (next: string) => void;
+}) {
+  return (
+    <div className="space-y-3 px-1">
+      <input
+        aria-label={numeric ? 'Numeric answer' : 'Short answer'}
+        type="text"
+        inputMode={numeric ? 'decimal' : 'text'}
+        value={value}
+        disabled={disabled}
+        onChange={(event) =>
+          onChange(numeric ? sanitizeNumeric(event.target.value) : event.target.value)
+        }
+        placeholder={numeric ? 'Enter numeric answer' : 'Enter your answer'}
+        className="w-full rounded-md border border-border bg-background/70 px-3 py-2 text-sm text-foreground outline-none backdrop-blur-sm focus:ring-2 focus:ring-primary/40"
+      />
+      {numeric && !disabled && <NumericKeypad value={value} onChange={onChange} />}
+      <p className="text-xs italic text-muted-foreground">
+        Manual-evaluation answer type. Your response is saved locally.
+      </p>
+    </div>
+  );
+}
+
 function QuestionCard({
   question,
   index,
@@ -601,6 +677,9 @@ function QuestionCard({
     answerType.includes('numeric') ||
     question.valueStart !== undefined ||
     question.valueEnd !== undefined;
+  // SHORT ANSWER (SA) is always treated as numeric-only per product direction;
+  // other short-answer types (e.g. OPPE) stay numeric only when detected.
+  const isNumericInput = question.questionType === 'SA' || isNumericShortAnswer;
   const hasOptions = question.options.length > 0;
 
   if (isSubQuestion) {
@@ -648,20 +727,12 @@ function QuestionCard({
             {!isComprehension && (
               <div className="space-y-2">
                 {isShortAnswer ? (
-                  <div className="space-y-2 px-1">
-                    <input
-                      aria-label={isNumericShortAnswer ? 'Numeric short answer' : 'Short answer'}
-                      type={isNumericShortAnswer ? 'number' : 'text'}
-                      value={typeof selectedAnswer === 'string' ? selectedAnswer : ''}
-                      disabled={showResults}
-                      onChange={(event) => onShortAnswerChange(question.uuid, event.target.value)}
-                      placeholder={isNumericShortAnswer ? 'Enter numeric answer' : 'Enter your answer'}
-                      className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40"
-                    />
-                    <p className="text-xs text-muted-foreground italic">
-                      Manual-evaluation answer type. Your response is saved locally.
-                    </p>
-                  </div>
+                  <ShortAnswerField
+                    value={typeof selectedAnswer === 'string' ? selectedAnswer : ''}
+                    numeric={isNumericInput}
+                    disabled={showResults}
+                    onChange={(next) => onShortAnswerChange(question.uuid, next)}
+                  />
                 ) : (
                   <>
                     {isMultiSelect && (
@@ -703,7 +774,7 @@ function QuestionCard({
   }
 
   return (
-    <div className="rounded-xl border border-border bg-card p-5 sm:p-6">
+    <div className="rounded-xl border border-border bg-card/80 p-5 backdrop-blur-sm sm:p-6">
       <div className="flex gap-3 sm:gap-4">
         {/* Question number */}
         <div className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center bg-muted text-muted-foreground text-sm font-bold">
@@ -752,20 +823,12 @@ function QuestionCard({
           {!isComprehension && (
             <div className="space-y-2">
               {isShortAnswer ? (
-                <div className="space-y-2 px-1">
-                  <input
-                    aria-label={isNumericShortAnswer ? 'Numeric short answer' : 'Short answer'}
-                    type={isNumericShortAnswer ? 'number' : 'text'}
-                    value={typeof selectedAnswer === 'string' ? selectedAnswer : ''}
-                    disabled={showResults}
-                    onChange={(event) => onShortAnswerChange(question.uuid, event.target.value)}
-                    placeholder={isNumericShortAnswer ? 'Enter numeric answer' : 'Enter your answer'}
-                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40"
-                  />
-                  <p className="text-xs text-muted-foreground italic">
-                    Manual-evaluation answer type. Your response is saved locally.
-                  </p>
-                </div>
+                <ShortAnswerField
+                  value={typeof selectedAnswer === 'string' ? selectedAnswer : ''}
+                  numeric={isNumericInput}
+                  disabled={showResults}
+                  onChange={(next) => onShortAnswerChange(question.uuid, next)}
+                />
               ) : (
                 <>
                   {isMultiSelect && (
@@ -827,8 +890,76 @@ function QuestionCard({
   );
 }
 
+type PageState = 'none' | 'partial' | 'done';
+
+/**
+ * Right-rail navigator: a grid of question numbers that reflects answered /
+ * partially-answered / untouched state and lets the user jump to any question.
+ * Uses the horizontal space the single-question layout frees up.
+ */
+function QuestionNavigator({
+  states,
+  currentIndex,
+  onJump,
+}: {
+  states: PageState[];
+  currentIndex: number;
+  onJump: (index: number) => void;
+}) {
+  const done = states.filter((state) => state === 'done').length;
+  return (
+    <div className="sticky top-20 rounded-xl border border-border bg-card/60 p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-sm font-semibold tracking-tight">Questions</h2>
+        <span className="text-xs tabular-nums text-muted-foreground">{done}/{states.length} done</span>
+      </div>
+      <div className="grid grid-cols-5 gap-2">
+        {states.map((state, index) => {
+          const isCurrent = index === currentIndex;
+          return (
+            <button
+              key={index}
+              type="button"
+              onClick={() => onJump(index)}
+              aria-current={isCurrent ? 'true' : undefined}
+              aria-label={`Go to question ${index + 1}${
+                state === 'done' ? ', answered' : state === 'partial' ? ', partly answered' : ''
+              }`}
+              className={cn(
+                'flex h-9 w-9 items-center justify-center rounded-md border text-sm font-medium transition-colors',
+                state === 'done' && 'border-primary/40 bg-primary/15 text-primary',
+                state === 'partial' && 'border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400',
+                state === 'none' && 'border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground',
+                isCurrent && 'ring-2 ring-primary ring-offset-1 ring-offset-background',
+              )}
+            >
+              {index + 1}
+            </button>
+          );
+        })}
+      </div>
+      <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+        <span className="flex items-center gap-1">
+          <span className="h-2.5 w-2.5 rounded-sm bg-primary/40" aria-hidden="true" />
+          Answered
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="h-2.5 w-2.5 rounded-sm bg-amber-500/40" aria-hidden="true" />
+          Partial
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="h-2.5 w-2.5 rounded-sm border border-border" aria-hidden="true" />
+          Unanswered
+        </span>
+      </div>
+    </div>
+  );
+}
+
 export default function PaperPage() {
   const { paperId } = useParams();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const courseId = searchParams.get('course');
   const examId = searchParams.get('exam');
@@ -843,13 +974,21 @@ export default function PaperPage() {
   const [paper, setPaper] = useState<PaperDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
-  const [stickyVisible, setStickyVisible] = useState(false);
+  const [currentIndex, setCurrentIndex] = useState(0);
   const [timerRunning, setTimerRunning] = useState(false);
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
   const [timerEndsAt, setTimerEndsAt] = useState<number | null>(null);
   const [timeExpired, setTimeExpired] = useState(false);
   const [retryNonce, setRetryNonce] = useState(0);
-  const headerRef = useRef<HTMLElement>(null);
+  const { getToken, isSignedIn } = useAuth();
+
+  // Record a view in the signed-in user's history once the paper resolves.
+  useEffect(() => {
+    if (!isSignedIn || !paper?._id) return;
+    recordView(paper._id, getToken).catch((error) =>
+      logger.error('Failed to record paper view', error),
+    );
+  }, [getToken, isSignedIn, paper?._id]);
 
   useEffect(() => {
     let active = true;
@@ -867,6 +1006,7 @@ export default function PaperPage() {
     setLoadFailed(false);
     setSelectedAnswers({});
     setShowResults(false);
+    setCurrentIndex(0);
 
     Promise.all([
       getPaperByUuid(paperId, courseId, examUuidFromSearch, { signal: controller.signal }),
@@ -875,7 +1015,7 @@ export default function PaperPage() {
       .then(([paperData, questionData]) => {
         if (active) {
           const savedSession = storageKey
-            ? readPaperSession(storageKey, paperData.duration)
+            ? readPaperSession(storageKey, EXAM_DURATION_MINUTES)
             : null;
 
           setPaper(paperData);
@@ -883,9 +1023,9 @@ export default function PaperPage() {
           setSelectedAnswers(savedSession?.selectedAnswers ?? {});
           setShowResults(savedSession?.showResults ?? false);
           setTimerRunning(savedSession?.timerRunning ?? false);
-          setRemainingSeconds(savedSession?.remainingSeconds ?? paperData.duration * 60);
+          setRemainingSeconds(savedSession?.remainingSeconds ?? EXAM_DURATION_MINUTES * 60);
           setTimerEndsAt(savedSession?.timerEndsAt ?? null);
-          setTimeExpired((savedSession?.remainingSeconds ?? paperData.duration * 60) === 0);
+          setTimeExpired((savedSession?.remainingSeconds ?? EXAM_DURATION_MINUTES * 60) === 0);
         }
       })
       .catch((error) => {
@@ -910,21 +1050,6 @@ export default function PaperPage() {
       controller.abort();
     };
   }, [paperId, courseId, examUuidFromSearch, storageKey, retryNonce]);
-
-  // Sticky progress bar on scroll
-  useEffect(() => {
-    if (showResults) {
-      setStickyVisible(false);
-      return;
-    }
-    const handleScroll = () => {
-      if (!headerRef.current) return;
-      const { bottom } = headerRef.current.getBoundingClientRect();
-      setStickyVisible(bottom < 0);
-    };
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, [showResults]);
 
   useEffect(() => {
     if (!paper || !storageKey) return;
@@ -1093,6 +1218,77 @@ export default function PaperPage() {
     };
   }, [groupedQuestions, selectedAnswers, showResults]);
 
+  const pageCount = groupedQuestions.length;
+
+  const goPrev = useCallback(() => {
+    setCurrentIndex((i) => (i > 0 ? i - 1 : i));
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
+
+  const goNext = useCallback(() => {
+    setCurrentIndex((i) => (i < pageCount - 1 ? i + 1 : i));
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [pageCount]);
+
+  const goTo = useCallback(
+    (index: number) => {
+      setCurrentIndex(Math.max(0, Math.min(index, pageCount - 1)));
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    },
+    [pageCount],
+  );
+
+  // Per-page answered state for the navigator (done / partial / none).
+  const pageStates = useMemo<PageState[]>(() => {
+    const meaningful = (value: string | string[] | undefined) => {
+      if (value === undefined) return false;
+      return Array.isArray(value) ? value.length > 0 : value.trim().length > 0;
+    };
+    return groupedQuestions.map((question) => {
+      const ids =
+        question.questionType === 'COMPREHENSION'
+          ? (question.subQuestions ?? []).map((sub) => sub.uuid)
+          : [question.uuid];
+      if (ids.length === 0) return 'none';
+      const answered = ids.filter((id) => meaningful(selectedAnswers[id])).length;
+      if (answered === 0) return 'none';
+      return answered === ids.length ? 'done' : 'partial';
+    });
+  }, [groupedQuestions, selectedAnswers]);
+
+  // Keyboard paging with ← / → — ignored while typing into a short-answer field.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || target?.isContentEditable) return;
+      if (event.key === 'ArrowLeft') goPrev();
+      else if (event.key === 'ArrowRight') goNext();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [goPrev, goNext]);
+
+  // Pop back to the page we came from (the course page in the normal flow)
+  // rather than pushing a fresh course entry — pushing created a Paper ⇄ Course
+  // loop with the course page's own history-pop back button. Fall back to the
+  // course page only on a fresh/deep-linked load with no history to pop.
+  const goBack = () => {
+    if (location.key !== 'default') {
+      navigate(-1);
+    } else {
+      navigate(examSlug && paper ? `/exam/${examSlug}/course/${paper.courseUuid}` : '/');
+    }
+  };
+
+  const handleSubmit = () => {
+    setShowResults(true);
+    setTimerRunning(false);
+    setTimerEndsAt(null);
+    setCurrentIndex(0);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   const handleOptionSelect = (
     questionId: string,
     optionIndex: string,
@@ -1120,13 +1316,13 @@ export default function PaperPage() {
   const handleTimerStart = () => {
     if (!paper) return;
 
-    const nextRemaining = remainingSeconds ?? paper.duration * 60;
+    const nextRemaining = remainingSeconds ?? EXAM_DURATION_MINUTES * 60;
     if (nextRemaining <= 0) {
-      setRemainingSeconds(paper.duration * 60);
+      setRemainingSeconds(EXAM_DURATION_MINUTES * 60);
       setTimeExpired(false);
       setShowResults(false);
       setSelectedAnswers({});
-      setTimerEndsAt(Date.now() + paper.duration * 60 * 1000);
+      setTimerEndsAt(Date.now() + EXAM_DURATION_MINUTES * 60 * 1000);
       setTimerRunning(true);
       return;
     }
@@ -1145,7 +1341,7 @@ export default function PaperPage() {
     if (!paper) return;
     setTimerRunning(false);
     setTimerEndsAt(null);
-    setRemainingSeconds(paper.duration * 60);
+    setRemainingSeconds(EXAM_DURATION_MINUTES * 60);
     setTimeExpired(false);
   };
 
@@ -1154,8 +1350,9 @@ export default function PaperPage() {
     setShowResults(false);
     setTimerRunning(false);
     setTimerEndsAt(null);
-    setRemainingSeconds(paper ? paper.duration * 60 : null);
+    setRemainingSeconds(paper ? EXAM_DURATION_MINUTES * 60 : null);
     setTimeExpired(false);
+    setCurrentIndex(0);
     if (storageKey) clearPaperSession(storageKey);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -1206,11 +1403,9 @@ export default function PaperPage() {
   if (questions.length === 0) {
     return (
       <div className="max-w-3xl mx-auto space-y-6 px-4 sm:px-0">
-        <Button variant="ghost" size="sm" asChild className="gap-1.5 -ml-2 text-muted-foreground">
-          <Link to={examSlug ? `/exam/${examSlug}/course/${paper.courseUuid}` : '/'}>
-            <ArrowLeft className="h-4 w-4" />
-            {displayCourseName || 'Back'}
-          </Link>
+        <Button variant="ghost" size="sm" onClick={goBack} className="gap-1.5 -ml-2 text-muted-foreground">
+          <ArrowLeft className="h-4 w-4" />
+          {displayCourseName || 'Back'}
         </Button>
         <StatePanel
           compact
@@ -1224,44 +1419,53 @@ export default function PaperPage() {
 
   const allAnswered = stats.answered === stats.totalQuestions;
   const hasTimer = paper.duration > 0;
+  const safeIndex = Math.min(currentIndex, pageCount - 1);
+  const currentQuestion = groupedQuestions[safeIndex];
+  const isLastPage = safeIndex >= pageCount - 1;
+  const submitLabel = allAnswered
+    ? 'Submit answers'
+    : stats.answered > 0
+    ? `Submit (${stats.answered}/${stats.totalQuestions})`
+    : 'Answer to submit';
 
   return (
-    <>
-      {/* Sticky progress bar */}
-      <StickyProgress
-        answered={stats.answered}
-        total={stats.totalQuestions}
-        visible={stickyVisible && !showResults}
-      />
+    <div className="relative isolate w-full space-y-5 pb-24">
+      {/* Page backdrop — a still, dimmed winter scene held behind the exam so
+          the question and navigator stay legible. isolate + -z-10 keeps it
+          above the app background but below the content. */}
+      <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+        <img src={pageBg} alt="" className="h-full w-full object-cover object-center" />
+        <div className="absolute inset-0 bg-gradient-to-b from-background/85 via-background/90 to-background/95" />
+      </div>
 
-      <div className="max-w-3xl mx-auto space-y-6 px-4 sm:px-0">
-        {/* Header */}
-        <header ref={headerRef} className="space-y-4">
-          <Button
-            variant="ghost"
-            size="sm"
-            asChild
-            className="gap-1.5 -ml-2 text-muted-foreground"
-          >
-          <Link to={examSlug ? `/exam/${examSlug}/course/${paper.courseUuid}` : '/'}>
+      {/* Compact header — one row: back · exam · paper · meta .......... save */}
+      <header className="space-y-3">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+          <Button variant="ghost" size="sm" onClick={goBack} className="-ml-2 shrink-0 gap-1.5 text-muted-foreground">
             <ArrowLeft className="h-4 w-4" />
-            {displayCourseName || 'Back'}
-          </Link>
-        </Button>
-
-        <div>
-          <p className="text-sm font-medium text-primary">{paper.examName}</p>
-            <h1 className="text-2xl font-bold tracking-tight mt-1">{displayPaperName}</h1>
-            <p className="text-muted-foreground mt-1 text-sm">
-              {stats.totalQuestions} {stats.totalQuestions === 1 ? 'question' : 'questions'}
-              {stats.totalMarks > 0 && <> &middot; {stats.totalMarks} marks</>}
-            </p>
+            Back
+          </Button>
+          <div className="flex min-w-0 items-baseline gap-2">
+            <span className="shrink-0 text-sm font-medium text-primary">{paper.examName}</span>
+            <span className="text-muted-foreground" aria-hidden="true">·</span>
+            <h1 className="truncate text-lg font-semibold tracking-tight" title={displayPaperName}>
+              {displayPaperName}
+            </h1>
           </div>
+          <span className="hidden text-sm text-muted-foreground md:inline">
+            {stats.totalQuestions} {stats.totalQuestions === 1 ? 'question' : 'questions'}
+            {stats.totalMarks > 0 && ` · ${stats.totalMarks} marks`}
+          </span>
+          <div className="ml-auto shrink-0">
+            <SaveButton paperId={paper._id} />
+          </div>
+        </div>
 
-          {/* Progress */}
-          {!showResults && (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-sm">
+        {/* Progress + compact timer on one line */}
+        {!showResults && (
+          <div className="flex items-center gap-4">
+            <div className="min-w-0 flex-1">
+              <div className="mb-1 flex items-center justify-between text-xs">
                 <span className="text-muted-foreground">Progress</span>
                 <span className="font-medium">
                   {stats.answered} / {stats.totalQuestions} answered
@@ -1269,71 +1473,104 @@ export default function PaperPage() {
               </div>
               <ProgressBar answered={stats.answered} total={stats.totalQuestions} />
             </div>
-          )}
-
-          {hasTimer && (
-            <TimerPanel
-              durationMinutes={paper.duration}
-              remainingSeconds={remainingSeconds}
-              running={timerRunning}
-              onStart={handleTimerStart}
-              onPause={handleTimerPause}
-              onReset={handleTimerReset}
-              expired={timeExpired}
-            />
-          )}
-        </header>
-
-        {/* Results Summary */}
-        {showResults && <ResultsSummary stats={stats} onTryAgain={handleTryAgain} />}
-
-        {/* Questions */}
-        <div className="space-y-4">
-          {groupedQuestions.map((question, index) => (
-            <QuestionCard
-              key={question.uuid}
-              question={question}
-              index={index}
-              selectedAnswers={selectedAnswers}
-              showResults={showResults}
-              onSelectAnswer={handleOptionSelect}
-              onShortAnswerChange={handleShortAnswerChange}
-            />
-          ))}
-        </div>
-
-        {/* Submit Button */}
-        {!showResults && (
-          <div className="sticky bottom-4 flex justify-center pt-4 pb-2">
-            <div className="relative">
-              {/* backdrop blur halo so the button doesn't hard-clip over questions */}
-              <div className="absolute inset-0 -m-3 rounded-2xl bg-background/60 backdrop-blur-sm pointer-events-none" />
-              <Button
-                size="lg"
-                onClick={() => {
-                  setShowResults(true);
-                  setTimerRunning(false);
-                  setTimerEndsAt(null);
-                }}
-                disabled={stats.answered === 0}
-                className={`relative shadow-lg gap-2 transition-all ${
-                  allAnswered
-                    ? 'bg-green-600 hover:bg-green-700 text-white'
-                    : stats.answered > 0
-                    ? 'bg-primary/90 hover:bg-primary text-primary-foreground'
-                    : ''
-                }`}
-              >
-                {allAnswered
-                  ? 'Submit answers'
-                  : stats.answered > 0
-                  ? `Submit (${stats.answered} / ${stats.totalQuestions})`
-                  : 'Answer a question to submit'}
-              </Button>
-            </div>
+            {hasTimer && (
+              <CompactTimer
+                durationMinutes={EXAM_DURATION_MINUTES}
+                remainingSeconds={remainingSeconds}
+                running={timerRunning}
+                onStart={handleTimerStart}
+                onPause={handleTimerPause}
+                onReset={handleTimerReset}
+                expired={timeExpired}
+              />
+            )}
           </div>
         )}
+      </header>
+
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px] xl:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="min-w-0 space-y-5">
+      {/* Results summary shown above the question while reviewing */}
+      {showResults && <ResultsSummary stats={stats} onTryAgain={handleTryAgain} />}
+
+      {/* One question per page */}
+      {currentQuestion && (
+        <div key={currentQuestion.uuid} className="min-h-[55vh]">
+          <QuestionCard
+            question={currentQuestion}
+            index={safeIndex}
+            selectedAnswers={selectedAnswers}
+            showResults={showResults}
+            onSelectAnswer={handleOptionSelect}
+            onShortAnswerChange={handleShortAnswerChange}
+          />
+        </div>
+      )}
+
+      {/* Sticky pager — Prev · "Question X of N" · Next/Submit. ← / → also page. */}
+      <div className="sticky bottom-4 z-30">
+        <div className="rounded-xl border border-border bg-background/90 px-4 py-3 shadow-sm backdrop-blur">
+          <div className="flex items-center justify-between gap-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={goPrev}
+              disabled={safeIndex === 0}
+              className="gap-1"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Prev
+            </Button>
+
+            <span className="text-sm tabular-nums text-muted-foreground">
+              Question {safeIndex + 1} of {pageCount}
+            </span>
+
+            <div className="flex items-center gap-2">
+              {!showResults && !isLastPage && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleSubmit}
+                  disabled={stats.answered === 0}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  Submit
+                </Button>
+              )}
+              {isLastPage && !showResults ? (
+                <Button
+                  size="sm"
+                  onClick={handleSubmit}
+                  disabled={stats.answered === 0}
+                  className={cn(
+                    'gap-1',
+                    allAnswered
+                      ? 'bg-green-600 text-white hover:bg-green-700'
+                      : 'bg-primary text-primary-foreground hover:bg-primary/90',
+                  )}
+                >
+                  {submitLabel}
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              ) : !isLastPage ? (
+                <Button size="sm" onClick={goNext} className="gap-1">
+                  Next
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              ) : (
+                <span className="px-2 text-xs text-muted-foreground">End of review</span>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
-    </>
+        </div>
+
+        <aside className="hidden lg:block">
+          <QuestionNavigator states={pageStates} currentIndex={safeIndex} onJump={goTo} />
+        </aside>
+      </div>
+    </div>
   );
 }

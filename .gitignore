@@ -18,6 +18,7 @@ reports/db-provider-trials/*.md
 # Environment
 .env
 .env.*
+!.env.example
 
 # Logs
 *.log
@@ -44,3 +45,9 @@ convex/_generated/
 # Nested tool dependencies
 tools/**/node_modules/
 .vercel
+
+# Runtime logs
+logs/
+
+# Wrong-ecosystem lockfile (project uses bun.lock)
+package-lock.json

@@ -1,28 +1,70 @@
+import { createClerkClient } from '@clerk/backend';
 import type { DbClient } from './db';
 
 const allowedOrigin = process.env.API_ALLOWED_ORIGIN?.trim() || '*';
 const cacheableApiResponse = 'public, max-age=60, s-maxage=300, stale-while-revalidate=600';
 
-function json(data: unknown, status = 200) {
-  const headers: Record<string, string> = {
+// Auth: a Clerk client is only created when a secret key is configured, so the
+// public API keeps working (and tests keep passing) without Clerk credentials.
+// When absent, the authenticated /api/me/* routes return 401.
+const clerkSecretKey = process.env.CLERK_SECRET_KEY?.trim();
+// authenticateRequest() validates the publishable key too, not just the secret.
+// createClerkClient auto-reads CLERK_PUBLISHABLE_KEY; this app only sets the
+// VITE_-prefixed var (shared .env, loaded wholesale by Bun), so pass it through.
+const clerkPublishableKey = (
+  process.env.CLERK_PUBLISHABLE_KEY ?? process.env.VITE_CLERK_PUBLISHABLE_KEY
+)?.trim();
+const clerk = clerkSecretKey
+  ? createClerkClient({ secretKey: clerkSecretKey, publishableKey: clerkPublishableKey })
+  : null;
+const authorizedParties = allowedOrigin === '*' ? undefined : [allowedOrigin];
+
+function corsHeaders(): Record<string, string> {
+  return {
     'content-type': 'application/json',
     'access-control-allow-origin': allowedOrigin,
-    'access-control-allow-methods': 'GET,OPTIONS',
-    'access-control-allow-headers': 'content-type',
+    'access-control-allow-methods': 'GET,POST,DELETE,OPTIONS',
+    'access-control-allow-headers': 'content-type, authorization',
   };
+}
 
+function json(data: unknown, status = 200) {
+  const headers = corsHeaders();
   if (status === 200) {
     headers['cache-control'] = cacheableApiResponse;
   }
 
+  return new Response(JSON.stringify(data), { status, headers });
+}
+
+// Per-user responses must never land in a shared/CDN cache.
+function jsonPrivate(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
-    headers,
+    headers: { ...corsHeaders(), 'cache-control': 'private, no-store' },
   });
 }
 
 function notFound(message: string) {
   return json({ error: message }, 404);
+}
+
+/**
+ * Resolve the Clerk user id for a request, or null if unauthenticated / Clerk
+ * is not configured. Verifies the session token from the Authorization header.
+ */
+async function getUserId(request: Request): Promise<string | null> {
+  if (!clerk) return null;
+  try {
+    const requestState = await clerk.authenticateRequest(
+      request,
+      authorizedParties ? { authorizedParties } : {},
+    );
+    return requestState.toAuth()?.userId ?? null;
+  } catch (error) {
+    console.error('Clerk authentication failed', error);
+    return null;
+  }
 }
 
 interface ParsedBundleDate {
@@ -129,7 +171,13 @@ function formatDateLabel(date: ParsedBundleDate) {
   });
 }
 
-export function createApiFetchHandler(sql: DbClient) {
+export interface ApiHandlerOptions {
+  /** Override session resolution (used in tests). Defaults to Clerk verification. */
+  resolveUserId?: (request: Request) => Promise<string | null>;
+}
+
+export function createApiFetchHandler(sql: DbClient, options: ApiHandlerOptions = {}) {
+  const resolveUserId = options.resolveUserId ?? getUserId;
   function getCourseUuids(searchParams: URLSearchParams, fallbackCourseUuid: string) {
     const requested = searchParams
       .get('courseUuids')
@@ -180,6 +228,209 @@ export function createApiFetchHandler(sql: DbClient) {
         return json({ ok: true });
       }
 
+      // Authenticated, per-user routes. Handled before the GET-only guard
+      // because they use POST/DELETE for writes.
+      if (url.pathname.startsWith('/api/me/')) {
+        const userId = await resolveUserId(request);
+        if (!userId) {
+          return jsonPrivate({ error: 'Unauthorized' }, 401);
+        }
+
+        // Lazily mirror the Clerk user so saved/history rows have an owner.
+        await sql`
+          INSERT INTO users (clerk_user_id) VALUES (${userId})
+          ON CONFLICT (clerk_user_id) DO NOTHING
+        `;
+
+        if (url.pathname === '/api/me/saved') {
+          if (request.method === 'GET') {
+            const rows = await sql<
+              Array<{
+                id: string;
+                uuid: string;
+                paperName: string;
+                examUuid: string;
+                examName: string;
+                courseUuid: string;
+                courseName: string;
+                year: number | null;
+                savedAt: string | null;
+              }>
+            >`
+              SELECT
+                p.id AS "id",
+                p.source_uuid AS "uuid",
+                p.paper_name AS "paperName",
+                p.exam_uuid AS "examUuid",
+                e.exam_name AS "examName",
+                p.course_uuid AS "courseUuid",
+                c.course_name AS "courseName",
+                p.year,
+                s.created_at::text AS "savedAt"
+              FROM saved_papers s
+              JOIN paper_variants p ON p.id = s.paper_id
+              JOIN exams e ON e.source_uuid = p.exam_uuid
+              JOIN courses c ON c.source_uuid = p.course_uuid
+              WHERE s.clerk_user_id = ${userId}
+              ORDER BY s.created_at DESC
+            `;
+            return jsonPrivate(rows);
+          }
+
+          if (request.method === 'POST') {
+            const body = (await request.json().catch(() => null)) as { paperId?: string } | null;
+            const paperId = body?.paperId?.trim();
+            if (!paperId) {
+              return jsonPrivate({ error: 'paperId is required' }, 400);
+            }
+            const [paper] = await sql<Array<{ id: string }>>`
+              SELECT id FROM paper_variants WHERE id = ${paperId} LIMIT 1
+            `;
+            if (!paper) {
+              return jsonPrivate({ error: 'Paper not found' }, 404);
+            }
+            await sql`
+              INSERT INTO saved_papers (clerk_user_id, paper_id)
+              VALUES (${userId}, ${paperId})
+              ON CONFLICT (clerk_user_id, paper_id) DO NOTHING
+            `;
+            return jsonPrivate({ ok: true, paperId });
+          }
+
+          return jsonPrivate({ error: 'Method not allowed' }, 405);
+        }
+
+        const savedItemMatch = url.pathname.match(/^\/api\/me\/saved\/([^/]+)$/);
+        if (savedItemMatch && request.method === 'DELETE') {
+          const paperId = decodeURIComponent(savedItemMatch[1] ?? '');
+          await sql`
+            DELETE FROM saved_papers
+            WHERE clerk_user_id = ${userId} AND paper_id = ${paperId}
+          `;
+          return jsonPrivate({ ok: true, paperId });
+        }
+
+        if (url.pathname === '/api/me/history') {
+          if (request.method === 'GET') {
+            const rows = await sql<
+              Array<{
+                id: string;
+                uuid: string;
+                paperName: string;
+                examUuid: string;
+                examName: string;
+                courseUuid: string;
+                courseName: string;
+                year: number | null;
+                viewedAt: string | null;
+              }>
+            >`
+              SELECT DISTINCT ON (v.paper_id)
+                p.id AS "id",
+                p.source_uuid AS "uuid",
+                p.paper_name AS "paperName",
+                p.exam_uuid AS "examUuid",
+                e.exam_name AS "examName",
+                p.course_uuid AS "courseUuid",
+                c.course_name AS "courseName",
+                p.year,
+                v.viewed_at::text AS "viewedAt"
+              FROM paper_views v
+              JOIN paper_variants p ON p.id = v.paper_id
+              JOIN exams e ON e.source_uuid = p.exam_uuid
+              JOIN courses c ON c.source_uuid = p.course_uuid
+              WHERE v.clerk_user_id = ${userId}
+              ORDER BY v.paper_id, v.viewed_at DESC
+            `;
+            // Re-sort by recency (DISTINCT ON forces paper_id ordering above).
+            rows.sort((a, b) => (b.viewedAt ?? '').localeCompare(a.viewedAt ?? ''));
+            return jsonPrivate(rows.slice(0, 50));
+          }
+
+          if (request.method === 'POST') {
+            const body = (await request.json().catch(() => null)) as { paperId?: string } | null;
+            const paperId = body?.paperId?.trim();
+            if (!paperId) {
+              return jsonPrivate({ error: 'paperId is required' }, 400);
+            }
+            const [paper] = await sql<Array<{ id: string }>>`
+              SELECT id FROM paper_variants WHERE id = ${paperId} LIMIT 1
+            `;
+            if (!paper) {
+              return jsonPrivate({ error: 'Paper not found' }, 404);
+            }
+            await sql`
+              INSERT INTO paper_views (clerk_user_id, paper_id)
+              VALUES (${userId}, ${paperId})
+            `;
+            return jsonPrivate({ ok: true, paperId });
+          }
+
+          return jsonPrivate({ error: 'Method not allowed' }, 405);
+        }
+
+        // Courses the user is taking this term, plus their program level.
+        if (url.pathname === '/api/me/courses') {
+          if (request.method === 'GET') {
+            const [profile] = await sql<Array<{ level: string | null }>>`
+              SELECT level FROM users WHERE clerk_user_id = ${userId} LIMIT 1
+            `;
+            const rows = await sql<Array<{ courseKey: string }>>`
+              SELECT course_key AS "courseKey"
+              FROM user_courses
+              WHERE clerk_user_id = ${userId}
+              ORDER BY created_at ASC, course_key ASC
+            `;
+            return jsonPrivate({
+              level: profile?.level ?? null,
+              courseKeys: rows.map((row) => row.courseKey),
+            });
+          }
+
+          if (request.method === 'POST') {
+            const body = (await request.json().catch(() => null)) as {
+              courseKeys?: unknown;
+              level?: unknown;
+            } | null;
+
+            const courseKeys = Array.isArray(body?.courseKeys)
+              ? Array.from(
+                  new Set(
+                    body!.courseKeys
+                      .filter((key): key is string => typeof key === 'string')
+                      .map((key) => key.trim())
+                      .filter(Boolean),
+                  ),
+                )
+              : [];
+
+            const level =
+              typeof body?.level === 'string' && body.level.trim() ? body.level.trim() : null;
+
+            await sql`UPDATE users SET level = ${level} WHERE clerk_user_id = ${userId}`;
+
+            // Replace the whole set so the client can save the selector as one unit.
+            await sql`DELETE FROM user_courses WHERE clerk_user_id = ${userId}`;
+            if (courseKeys.length > 0) {
+              const values = courseKeys.map((key) => ({
+                clerk_user_id: userId,
+                course_key: key,
+              }));
+              await sql`
+                INSERT INTO user_courses ${sql(values, 'clerk_user_id', 'course_key')}
+                ON CONFLICT (clerk_user_id, course_key) DO NOTHING
+              `;
+            }
+
+            return jsonPrivate({ ok: true, level, courseKeys });
+          }
+
+          return jsonPrivate({ error: 'Method not allowed' }, 405);
+        }
+
+        return jsonPrivate({ error: 'Route not found' }, 404);
+      }
+
       if (request.method !== 'GET') {
         return json({ error: 'Method not allowed' }, 405);
       }
@@ -210,6 +461,37 @@ export function createApiFetchHandler(sql: DbClient) {
         `;
 
         return json(stats);
+      }
+
+      // Full course catalogue (across every exam type) for the dashboard's
+      // course selector / archives. One row per source course that has papers,
+      // with its total paper count and the set of exam slugs it appears in.
+      if (url.pathname === '/api/courses') {
+        const rows = await sql<
+          Array<{
+            uuid: string;
+            courseName: string;
+            courseCode: string;
+            programId: number;
+            paperCount: number;
+            examSlugs: string[];
+          }>
+        >`
+          SELECT
+            c.source_uuid AS "uuid",
+            c.course_name AS "courseName",
+            c.course_code AS "courseCode",
+            c.program_id AS "programId",
+            COUNT(p.id)::int AS "paperCount",
+            COALESCE(ARRAY_AGG(DISTINCT e.exam_slug), '{}') AS "examSlugs"
+          FROM courses c
+          JOIN paper_variants p ON p.course_uuid = c.source_uuid
+          JOIN exams e ON e.source_uuid = p.exam_uuid
+          GROUP BY c.source_uuid, c.course_name, c.course_code, c.program_id
+          ORDER BY c.course_name ASC
+        `;
+
+        return json(rows);
       }
 
       if (url.pathname === '/api/search') {

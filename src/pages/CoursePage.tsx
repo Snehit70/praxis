@@ -1,10 +1,10 @@
-import { useParams, Link, useSearchParams } from 'react-router-dom';
+import { useParams, Link, useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Search, X, FileText, Play, Layers } from 'lucide-react';
 import { logger } from '@/lib/logger';
 import { getExamUuidFromSlug, getExamNameFromSlug } from '@/lib/examMapping';
 import { useEffect, useMemo, useState } from 'react';
-import { getDisplayCourseName } from '@/lib/courseMapping';
+import { getDisplayCourseName, getCourseLevel } from '@/lib/courseMapping';
 import { formatPaperName } from '@/lib/paperUtils';
 import {
   getCourseByUuid,
@@ -15,6 +15,51 @@ import {
 } from '@/lib/api';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StatePanel } from '@/components/ui/state-panel';
+import { cn } from '@/lib/utils';
+import { LEVEL_META } from '@/lib/courseCatalogue';
+import pageBg from '@/assets/Sousou no Frieren - Ep. 18_ First-Class Mage Exam - 11_07.png';
+import variantBg from '@/assets/Stark-banner.jpeg';
+
+const EXAM_TABS = [
+  { slug: 'quiz1', label: 'Quiz 1' },
+  { slug: 'quiz2', label: 'Quiz 2' },
+  { slug: 'end-term', label: 'End Term' },
+  { slug: 'oppe', label: 'OPPE' },
+];
+
+/** Pill row to jump to the same course under a different exam type. */
+function ExamTypeSwitcher({
+  activeSlug,
+  courseId,
+  aliasSuffix,
+}: {
+  activeSlug: string;
+  courseId: string;
+  aliasSuffix: string;
+}) {
+  return (
+    <div role="tablist" aria-label="Exam type" className="flex flex-wrap gap-2">
+      {EXAM_TABS.map((tab) => {
+        const active = tab.slug === activeSlug;
+        return (
+          <Link
+            key={tab.slug}
+            role="tab"
+            aria-selected={active}
+            to={`/exam/${tab.slug}/course/${courseId}${aliasSuffix}`}
+            className={
+              active
+                ? 'rounded-md border border-primary bg-primary/10 px-3.5 py-1.5 text-sm font-medium text-foreground'
+                : 'rounded-md border border-border bg-card px-3.5 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground'
+            }
+          >
+            {tab.label}
+          </Link>
+        );
+      })}
+    </div>
+  );
+}
 
 function PaperVariantCard({
   paper,
@@ -28,12 +73,24 @@ function PaperVariantCard({
   return (
     <Link
       to={`/paper/${paper.uuid}?course=${courseId}&exam=${examId}`}
-      className="rounded-lg border border-border bg-card p-4 transition-colors hover:border-primary/40 hover:bg-muted/30"
+      className="group relative isolate flex flex-col overflow-hidden rounded-lg border border-border p-4 transition-colors hover:border-primary/50"
     >
-      <div className="mb-2 text-xs font-medium text-muted-foreground">CODE: {paper.uuid}</div>
+      {/* Card backdrop — Stark banner, covered to fill the card and dimmed
+          left-to-bottom so the code, title and button stay legible. */}
+      <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10">
+        <img
+          src={variantBg}
+          alt=""
+          loading="lazy"
+          className="h-full w-full object-cover object-center transition-transform duration-500 group-hover:scale-105"
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-card via-card/85 to-card/55" />
+      </div>
+
+      <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">CODE: {paper.uuid}</div>
       <p className="text-lg font-semibold text-foreground">{formatPaperName(paper.paperName, paper.year ?? undefined)}</p>
       <p className="mt-1 text-sm text-muted-foreground">{paper.paperDescription || 'No description'}</p>
-      <Button className="mt-4 w-full gap-2" variant="outline">
+      <Button className="mt-4 w-full gap-2 backdrop-blur-sm" variant="outline">
         <Play className="h-4 w-4" />
         Take Test
       </Button>
@@ -52,17 +109,17 @@ function BundleCard({
 }) {
   return (
     <section className="space-y-3">
-      <div className="rounded-lg border border-border bg-card p-4">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-lg font-semibold text-foreground">{bundle.bundleLabel}</p>
-            <p className="text-sm text-muted-foreground">{bundle.dateLabel}</p>
-            {bundle.termLabel && <p className="text-xs text-muted-foreground mt-1">{bundle.termLabel}</p>}
-          </div>
-          <div className="text-xs text-muted-foreground">
-            {bundle.variantCount} {bundle.variantCount === 1 ? 'variant' : 'variants'}
-          </div>
+      <div className="flex items-end justify-between gap-4 border-b border-border/70 pb-2">
+        <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5">
+          <h2 className="font-display text-xl font-normal tracking-tight text-foreground">{bundle.bundleLabel}</h2>
+          <span className="text-sm text-muted-foreground">
+            {bundle.dateLabel}
+            {bundle.termLabel ? ` · ${bundle.termLabel}` : ''}
+          </span>
         </div>
+        <span className="shrink-0 text-xs font-medium text-muted-foreground">
+          {bundle.variantCount} {bundle.variantCount === 1 ? 'variant' : 'variants'}
+        </span>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -104,7 +161,17 @@ function LoadingSkeleton({ examId, examName }: { examId: string; examName: strin
 
 export default function CoursePage() {
   const { examId, courseId } = useParams();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
+
+  // Return to wherever the user actually came from (dashboard, search, exam
+  // list). Fall back to the dashboard on a fresh/deep-linked load where there
+  // is no in-app history to pop.
+  const goBack = () => {
+    if (location.key !== 'default') navigate(-1);
+    else navigate('/home');
+  };
   const examUuid = examId ? getExamUuidFromSlug(examId) : null;
   const examName = examId ? getExamNameFromSlug(examId) : null;
   const [bundles, setBundles] = useState<PaperBundle[]>([]);
@@ -123,6 +190,11 @@ export default function CoursePage() {
       .filter(Boolean) ?? [];
     return Array.from(new Set([courseId, ...aliases]));
   }, [courseId, searchParams]);
+
+  const aliasSuffix = useMemo(() => {
+    const aliasParam = searchParams.get('aliases');
+    return aliasParam ? `?aliases=${encodeURIComponent(aliasParam)}` : '';
+  }, [searchParams]);
 
   useEffect(() => {
     logger.info('CoursePage mounted', { examId, courseId, examUuid });
@@ -203,6 +275,11 @@ export default function CoursePage() {
     return getDisplayCourseName(course.course_name);
   }, [course]);
 
+  const levelMeta = useMemo(
+    () => LEVEL_META[course ? getCourseLevel(course.course_name) : 'Other'],
+    [course],
+  );
+
   if (!examUuid || !courseId) {
     return (
       <StatePanel
@@ -252,43 +329,81 @@ export default function CoursePage() {
 
   if (!course || bundles.length === 0) {
     return (
-      <StatePanel
-        compact
-        icon={(
-          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
-            <FileText className="h-7 w-7 text-muted-foreground" />
+      <div className="space-y-6">
+        <Button variant="ghost" size="sm" asChild className="gap-1.5 -ml-2 text-muted-foreground">
+          <Link to="/home">
+            <ArrowLeft className="h-4 w-4" />
+            Dashboard
+          </Link>
+        </Button>
+        {course && (
+          <div className="space-y-3">
+            <h1 className="font-display text-4xl font-normal tracking-tight">{displayCourseName}</h1>
+            <ExamTypeSwitcher activeSlug={examId!} courseId={courseId!} aliasSuffix={aliasSuffix} />
           </div>
         )}
-        title="No papers found"
-        description={`No papers available for this course in ${examName}.`}
-        actions={(
-          <Button asChild variant="outline">
-            <Link to={`/exam/${examId}`}>Back to {examName}</Link>
-          </Button>
-        )}
-        announce
-      />
+        <StatePanel
+          compact
+          icon={(
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
+              <FileText className="h-7 w-7 text-muted-foreground" />
+            </div>
+          )}
+          title="No papers found"
+          description={`No papers available for this course in ${examName}. Try another exam type above.`}
+          announce
+        />
+      </div>
     );
   }
 
   return (
-    <div className="space-y-8">
+    <div className="relative isolate space-y-8">
+      {/* Page backdrop — the First-Class Mage Exam hall, held still behind the
+          page and dimmed so the bundle list stays legible. `isolate` + `-z-10`
+          keeps it above the app background but below the content. */}
+      <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+        <img src={pageBg} alt="" className="h-full w-full object-cover object-center" />
+        <div className="absolute inset-0 bg-gradient-to-b from-background/82 via-background/88 to-background/94" />
+      </div>
+
       <header className="space-y-4">
-        <Button variant="ghost" size="sm" asChild className="gap-1.5 -ml-2 text-muted-foreground">
-          <Link to={`/exam/${examId}`}>
-            <ArrowLeft className="h-4 w-4" />
-            {examName}
-          </Link>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={goBack}
+          className="gap-1.5 -ml-2 text-muted-foreground"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back
         </Button>
 
         <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-          <div>
-            <p className="text-sm font-medium text-primary">{examName}</p>
-            <h1 className="text-3xl font-bold tracking-tight mt-1">{displayCourseName}</h1>
-            <p className="text-muted-foreground mt-1">
-              {bundles.length} bundles · {totalPapers} papers
-              {courseUuids.length > 1 && ' across merged course variants'}
-            </p>
+          <div className="space-y-3">
+            <div className="flex items-center gap-3.5">
+              <img
+                src={levelMeta.image}
+                alt=""
+                aria-hidden="true"
+                className={cn(
+                  'hidden h-14 w-14 shrink-0 rounded-2xl object-cover object-top ring-2 ring-offset-2 ring-offset-background sm:block',
+                  levelMeta.ring,
+                )}
+              />
+              <div className="min-w-0">
+                <p className={cn('mb-0.5 text-xs font-semibold uppercase tracking-[0.18em]', levelMeta.text)}>
+                  {levelMeta.label}
+                </p>
+                <h1 className="font-display text-4xl font-normal leading-[1.05] tracking-tight text-foreground sm:text-5xl">
+                  {displayCourseName}
+                </h1>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {bundles.length} bundles · {totalPapers} papers
+                  {courseUuids.length > 1 && ' · merged variants'}
+                </p>
+              </div>
+            </div>
+            <ExamTypeSwitcher activeSlug={examId!} courseId={courseId!} aliasSuffix={aliasSuffix} />
           </div>
 
           <div className="relative w-full md:w-72">
@@ -303,7 +418,7 @@ export default function CoursePage() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               autoComplete="off"
-              className="w-full rounded-lg border border-border bg-card py-2.5 pl-10 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+              className="w-full rounded-lg border border-border bg-card/80 py-2.5 pl-10 pr-10 text-sm text-foreground backdrop-blur-sm placeholder:text-muted-foreground focus:border-primary focus:bg-card focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
             />
             {searchQuery && (
               <button

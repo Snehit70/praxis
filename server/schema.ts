@@ -134,6 +134,51 @@ export async function ensureSchema(sql: DbClient) {
 
     CREATE INDEX IF NOT EXISTS idx_courses_search_canonical_trgm
       ON courses USING gin (canonical_name gin_trgm_ops);
+
+    -- Auth / per-user data (Clerk is the identity source; we mirror the id only).
+    CREATE TABLE IF NOT EXISTS users (
+      clerk_user_id TEXT PRIMARY KEY,
+      email TEXT,
+      level TEXT,
+      created_at TIMESTAMPTZ DEFAULT now()
+    );
+
+    -- Deployments created before the term/level feature need the column added.
+    ALTER TABLE users
+      ADD COLUMN IF NOT EXISTS level TEXT;
+
+    -- Courses a user is taking this term. The key is the canonical course name
+    -- (the stable identity used for dedup/display), not a source_uuid, because a
+    -- single canonical course can map to several source rows across programs.
+    CREATE TABLE IF NOT EXISTS user_courses (
+      clerk_user_id TEXT NOT NULL,
+      course_key TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT now(),
+      PRIMARY KEY (clerk_user_id, course_key)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_user_courses_user
+      ON user_courses (clerk_user_id, created_at);
+
+    CREATE TABLE IF NOT EXISTS saved_papers (
+      clerk_user_id TEXT NOT NULL,
+      paper_id TEXT NOT NULL REFERENCES paper_variants(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ DEFAULT now(),
+      PRIMARY KEY (clerk_user_id, paper_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_saved_papers_user_recent
+      ON saved_papers (clerk_user_id, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS paper_views (
+      id BIGSERIAL PRIMARY KEY,
+      clerk_user_id TEXT NOT NULL,
+      paper_id TEXT NOT NULL REFERENCES paper_variants(id) ON DELETE CASCADE,
+      viewed_at TIMESTAMPTZ DEFAULT now()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_paper_views_user_recent
+      ON paper_views (clerk_user_id, viewed_at DESC);
   `);
 }
 
