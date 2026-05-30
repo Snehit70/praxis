@@ -1,6 +1,7 @@
 import { Outlet, Link, useLocation } from "react-router-dom";
 import { BookOpen } from "lucide-react";
-import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/clerk-react";
+import { SignedIn, SignedOut, UserButton } from "@clerk/clerk-react";
+import { SignInTrigger } from "@/components/auth/AuthDialog";
 import { Button } from "@/components/ui/button";
 import { logger } from "@/lib/logger";
 import { useEffect } from "react";
@@ -42,9 +43,9 @@ export default function RootLayout() {
                 <UserButton afterSignOutUrl="/" />
               </SignedIn>
               <SignedOut>
-                <SignInButton mode="modal">
+                <SignInTrigger>
                   <Button size="sm" variant="outline">Sign in</Button>
-                </SignInButton>
+                </SignInTrigger>
               </SignedOut>
             </nav>
           </div>

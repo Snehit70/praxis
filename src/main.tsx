@@ -33,6 +33,7 @@ try {
         publishableKey={clerkPublishableKey}
         afterSignOutUrl="/"
         appearance={clerkAppearance}
+        localization={{ formButtonPrimary: 'Begin the journey' }}
       >
         <App />
       </ClerkProvider>

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { SignedIn, SignedOut, SignInButton, useAuth } from '@clerk/clerk-react';
+import { SignedIn, SignedOut, useAuth } from '@clerk/clerk-react';
+import { SignInTrigger } from '@/components/auth/AuthDialog';
 import { Bookmark, BookmarkCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { addSavedPaper, getSavedPapers, removeSavedPaper } from '@/lib/api';
@@ -65,12 +66,12 @@ export function SaveButton({ paperId }: { paperId: string }) {
         </Button>
       </SignedIn>
       <SignedOut>
-        <SignInButton mode="modal">
+        <SignInTrigger>
           <Button variant="outline" size="sm" className="gap-1.5">
             <Bookmark className="h-4 w-4" />
             Save
           </Button>
-        </SignInButton>
+        </SignInTrigger>
       </SignedOut>
     </>
   );

@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
 import { ArrowRight, BookOpen } from "lucide-react";
-import { SignedIn, SignedOut, SignInButton, UserButton, useAuth } from "@clerk/clerk-react";
+import { SignedIn, SignedOut, UserButton, useAuth } from "@clerk/clerk-react";
+import { SignInTrigger } from "@/components/auth/AuthDialog";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -232,28 +233,28 @@ export default function LandingPage() {
         <nav className="flex items-center gap-6 text-sm [text-shadow:0_1px_10px_rgba(0,0,0,0.85)]">
           {/* Signed-in users are redirected to the dashboard, so this header is
               effectively the signed-out marketing nav: browsing requires sign-in. */}
-          <SignInButton mode="modal">
+          <SignInTrigger>
             <button type="button" className="text-white/80 underline-offset-4 transition-colors hover:text-white hover:underline">
               Papers
             </button>
-          </SignInButton>
-          <SignInButton mode="modal">
+          </SignInTrigger>
+          <SignInTrigger>
             <button type="button" className="text-white/80 underline-offset-4 transition-colors hover:text-white hover:underline">
               Archive
             </button>
-          </SignInButton>
+          </SignInTrigger>
           <SignedIn>
             <UserButton afterSignOutUrl="/" />
           </SignedIn>
           <SignedOut>
-            <SignInButton mode="modal">
+            <SignInTrigger>
               <button
                 type="button"
                 className="font-medium text-white underline-offset-4 hover:underline"
               >
                 Sign in
               </button>
-            </SignInButton>
+            </SignInTrigger>
           </SignedOut>
         </nav>
       </header>
@@ -299,7 +300,7 @@ export default function LandingPage() {
                   primary action funnels into sign-in. Bespoke frosted-glass
                   treatment so it reads crafted against the cinematic scene
                   rather than a default-blue chip. */}
-              <SignInButton mode="modal">
+              <SignInTrigger>
                 <Button
                   type="button"
                   size="lg"
@@ -308,7 +309,7 @@ export default function LandingPage() {
                   Start practising
                   <ArrowRight className="transition-transform duration-200 group-hover:translate-x-0.5" />
                 </Button>
-              </SignInButton>
+              </SignInTrigger>
             </div>
           </div>
         </div>

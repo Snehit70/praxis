@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { SignedIn, SignedOut, SignInButton, useAuth } from '@clerk/clerk-react';
+import { SignedIn, SignedOut, useAuth } from '@clerk/clerk-react';
+import { SignInTrigger } from '@/components/auth/AuthDialog';
 import { Bookmark } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { StatePanel } from '@/components/ui/state-panel';
@@ -116,9 +117,9 @@ export default function SavedPage() {
           title="Sign in to see your saved papers"
           description="Your saved papers are tied to your account, so you can find them on any device."
           actions={(
-            <SignInButton mode="modal">
+            <SignInTrigger>
               <Button>Sign in</Button>
-            </SignInButton>
+            </SignInTrigger>
           )}
         />
       </SignedOut>
