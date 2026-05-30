@@ -182,3 +182,11 @@
 .cl-card {
   width: 100% !important;
 }
+
+/* Clerk injects its styles at runtime (after ours), so an equal-specificity
+   !important loses by source order. Double the class to win on specificity and
+   force our squircle radius onto the primary + social buttons. */
+.cl-formButtonPrimary.cl-formButtonPrimary,
+.cl-socialButtonsBlockButton.cl-socialButtonsBlockButton {
+  border-radius: 0.75rem !important;
+}

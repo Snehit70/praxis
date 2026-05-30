@@ -32,8 +32,11 @@ const embeddedAppearance = {
     header: { display: "none" },
     footerAction: { display: "none" },
     footer: { background: "transparent" },
-    formButtonPrimary: { borderRadius: "0.75rem", fontSize: "0.95rem" },
-    socialButtonsBlockButton: { borderRadius: "0.75rem" },
+    formButtonPrimary: "!rounded-xl !text-[0.95rem]",
+    // Raised surface so the social button reads as a distinct button against
+    // the dark card (Clerk's default is near-transparent and disappears here).
+    socialButtonsBlockButton:
+      "!rounded-xl !border !border-white/20 !bg-white/[0.08] !text-white/90 transition-colors hover:!bg-white/[0.16] hover:!border-white/30",
     formFieldInput: { borderRadius: "0.6rem" },
   },
 } as const;
