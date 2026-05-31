@@ -195,6 +195,25 @@
   }
 }
 
+/* Tab panel cross-fade — a quick fade + tiny rise on each switch (and initial
+   mount) so Companions ↔ The World swap cinematically, not as a hard cut. */
+@keyframes praxis-tab-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 6px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .animate-tab-in {
+    animation: praxis-tab-in 0.2s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+}
+
 /* Subtle fade used by overlays/dialogs (no tailwindcss-animate dependency). */
 @keyframes praxis-fade-in {
   from {

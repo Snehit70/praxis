@@ -126,7 +126,7 @@ export function TabsContent({
       id={`${baseId}-panel-${value}`}
       aria-labelledby={`${baseId}-tab-${value}`}
       tabIndex={0}
-      className={cn('focus-visible:outline-none', className)}
+      className={cn('animate-tab-in focus-visible:outline-none', className)}
     >
       {children}
     </div>
