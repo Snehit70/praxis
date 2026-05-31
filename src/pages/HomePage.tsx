@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth, useUser, UserButton } from '@clerk/clerk-react';
 import { ArrowRight, BookMarked, BookOpen, Clock, Pencil, Plus, Search, X } from 'lucide-react';
@@ -131,6 +131,25 @@ export default function HomePage() {
   // Slow scroll-parallax on the fixed page backdrop (desktop, motion-safe only).
   const bgParallaxRef = useScrollParallax<HTMLImageElement>();
 
+  // Condensed sticky nav: the hero carries its own top row, so chrome scrolls
+  // away with it. A sentinel just below that row tells us when the in-hero nav
+  // has left the viewport — then we slide a compact bar in to replace it.
+  // Callback ref (not an effect) so the observer attaches the moment the
+  // sentinel mounts — the hero only renders after the catalogue loads, so an
+  // empty-deps effect would fire too early (while the skeleton is up) and miss.
+  const [showStickyNav, setShowStickyNav] = useState(false);
+  const stickyObserver = useRef<IntersectionObserver | null>(null);
+  const heroSentinelRef = useCallback((node: HTMLDivElement | null) => {
+    stickyObserver.current?.disconnect();
+    if (!node || typeof IntersectionObserver === 'undefined') return;
+    const io = new IntersectionObserver(
+      ([entry]) => setShowStickyNav(!(entry?.isIntersecting ?? true)),
+      { threshold: 0 },
+    );
+    io.observe(node);
+    stickyObserver.current = io;
+  }, []);
+
   useEffect(() => {
     logger.info('Dashboard mounted');
     const controller = new AbortController();
@@ -250,6 +269,42 @@ export default function HomePage() {
         />
       </div>
 
+      {/* Condensed sticky nav — replaces the in-hero chrome once it scrolls off.
+          Slides + fades in; hidden (and inert) while you're up in the hero. */}
+      <div
+        className={cn(
+          'fixed inset-x-0 top-0 z-50 border-b border-border bg-background/90 backdrop-blur-md transition-all duration-300 ease-out',
+          showStickyNav
+            ? 'translate-y-0 opacity-100'
+            : 'pointer-events-none -translate-y-full opacity-0 motion-reduce:translate-y-0',
+        )}
+      >
+        <div className="container mx-auto flex h-14 items-center px-4 md:px-8">
+          <Link to="/" className="flex items-center gap-2.5 transition-opacity hover:opacity-80">
+            <BookOpen className="h-5 w-5 text-primary" />
+            <span className="text-base font-semibold tracking-tight">Praxis</span>
+          </Link>
+          <div className="ml-auto flex items-center gap-2">
+            <Link
+              to="/saved"
+              className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+            >
+              <BookMarked className="h-4 w-4" />
+              <span className="hidden sm:inline">Saved</span>
+            </Link>
+            <button
+              type="button"
+              onClick={() => setSelectorOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+            >
+              <Pencil className="h-4 w-4" />
+              <span className="hidden sm:inline">Edit courses</span>
+            </button>
+            <UserButton afterSignOutUrl="/" />
+          </div>
+        </div>
+      </div>
+
       <Tabs defaultValue="mine">
         {/* ── Full-bleed cinematic hero — absorbs the top nav (no separate bar):
             Praxis + account sit over the image, greeting lower-left, the section
@@ -308,6 +363,10 @@ export default function HomePage() {
                 <UserButton afterSignOutUrl="/" />
               </div>
             </div>
+
+            {/* Sentinel just below the hero's nav row: once it scrolls out of
+                view, the condensed sticky bar takes over. */}
+            <div ref={heroSentinelRef} aria-hidden="true" className="absolute left-0 top-16 h-px w-px" />
 
             {/* Bottom cluster — greeting (left) + section tabs (right). */}
             <div className="absolute inset-x-0 bottom-0 z-10 flex flex-col gap-4 p-5 md:flex-row md:items-end md:justify-between md:p-8">
