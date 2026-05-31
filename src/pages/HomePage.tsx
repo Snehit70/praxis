@@ -305,7 +305,7 @@ export default function HomePage() {
               className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
             >
               <BookMarked className="h-4 w-4" />
-              <span className="hidden sm:inline">Saved</span>
+              <span className="hidden sm:inline">Bookmarks</span>
             </Link>
             <button
               type="button"
@@ -313,7 +313,7 @@ export default function HomePage() {
               className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
             >
               <Pencil className="h-4 w-4" />
-              <span className="hidden sm:inline">Edit courses</span>
+              <span className="hidden sm:inline">Companions</span>
             </button>
             <UserButton afterSignOutUrl="/" />
           </div>
@@ -369,11 +369,11 @@ export default function HomePage() {
               <div className="flex items-center gap-2">
                 <Link to="/saved" className={glassControl}>
                   <BookMarked className="h-4 w-4" />
-                  <span className="hidden sm:inline">Saved</span>
+                  <span className="hidden sm:inline">Bookmarks</span>
                 </Link>
                 <button type="button" onClick={() => setSelectorOpen(true)} className={glassControl}>
                   <Pencil className="h-4 w-4" />
-                  <span className="hidden sm:inline">Edit courses</span>
+                  <span className="hidden sm:inline">Companions</span>
                 </button>
                 <UserButton afterSignOutUrl="/" />
               </div>
@@ -469,7 +469,7 @@ export default function HomePage() {
             </div>
           ) : (
             <Reveal className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {/* Companions tiles are clean — no per-tile toggle; manage via Edit courses. */}
+              {/* Companions tiles are clean — no per-tile toggle; manage via the Companions button. */}
               {enrolledCourses.map((course, i) => (
                 <CourseCard key={course.key} course={course} enrolled revealIndex={i} />
               ))}
