@@ -101,6 +101,9 @@ export interface LevelMeta {
   ring: string;
   /** gradient start colour for the cinematic course-tile floor glow. */
   glow: string;
+  /** raw accent hex — drives the CourseSelector's level-colour fill sweep/glow
+   *  via a CSS custom property (Tailwind classes can't be interpolated there). */
+  color: string;
 }
 
 export const LEVEL_META: Record<CourseLevel, LevelMeta> = {
@@ -112,6 +115,7 @@ export const LEVEL_META: Record<CourseLevel, LevelMeta> = {
     text: 'text-violet-300',
     ring: 'ring-violet-500/30',
     glow: 'from-violet-500/30',
+    color: '#8b5cf6',
   },
   // Diploma · Programming → Himmel (the hero), sky blue from his hair.
   'Diploma in Programming': {
@@ -121,6 +125,7 @@ export const LEVEL_META: Record<CourseLevel, LevelMeta> = {
     text: 'text-sky-300',
     ring: 'ring-sky-500/30',
     glow: 'from-sky-500/30',
+    color: '#0ea5e9',
   },
   // Diploma · Data Science → Stark (the warrior), rose/red from his coat over the cool crystal.
   'Diploma in Data Science': {
@@ -130,6 +135,7 @@ export const LEVEL_META: Record<CourseLevel, LevelMeta> = {
     text: 'text-rose-300',
     ring: 'ring-rose-500/30',
     glow: 'from-rose-500/30',
+    color: '#f43f5e',
   },
   // Degree → Frieren (the master), indigo — "blue", deeper than Himmel's sky so they stay distinct.
   Degree: {
@@ -139,6 +145,7 @@ export const LEVEL_META: Record<CourseLevel, LevelMeta> = {
     text: 'text-indigo-300',
     ring: 'ring-indigo-500/30',
     glow: 'from-indigo-500/30',
+    color: '#6366f1',
   },
   // Other → Heiter (the priest), emerald to harmonize with his forest frame.
   Other: {
@@ -148,6 +155,7 @@ export const LEVEL_META: Record<CourseLevel, LevelMeta> = {
     text: 'text-emerald-300',
     ring: 'ring-emerald-500/30',
     glow: 'from-emerald-500/30',
+    color: '#10b981',
   },
 };
 

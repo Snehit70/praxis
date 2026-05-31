@@ -13,6 +13,19 @@ import cardBg from '@/assets/Frieren wallpaper.jpeg';
 import selectorBanner from '@/assets/hero-party-clover.jpeg';
 import emptySearchArt from '@/assets/hero-flower-field.jpeg';
 
+/**
+ * Deterministic crop from the course key so same-level thumbnails (which share
+ * one character portrait) frame a little differently — mirrors the dashboard
+ * CourseCard. Biased toward the upper portion to keep faces in view.
+ */
+function cropFor(key: string): string {
+  let h = 0;
+  for (let i = 0; i < key.length; i += 1) h = (h * 31 + key.charCodeAt(i)) >>> 0;
+  const x = 28 + (h % 45); // 28%..72%
+  const y = 8 + ((h >> 8) % 26); // 8%..33%
+  return `${x}% ${y}%`;
+}
+
 interface CourseSelectorProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -217,25 +230,30 @@ export function CourseSelector({
                             type="button"
                             onClick={() => toggle(entry.key)}
                             aria-pressed={isSelected}
+                            data-selected={isSelected}
+                            style={{ '--lvl': meta.color } as React.CSSProperties}
                             className={cn(
-                              'flex w-full items-center gap-3 rounded-lg border border-l-[3px] p-3 text-left transition-all',
-                              'backdrop-blur-sm',
-                              isSelected
-                                ? 'border-primary border-l-primary bg-primary/20'
-                                : cn('border-white/10 bg-background/45 hover:-translate-y-px hover:border-primary/40 hover:bg-background/65', meta.accent),
+                              'selector-tile group relative flex w-full items-center gap-3 overflow-hidden rounded-xl border border-white/10 bg-white/[0.04] p-2.5 text-left backdrop-blur-md',
+                              'transition-[transform,box-shadow,border-color] duration-200 ease-out will-change-transform',
+                              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50 motion-safe:hover:-translate-y-0.5',
                             )}
                           >
-                            <span
-                              className={cn(
-                                'flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition-colors',
-                                isSelected
-                                  ? 'border-primary bg-primary text-primary-foreground'
-                                  : 'border-border',
-                              )}
-                            >
-                              {isSelected && <Check className="h-3.5 w-3.5" />}
+                            {/* Level-colour fill — wipes in on select, stays as a tint. */}
+                            <span aria-hidden="true" className="selector-fill" />
+
+                            {/* Character thumbnail, framed per course. */}
+                            <span className="relative z-10 shrink-0">
+                              <img
+                                src={meta.image}
+                                alt=""
+                                aria-hidden="true"
+                                loading="lazy"
+                                style={{ objectPosition: cropFor(entry.key) }}
+                                className={cn('h-11 w-11 rounded-lg object-cover ring-2', meta.ring)}
+                              />
                             </span>
-                            <span className="min-w-0">
+
+                            <span className="relative z-10 min-w-0">
                               <span className="block truncate text-sm font-medium text-foreground">
                                 {entry.displayName}
                               </span>
@@ -243,6 +261,18 @@ export function CourseSelector({
                                 {entry.courseCode ? `${entry.courseCode} · ` : ''}
                                 {entry.paperCount} {entry.paperCount === 1 ? 'paper' : 'papers'}
                               </span>
+                            </span>
+
+                            {/* Check — stays primary so 'selected' is unmistakable. */}
+                            <span
+                              className={cn(
+                                'relative z-10 ml-auto flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition-colors',
+                                isSelected
+                                  ? 'border-primary bg-primary text-primary-foreground'
+                                  : 'border-white/25 bg-white/5',
+                              )}
+                            >
+                              {isSelected && <Check className="selector-check h-3.5 w-3.5" />}
                             </span>
                           </button>
                         </li>

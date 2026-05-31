@@ -195,6 +195,66 @@
   }
 }
 
+/* CourseSelector glass tile. `--lvl` is the per-level accent hex (set inline).
+   On select, a level-colour fill wipes in left→right and stays as a tint; the
+   border + a soft drop-glow take the level colour; the check springs in. */
+.selector-tile::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  /* frosted top-light rim */
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.1), transparent 42%);
+}
+
+.selector-fill {
+  position: absolute;
+  inset: 0;
+  transform: translateX(-101%);
+  background: linear-gradient(
+    100deg,
+    color-mix(in srgb, var(--lvl, #62aef0) 42%, transparent),
+    color-mix(in srgb, var(--lvl, #62aef0) 14%, transparent)
+  );
+}
+
+.selector-tile[data-selected='true'] .selector-fill {
+  transform: translateX(0);
+}
+
+.selector-tile:hover {
+  border-color: color-mix(in srgb, var(--lvl, #62aef0) 38%, transparent);
+}
+
+.selector-tile[data-selected='true'] {
+  border-color: color-mix(in srgb, var(--lvl, #62aef0) 60%, transparent);
+  box-shadow: 0 12px 30px -14px color-mix(in srgb, var(--lvl, #62aef0) 70%, transparent);
+}
+
+@keyframes praxis-check-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  60% {
+    transform: scale(1.12);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .selector-fill {
+    transition: transform 0.45s cubic-bezier(0.22, 0.61, 0.36, 1);
+  }
+  .selector-tile[data-selected='true'] .selector-check {
+    animation: praxis-check-pop 0.32s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  }
+}
+
 /* Dialog entrance — desktop springs up from 96% scale; mobile rises as a sheet.
    Scoped via a className on the panel, so the shared Dialog primitive is
    untouched. Backdrop keeps its own .animate-fade-in. */
