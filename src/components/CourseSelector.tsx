@@ -124,10 +124,10 @@ export function CourseSelector({
             id="course-selector-title"
             className="font-display text-2xl font-normal tracking-tight text-foreground sm:text-3xl"
           >
-            Your courses this term
+            Set your road this term
           </h2>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            Pick the courses you&apos;re taking — they&apos;ll sit in My Courses for quick practice.
+            Choose the paths you&apos;ll walk — they&apos;ll wait for you on the road.
           </p>
         </div>
       </div>
@@ -161,7 +161,7 @@ export function CourseSelector({
             type="text"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search courses..."
+            placeholder="Search every road…"
             autoComplete="off"
             aria-label="Search courses"
             className="w-full rounded-lg border border-white/10 bg-white/[0.04] py-2 pl-10 pr-9 text-sm text-foreground backdrop-blur-md placeholder:text-muted-foreground focus:border-primary/60 focus:bg-white/[0.07] focus:outline-none focus:ring-2 focus:ring-primary/25"
@@ -192,8 +192,8 @@ export function CourseSelector({
               />
               <div className="absolute inset-0 bg-gradient-to-t from-card/80 to-transparent" />
             </div>
-            <p className="mt-4 text-sm font-medium text-foreground">No courses match your search</p>
-            <p className="mt-1 text-sm text-muted-foreground">Try a broader course name or code.</p>
+            <p className="mt-4 text-sm font-medium text-foreground">No road by that name</p>
+            <p className="mt-1 text-sm text-muted-foreground">Try a broader name or code.</p>
           </div>
         ) : (
           <div className="space-y-7">
@@ -220,7 +220,7 @@ export function CourseSelector({
                       {meta.label}
                     </h3>
                     <span className="text-xs text-muted-foreground">
-                      {selectedInLevel > 0 ? `${selectedInLevel}/${entries.length} selected` : `${entries.length} courses`}
+                      {selectedInLevel > 0 ? `${selectedInLevel} of ${entries.length} chosen` : `${entries.length} courses`}
                     </span>
                   </div>
                   <ul className="grid gap-2 sm:grid-cols-2">
@@ -282,16 +282,16 @@ export function CourseSelector({
       {/* Footer */}
       <div className="flex shrink-0 items-center justify-between gap-3 border-t border-white/10 bg-background/55 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-md sm:px-5">
         <p className="text-sm text-muted-foreground">
-          {selected.size} {selected.size === 1 ? 'course' : 'courses'} selected
+          {selected.size} chosen
         </p>
         <div className="flex items-center gap-2">
           {!mandatory && (
             <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={saving}>
-              Cancel
+              Not yet
             </Button>
           )}
           <Button onClick={handleSave} disabled={saving}>
-            {saving ? 'Saving…' : 'Save courses'}
+            {saving ? 'Setting out…' : 'Set out'}
           </Button>
         </div>
       </div>
