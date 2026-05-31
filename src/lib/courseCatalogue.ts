@@ -6,10 +6,10 @@ import {
   type CourseLevel,
 } from '@/lib/courseMapping';
 
-import frierenImg from '@/assets/Frieren.jpeg';
-import fernImg from '@/assets/Fern.jpeg';
-import starkImg from '@/assets/Stark.jpeg';
+import fernImg from '@/assets/fern_image.jpeg';
+import starkImg from '@/assets/Stark-banner.jpeg';
 import himmelImg from '@/assets/Himmel.jpeg';
+import frierenImg from '@/assets/Frieren.jpeg';
 import heiterImg from '@/assets/Heiter.jpeg';
 
 /**
@@ -99,43 +99,55 @@ export interface LevelMeta {
   accent: string;
   text: string;
   ring: string;
+  /** gradient start colour for the cinematic course-tile floor glow. */
+  glow: string;
 }
 
 export const LEVEL_META: Record<CourseLevel, LevelMeta> = {
+  // Foundation → Fern (the apprentice), violet to match her hair against the green field.
   Foundation: {
     label: 'Foundation',
-    image: frierenImg,
-    accent: 'border-l-blue-500',
-    text: 'text-blue-400',
-    ring: 'ring-blue-500/30',
+    image: fernImg,
+    accent: 'border-l-violet-500',
+    text: 'text-violet-300',
+    ring: 'ring-violet-500/30',
+    glow: 'from-violet-500/45',
   },
+  // Diploma · Programming → Himmel (the hero), sky blue from his hair.
   'Diploma in Programming': {
     label: 'Diploma · Programming',
-    image: fernImg,
-    accent: 'border-l-purple-500',
-    text: 'text-purple-400',
-    ring: 'ring-purple-500/30',
+    image: himmelImg,
+    accent: 'border-l-sky-500',
+    text: 'text-sky-300',
+    ring: 'ring-sky-500/30',
+    glow: 'from-sky-500/45',
   },
+  // Diploma · Data Science → Stark (the warrior), rose/red from his coat over the cool crystal.
   'Diploma in Data Science': {
     label: 'Diploma · Data Science',
     image: starkImg,
-    accent: 'border-l-orange-500',
-    text: 'text-orange-400',
-    ring: 'ring-orange-500/30',
+    accent: 'border-l-rose-500',
+    text: 'text-rose-300',
+    ring: 'ring-rose-500/30',
+    glow: 'from-rose-500/45',
   },
+  // Degree → Frieren (the master), indigo — "blue", deeper than Himmel's sky so they stay distinct.
   Degree: {
     label: 'Degree',
-    image: himmelImg,
-    accent: 'border-l-emerald-500',
-    text: 'text-emerald-400',
-    ring: 'ring-emerald-500/30',
+    image: frierenImg,
+    accent: 'border-l-indigo-500',
+    text: 'text-indigo-300',
+    ring: 'ring-indigo-500/30',
+    glow: 'from-indigo-500/45',
   },
+  // Other → Heiter (the priest), emerald to harmonize with his forest frame.
   Other: {
     label: 'Other',
     image: heiterImg,
-    accent: 'border-l-gray-500',
-    text: 'text-gray-400',
-    ring: 'ring-gray-500/30',
+    accent: 'border-l-emerald-500',
+    text: 'text-emerald-300',
+    ring: 'ring-emerald-500/30',
+    glow: 'from-emerald-500/45',
   },
 };
 

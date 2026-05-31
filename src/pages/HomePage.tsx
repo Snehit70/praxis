@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useUser } from '@clerk/clerk-react';
-import { BookMarked, Clock, Pencil, Plus, Search, X } from 'lucide-react';
+import { useAuth, useUser, UserButton } from '@clerk/clerk-react';
+import { ArrowRight, BookMarked, BookOpen, Clock, Pencil, Plus, Search, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -10,11 +10,35 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { CourseCard } from '@/components/CourseCard';
 import { CourseSelector } from '@/components/CourseSelector';
 import { useEnrolledCourses } from '@/hooks/useEnrolledCourses';
-import { getAllCourses, type CatalogueCourse } from '@/lib/api';
+import { getAllCourses, getHistory, type CatalogueCourse, type HistoryItem } from '@/lib/api';
 import { buildCatalogue, LEVEL_META, type CatalogueEntry } from '@/lib/courseCatalogue';
-import { LEVEL_ORDER, type CourseLevel } from '@/lib/courseMapping';
+import { getDisplayCourseName, LEVEL_ORDER, type CourseLevel } from '@/lib/courseMapping';
+import { getExamSlugFromUuid } from '@/lib/examMapping';
 import { cn } from '@/lib/utils';
 import { logger } from '@/lib/logger';
+
+/**
+ * Frieren's voice, keyed to the local clock — the measured, slightly dry-warm
+ * register of someone who has walked this road many times and always returns.
+ * One fixed line per part of day (no random quips): calm, won't wear out.
+ */
+function roadLine(date = new Date()): string {
+  const h = date.getHours();
+  if (h >= 5 && h < 12) return 'Early on the road today.';
+  if (h >= 12 && h < 17) return "The road's still here. So are you.";
+  if (h >= 17 && h < 22) return 'Still walking. Good.';
+  return "Late. The road doesn't mind.";
+}
+
+/** Build the in-app paper route for a viewed-history item (mirrors SavedPage). */
+function historyHref(item: HistoryItem): string {
+  const examSlug = getExamSlugFromUuid(item.examUuid);
+  const params = new URLSearchParams();
+  if (item.courseUuid) params.set('course', item.courseUuid);
+  if (examSlug) params.set('exam', examSlug);
+  const suffix = params.toString() ? `?${params.toString()}` : '';
+  return `/paper/${encodeURIComponent(item.uuid)}${suffix}`;
+}
 
 /**
  * Asset filenames contain spaces / commas / unicode, which break plain ES
@@ -32,30 +56,33 @@ const asset = (name: string): string => {
   return hit?.[1] ?? '';
 };
 
-// Header banner: Frieren under an open sky — the source portrait rotated to a
-// 16:9 landscape so the full frame shows in the banner without cropping.
-const headerImg = asset('Frieren-banner.jpeg');
+// Header banner: "the road you return to" — Frieren kneeling in a golden field
+// (Ep.11), web-optimized to webp. Continuity with the landing/sign-in: Himmel
+// handed you off, Frieren is the companion you travel with now. Greeting sits
+// over the open field to the lower-left; CSS object-cover keeps her centered.
+const headerImg = asset('home-road.webp');
 // Empty state: a quiet, contemplative frame inviting the first selection.
 const emptyArt = asset('feature-frieren-pray.jpeg');
-// Page backdrop: a soft, light-filled Ep.18 frame held behind the whole
-// dashboard — dimmed so the dark UI stays legible (DESIGN.md image-first).
-const pageBg = asset('Sousou no Frieren - Ep. 18_ First-Class Mage Exam - 00_00.png');
+// Page backdrop: the Ep.18 First-Class Mage Exam frame held behind the whole
+// dashboard — the test ahead is the ground you stand on. webp, dimmed enough to
+// keep the dark UI legible but present enough to actually read (DESIGN.md).
+const pageBg = asset('home-ground.webp');
 
 /** Frosted-glass control styling for use over imagery (DESIGN.md secondary CTA). */
 const glassControl =
-  'inline-flex items-center gap-1.5 rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 text-sm font-medium text-white backdrop-blur-md transition-colors hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50';
+  'inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 text-sm font-medium text-white backdrop-blur-md transition-colors hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50';
 
 function DashboardSkeleton() {
   return (
-    <div className="space-y-8" role="status" aria-live="polite" aria-label="Loading your courses">
-      <div className="mx-auto w-full max-w-4xl">
-        <Skeleton className="aspect-[16/9] w-full rounded-2xl" />
-      </div>
-      <Skeleton className="h-9 w-72" />
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {[1, 2, 3, 4, 5, 6].map((i) => (
-          <Skeleton key={i} className="h-32 w-full rounded-xl" />
-        ))}
+    <div role="status" aria-live="polite" aria-label="Loading your courses">
+      <Skeleton className="h-[clamp(360px,48vh,520px)] w-full" />
+      <div className="container mx-auto space-y-6 px-4 py-6 md:px-8 md:py-8">
+        <Skeleton className="h-9 w-72" />
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {[1, 2, 3, 4, 5, 6].map((i) => (
+            <Skeleton key={i} className="h-32 w-full rounded-xl" />
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -63,6 +90,7 @@ function DashboardSkeleton() {
 
 export default function HomePage() {
   const { user } = useUser();
+  const { getToken } = useAuth();
   const {
     level,
     courseKeys,
@@ -79,6 +107,7 @@ export default function HomePage() {
   const [selectorOpen, setSelectorOpen] = useState(false);
   const [autoOpened, setAutoOpened] = useState(false);
   const [archiveQuery, setArchiveQuery] = useState('');
+  const [resume, setResume] = useState<HistoryItem | null>(null);
 
   useEffect(() => {
     logger.info('Dashboard mounted');
@@ -92,6 +121,24 @@ export default function HomePage() {
       });
     return () => controller.abort();
   }, []);
+
+  // Resume affordance: surface the most recently viewed paper as "where you left
+  // off". Best-effort — a failure just hides the line, never blocks the page.
+  useEffect(() => {
+    let active = true;
+    getHistory(getToken)
+      .then((rows) => {
+        if (!active || rows.length === 0) return;
+        const latest = [...rows].sort(
+          (a, b) => (b.viewedAt ?? '').localeCompare(a.viewedAt ?? ''),
+        )[0];
+        if (latest?.viewedAt) setResume(latest);
+      })
+      .catch((error) => logger.debug('No resume history', error));
+    return () => {
+      active = false;
+    };
+  }, [getToken]);
 
   // First-time setup: if the catalogue and enrollment have both loaded and the
   // user has no courses yet, open the selector once.
@@ -137,13 +184,15 @@ export default function HomePage() {
 
   if (catalogueFailed) {
     return (
-      <StatePanel
-        tone="error"
-        title="Couldn't load courses"
-        description="We couldn't reach the course catalogue. Please try again in a moment."
-        actions={<Button onClick={() => window.location.reload()}>Reload</Button>}
-        announce
-      />
+      <div className="container mx-auto px-4 py-10 md:px-8">
+        <StatePanel
+          tone="error"
+          title="Couldn't load courses"
+          description="We couldn't reach the course catalogue. Please try again in a moment."
+          actions={<Button onClick={() => window.location.reload()}>Reload</Button>}
+          announce
+        />
+      </div>
     );
   }
 
@@ -152,83 +201,113 @@ export default function HomePage() {
   }
 
   const greetingName = user?.firstName?.trim();
-  const levelLabel = level ? (LEVEL_META[level as CourseLevel]?.label ?? level) : null;
 
   return (
-    <div className="relative isolate space-y-8">
-      {/* Page backdrop — a soft, light-filled frame held still behind the whole
-          dashboard so it reads as cinematic ground; dimmed for legibility. The
-          `isolate` + `-z-10` keeps it above the app's opaque background but
-          below the content, without affecting other routes. */}
+    <div className="relative isolate">
+      {/* Page backdrop — the soft Ep.18 exam frame held faintly behind the
+          dashboard as cinematic ground. Dimmed hard (near-solid by the lower
+          half) so it's only a whisper of warmth, never a prominent blob. */}
       <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
         <img src={pageBg} alt="" className="h-full w-full object-cover object-center" />
-        <div className="absolute inset-0 bg-gradient-to-b from-background/80 via-background/88 to-background/95" />
+        <div className="absolute inset-0 bg-gradient-to-b from-background/55 via-background/72 to-background/84" />
       </div>
 
-      {/* Header banner — a contained card whose 16:9 frame matches the image's
-          aspect ratio, so Frieren is shown in full with no crop. The greeting
-          sits over the lower edge; the page backdrop breathes around it. */}
-      <header>
-        <div className="relative mx-auto w-full max-w-4xl overflow-hidden rounded-2xl border border-border shadow-xl shadow-black/30">
-          <div className="aspect-[16/9] w-full">
+      <Tabs defaultValue="mine">
+        {/* ── Full-bleed cinematic hero — absorbs the top nav (no separate bar):
+            Praxis + account sit over the image, greeting lower-left, the section
+            tabs lower-right, so the whole page stays compact. ── */}
+        <header className="relative w-full overflow-hidden">
+          <div className="relative h-[clamp(360px,48vh,520px)] w-full">
             <img
               src={headerImg}
               alt=""
               aria-hidden="true"
               fetchPriority="high"
-              className="animate-kenburns h-full w-full object-cover object-center"
+              className="animate-kenburns absolute inset-0 h-full w-full object-cover object-center"
             />
-          </div>
-          {/* Legibility scrims for the overlaid greeting. */}
-          <div className="absolute inset-0 bg-gradient-to-t from-background/95 via-background/10 to-transparent" />
-          <div className="absolute inset-0 bg-gradient-to-r from-background/40 via-transparent to-transparent" />
+            {/* Legibility scrims: strong floor (greeting + tabs), top (nav), left. */}
+            <div className="absolute inset-0 bg-gradient-to-t from-background via-background/20 to-transparent" />
+            <div className="absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-background/75 to-transparent" />
+            <div className="absolute inset-0 bg-gradient-to-r from-background/55 via-transparent to-transparent" />
 
-          {/* Actions — glass over the image, top-right. */}
-          <div className="absolute right-4 top-4 z-10 flex items-center gap-2">
-            <Link to="/saved" className={glassControl}>
-              <BookMarked className="h-4 w-4" />
-              <span className="hidden sm:inline">Saved</span>
-            </Link>
-            <button type="button" onClick={() => setSelectorOpen(true)} className={glassControl}>
-              <Pencil className="h-4 w-4" />
-              <span className="hidden sm:inline">Edit courses</span>
-            </button>
-          </div>
+            {/* Top row — Praxis left, actions + account right (the old navbar). */}
+            <div className="absolute inset-x-0 top-0 z-20 flex items-center justify-between px-4 py-4 md:px-8 md:py-5">
+              <Link
+                to="/"
+                className="flex items-center gap-2.5 text-foreground transition-opacity hover:opacity-80 [text-shadow:0_1px_10px_rgba(0,0,0,0.7)]"
+              >
+                <BookOpen className="h-5 w-5 text-primary" />
+                <span className="text-lg font-semibold tracking-tight">Praxis</span>
+              </Link>
+              <div className="flex items-center gap-2">
+                <Link to="/saved" className={glassControl}>
+                  <BookMarked className="h-4 w-4" />
+                  <span className="hidden sm:inline">Saved</span>
+                </Link>
+                <button type="button" onClick={() => setSelectorOpen(true)} className={glassControl}>
+                  <Pencil className="h-4 w-4" />
+                  <span className="hidden sm:inline">Edit courses</span>
+                </button>
+                <UserButton afterSignOutUrl="/" />
+              </div>
+            </div>
 
-          {/* Greeting — pinned to the bottom of the banner. */}
-          <div className="absolute inset-x-0 bottom-0 p-5 sm:p-6 md:p-8">
-            <p className="mb-1 text-xs font-semibold uppercase tracking-[0.22em] text-primary">
-              IITM BS · This term
+            {/* Bottom cluster — greeting (left) + section tabs (right). */}
+            <div className="absolute inset-x-0 bottom-0 z-10 flex flex-col gap-4 p-5 md:flex-row md:items-end md:justify-between md:p-8">
+              <div className="max-w-xl">
+                <h1 className="font-display text-3xl font-normal leading-[1.05] tracking-tight text-foreground sm:text-4xl md:text-5xl">
+                  {greetingName ? `There you are, ${greetingName}` : 'There you are'}
+                </h1>
+                {/* Frieren's voice — keyed to the time of day (calm, fixed lines). */}
+                <p className="mt-1.5 font-display text-lg italic leading-snug text-foreground/85 sm:text-xl">
+                  {roadLine()}
+                </p>
+                {/* Resume — pick up the last paper you were on, if any. */}
+                {resume && (
+                  <Link
+                    to={historyHref(resume)}
+                    className="group mt-2 inline-flex items-center gap-1.5 text-sm"
+                  >
+                    <span className="font-medium text-primary transition-colors group-hover:text-primary/80">
+                      Last on the road
+                    </span>
+                    <ArrowRight className="h-3.5 w-3.5 text-primary transition-transform group-hover:translate-x-0.5" />
+                    <span className="text-foreground/85">
+                      {getDisplayCourseName(resume.courseName)}
+                      {resume.examName ? ` · ${resume.examName}` : ''}
+                    </span>
+                  </Link>
+                )}
+              </div>
+
+              <TabsList className="inline-flex gap-1 self-start rounded-lg border border-white/15 bg-black/35 p-1 backdrop-blur-md md:self-auto">
+                <TabsTrigger
+                  value="mine"
+                  className="rounded-md px-4 py-1.5 text-sm text-white/80 transition-colors data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+                >
+                  Companions
+                </TabsTrigger>
+                <TabsTrigger
+                  value="archive"
+                  className="rounded-md px-4 py-1.5 text-sm text-white/80 transition-colors data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+                >
+                  The World
+                </TabsTrigger>
+              </TabsList>
+            </div>
+          </div>
+        </header>
+
+        {/* ── Content below the hero ── */}
+        <div className="container mx-auto px-4 py-6 md:px-8 md:py-8">
+
+        {/* Companions — the courses you travel with this term. */}
+        <TabsContent value="mine" className="space-y-4">
+          {enrolledCourses.length > 0 && (
+            <p className="text-sm text-muted-foreground">
+              The courses you&apos;re taking this term.
             </p>
-            <h1 className="font-display text-3xl font-normal leading-[1.05] tracking-tight text-foreground sm:text-4xl md:text-5xl">
-              {greetingName ? `Welcome back, ${greetingName}` : 'Welcome back'}
-            </h1>
-            <p className="mt-1.5 text-sm text-muted-foreground sm:text-base">
-              {levelLabel ? `${levelLabel} · ` : ''}
-              {enrolledCourses.length} {enrolledCourses.length === 1 ? 'course' : 'courses'} this term
-            </p>
-          </div>
-        </div>
-      </header>
-
-      <Tabs defaultValue="mine" className="space-y-6">
-        <TabsList className="inline-flex gap-1 rounded-lg border border-border bg-card p-1">
-          <TabsTrigger
-            value="mine"
-            className="rounded-md px-4 py-1.5 text-sm data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
-          >
-            My Courses
-          </TabsTrigger>
-          <TabsTrigger
-            value="archive"
-            className="rounded-md px-4 py-1.5 text-sm data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
-          >
-            Archives
-          </TabsTrigger>
-        </TabsList>
-
-        {/* My Courses */}
-        <TabsContent value="mine">
+          )}
           {enrolledCourses.length === 0 ? (
             <div className="relative flex min-h-[380px] overflow-hidden rounded-2xl border border-border md:min-h-[440px]">
               <img
@@ -258,20 +337,19 @@ export default function HomePage() {
             </div>
           ) : (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {/* Companions tiles are clean — no per-tile toggle; manage via Edit courses. */}
               {enrolledCourses.map((course) => (
-                <CourseCard
-                  key={course.key}
-                  course={course}
-                  enrolled
-                  onToggleEnroll={handleToggleEnroll}
-                />
+                <CourseCard key={course.key} course={course} enrolled />
               ))}
             </div>
           )}
         </TabsContent>
 
-        {/* Archives */}
+        {/* The World — every course in the archive; roads not yet walked. */}
         <TabsContent value="archive" className="space-y-6">
+          <p className="text-sm text-muted-foreground">
+            Every course in the archive — roads you haven&apos;t walked yet.
+          </p>
           <div className="relative max-w-md">
             <Search aria-hidden="true" className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <input
@@ -341,10 +419,11 @@ export default function HomePage() {
             </div>
           )}
         </TabsContent>
+        </div>
       </Tabs>
 
       {enrollFailed && (
-        <p className="text-sm text-muted-foreground" role="status">
+        <p className="container mx-auto px-4 pb-6 text-sm text-muted-foreground md:px-8" role="status">
           <Clock className="mr-1 inline h-3.5 w-3.5" />
           We couldn&apos;t load your saved courses.{' '}
           <button type="button" onClick={reload} className="text-primary hover:underline">
