@@ -260,11 +260,15 @@ export default function HomePage() {
           style={{ transform: 'translate3d(0, var(--scroll-shift, 0px), 0)' }}
         />
         <div className="absolute inset-0 bg-gradient-to-b from-background/55 via-background/72 to-background/84" />
+        {/* Warm bleed — `screen` blend so the hero's gold *adds* light to the
+            backdrop instead of laying a translucent brown film over it (which is
+            what normal compositing of warm-over-dark produces). One clean peak
+            just below the seam, fading out by the lower page. */}
         <div
-          className="absolute inset-0"
+          className="absolute inset-0 mix-blend-screen"
           style={{
             background:
-              'linear-gradient(to bottom, rgba(198,160,94,0.10) 14%, rgba(198,160,94,0.22) 42%, rgba(198,160,94,0.09) 64%, rgba(198,160,94,0) 88%)',
+              'linear-gradient(to bottom, rgba(214,178,110,0) 8%, rgba(214,178,110,0.30) 40%, rgba(214,178,110,0.12) 60%, rgba(214,178,110,0) 82%)',
           }}
         />
       </div>
