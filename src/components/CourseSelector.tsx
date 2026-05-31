@@ -103,8 +103,10 @@ export function CourseSelector({
       {/* Card backdrop — Frieren in the meadow, fills the whole card and is
           dimmed so every section stays legible while the image reads through. */}
       <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10">
-        <img src={cardBg} alt="" className="h-full w-full object-cover object-center" />
-        <div className="absolute inset-0 bg-gradient-to-b from-background/45 via-background/62 to-background/78" />
+        {/* Calmed hard (blur + scale to hide blur-edge, deep scrim) so the
+            frosted glass tiles read clean rather than muddy over a busy photo. */}
+        <img src={cardBg} alt="" className="h-full w-full scale-110 object-cover object-center blur-[3px]" />
+        <div className="absolute inset-0 bg-gradient-to-b from-background/65 via-background/80 to-background/90" />
       </div>
 
       {/* Banner — the clover-party hero, with the title overlaid. */}
@@ -162,7 +164,7 @@ export function CourseSelector({
             placeholder="Search courses..."
             autoComplete="off"
             aria-label="Search courses"
-            className="w-full rounded-lg border border-border bg-background/60 py-2 pl-10 pr-9 text-sm text-foreground backdrop-blur-sm placeholder:text-muted-foreground focus:border-primary focus:bg-background/80 focus:outline-none focus:ring-2 focus:ring-primary/20"
+            className="w-full rounded-lg border border-white/10 bg-white/[0.04] py-2 pl-10 pr-9 text-sm text-foreground backdrop-blur-md placeholder:text-muted-foreground focus:border-primary/60 focus:bg-white/[0.07] focus:outline-none focus:ring-2 focus:ring-primary/25"
           />
           {query && (
             <button
@@ -287,7 +289,7 @@ export function CourseSelector({
       </div>
 
       {/* Footer */}
-      <div className="flex shrink-0 items-center justify-between gap-3 border-t border-white/10 bg-background/60 px-4 py-3 backdrop-blur-md sm:px-5">
+      <div className="flex shrink-0 items-center justify-between gap-3 border-t border-white/10 bg-background/55 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-md sm:px-5">
         <p className="text-sm text-muted-foreground">
           {selected.size} {selected.size === 1 ? 'course' : 'courses'} selected
         </p>
@@ -326,12 +328,12 @@ function FilterChip({
       type="button"
       onClick={onClick}
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-md border py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60',
+        'inline-flex items-center gap-1.5 rounded-lg border py-1 text-xs font-medium backdrop-blur-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50',
         image ? 'pl-1.5 pr-2.5' : 'px-3',
         active
-          ? 'border-primary bg-primary/10 text-foreground'
-          : 'border-border text-muted-foreground hover:border-primary/40 hover:text-foreground',
-        accent && !active && 'ring-1 ring-primary/30',
+          ? 'border-white/30 bg-white/[0.14] text-foreground'
+          : 'border-white/10 bg-white/[0.05] text-muted-foreground hover:bg-white/[0.1] hover:text-foreground',
+        accent && !active && cn('ring-1', ring ?? 'ring-white/20'),
       )}
     >
       {image && (
