@@ -259,7 +259,18 @@ export default function HomePage() {
           className="absolute inset-x-0 -top-[15%] h-[130%] w-full object-cover object-center will-change-transform"
           style={{ transform: 'translate3d(0, var(--scroll-shift, 0px), 0)' }}
         />
-        <div className="absolute inset-0 bg-gradient-to-b from-background/55 via-background/72 to-background/84" />
+        <div className="absolute inset-0 bg-gradient-to-b from-background/55 via-background/72 to-background/90" />
+        {/* Vignette — transparent over the upper-centre (keeps the warm bleed +
+            parallax frame readable), deepening to solid toward the edges and
+            bottom where the backdrop's bright orange patch otherwise peeks
+            through between the lower cards. Frames the content, settles the blob. */}
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              'radial-gradient(125% 85% at 50% 16%, transparent 44%, var(--background) 100%)',
+          }}
+        />
         {/* Warm bleed — `screen` blend so the hero's gold *adds* light to the
             backdrop instead of laying a translucent brown film over it (which is
             what normal compositing of warm-over-dark produces). One clean peak
