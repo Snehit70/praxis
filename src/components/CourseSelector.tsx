@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { Search, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronLeft, ChevronRight, Search, X } from 'lucide-react';
 import { Dialog, DialogClose } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -10,12 +10,15 @@ import {
   type CatalogueEntry,
 } from '@/lib/courseCatalogue';
 import cardBg from '@/assets/Frieren wallpaper.jpeg';
-import selectorBanner from '@/assets/hero-party-clover.jpeg';
 import emptySearchArt from '@/assets/hero-flower-field.jpeg';
 
+const prefersReducedMotion = () =>
+  typeof window !== 'undefined' &&
+  window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
 /**
- * Deterministic crop from the course key so same-level thumbnails (which share
- * one character portrait) frame a little differently — mirrors the dashboard
+ * Deterministic crop from the course key so same-level art (which shares one
+ * character portrait) frames a little differently — mirrors the dashboard
  * CourseCard. Biased toward the upper portion to keep faces in view.
  */
 function cropFor(key: string): string {
@@ -58,26 +61,54 @@ export function CourseSelector({
   const [filter, setFilter] = useState<LevelFilter>(initialLevelTyped ?? 'All');
   const [selected, setSelected] = useState<Set<string>>(new Set(initialCourseKeys));
   const [query, setQuery] = useState('');
+  const [index, setIndex] = useState(0);
 
-  const visibleByLevel = useMemo(() => {
+  // The deck: every course matching the active level filter + search, flattened
+  // in level order — what you flip through one card at a time.
+  const deck = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const groups = {} as Record<CourseLevel, CatalogueEntry[]>;
-    for (const lvl of LEVEL_ORDER) groups[lvl] = [];
-    for (const entry of catalogue) {
-      if (filter !== 'All' && entry.level !== filter) continue;
-      if (
-        q &&
-        !entry.displayName.toLowerCase().includes(q) &&
-        !entry.courseCode.toLowerCase().includes(q)
-      ) {
-        continue;
+    const out: CatalogueEntry[] = [];
+    for (const lvl of LEVEL_ORDER) {
+      for (const entry of catalogue) {
+        if (entry.level !== lvl) continue;
+        if (filter !== 'All' && entry.level !== filter) continue;
+        if (
+          q &&
+          !entry.displayName.toLowerCase().includes(q) &&
+          !entry.courseCode.toLowerCase().includes(q)
+        ) {
+          continue;
+        }
+        out.push(entry);
       }
-      groups[entry.level].push(entry);
     }
-    return groups;
+    return out;
   }, [catalogue, filter, query]);
 
-  const totalVisible = LEVEL_ORDER.reduce((sum, lvl) => sum + visibleByLevel[lvl].length, 0);
+  // Reset to the first card whenever the deck's contents change.
+  useEffect(() => {
+    setIndex(0);
+  }, [filter, query]);
+
+  const current = deck[Math.min(index, deck.length - 1)] ?? null;
+
+  const go = (delta: number) =>
+    setIndex((i) => Math.min(deck.length - 1, Math.max(0, i + delta)));
+
+  // ←/→ flip the deck (unless you're typing in the search field).
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+      const tag = (document.activeElement as HTMLElement | null)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      event.preventDefault();
+      go(event.key === 'ArrowRight' ? 1 : -1);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, deck.length]);
 
   const toggle = (key: string) => {
     setSelected((prev) => {
@@ -87,6 +118,18 @@ export function CourseSelector({
       return next;
     });
   };
+
+  const chosen = useMemo(
+    () => catalogue.filter((entry) => selected.has(entry.key)),
+    [catalogue, selected],
+  );
+
+  // Save is only meaningful when the chosen set differs from what we opened with.
+  const dirty = useMemo(() => {
+    if (selected.size !== initialCourseKeys.length) return true;
+    for (const key of initialCourseKeys) if (!selected.has(key)) return true;
+    return false;
+  }, [selected, initialCourseKeys]);
 
   const handleSave = () => {
     onSave({ level, courseKeys: Array.from(selected) });
@@ -98,42 +141,30 @@ export function CourseSelector({
       onOpenChange={onOpenChange}
       dismissable={!mandatory}
       labelledBy="course-selector-title"
-      className="animate-dialog-in bg-transparent sm:max-w-2xl"
+      className="animate-dialog-in bg-transparent sm:max-w-xl"
     >
-      {/* Card backdrop — Frieren in the meadow, fills the whole card and is
-          dimmed so every section stays legible while the image reads through. */}
+      {/* Calmed meadow backdrop (blur + deep scrim) so the glass reads clean. */}
       <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10">
-        {/* Calmed hard (blur + scale to hide blur-edge, deep scrim) so the
-            frosted glass tiles read clean rather than muddy over a busy photo. */}
         <img src={cardBg} alt="" className="h-full w-full scale-110 object-cover object-center blur-[3px]" />
-        <div className="absolute inset-0 bg-gradient-to-b from-background/65 via-background/80 to-background/90" />
+        <div className="absolute inset-0 bg-gradient-to-b from-background/72 via-background/82 to-background/92" />
       </div>
 
-      {/* Banner — the clover-party hero, with the title overlaid. */}
-      <div className="relative h-28 shrink-0 sm:h-36">
-        <img
-          src={selectorBanner}
-          alt=""
-          aria-hidden="true"
-          className="absolute inset-0 h-full w-full object-cover object-[center_30%]"
-        />
-        <div className="absolute inset-0 bg-gradient-to-t from-background via-background/55 to-transparent" />
+      {/* Compact header */}
+      <div className="relative shrink-0 px-4 pb-3 pt-4 sm:px-5">
         {!mandatory && <DialogClose onClose={() => onOpenChange(false)} />}
-        <div className="absolute bottom-0 left-0 right-0 p-4 sm:p-5">
-          <h2
-            id="course-selector-title"
-            className="font-display text-2xl font-normal tracking-tight text-foreground sm:text-3xl"
-          >
-            Set your road this term
-          </h2>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            Choose the paths you&apos;ll walk — they&apos;ll wait for you on the road.
-          </p>
-        </div>
+        <h2
+          id="course-selector-title"
+          className="font-display text-2xl font-normal tracking-tight text-foreground sm:text-3xl"
+        >
+          Set your road this term
+        </h2>
+        <p className="mt-0.5 text-sm text-muted-foreground">
+          Choose the paths you&apos;ll walk — they&apos;ll wait for you on the road.
+        </p>
       </div>
 
-      {/* Level chips */}
-      <div className="shrink-0 border-b border-white/10 px-4 py-3 sm:px-5">
+      {/* Filter chips + search */}
+      <div className="shrink-0 space-y-3 border-b border-white/10 px-4 pb-3 sm:px-5">
         <div className="flex flex-wrap gap-1.5">
           <FilterChip active={filter === 'All'} onClick={() => setFilter('All')}>
             All levels
@@ -155,7 +186,7 @@ export function CourseSelector({
           ))}
         </div>
 
-        <div className="relative mt-3">
+        <div className="relative">
           <Search aria-hidden="true" className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input
             type="text"
@@ -179,123 +210,220 @@ export function CourseSelector({
         </div>
       </div>
 
-      {/* Scrollable course list */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5">
-        {totalVisible === 0 ? (
-          <div className="flex flex-col items-center py-10 text-center">
-            <div className="relative h-28 w-44 overflow-hidden rounded-xl border border-border sm:h-32 sm:w-52">
-              <img
-                src={emptySearchArt}
-                alt=""
-                aria-hidden="true"
-                className="h-full w-full object-cover object-center"
+      {/* The deck — one card at a time, arrows either side. */}
+      <div className="relative flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-4 py-5 sm:px-5">
+        {current ? (
+          <>
+            <div className="flex w-full items-center justify-center gap-2 sm:gap-3">
+              <DeckArrow
+                dir="prev"
+                disabled={index <= 0}
+                onClick={() => go(-1)}
               />
+              <CourseCardFace
+                entry={current}
+                charged={selected.has(current.key)}
+                onToggle={toggle}
+              />
+              <DeckArrow
+                dir="next"
+                disabled={index >= deck.length - 1}
+                onClick={() => go(1)}
+              />
+            </div>
+            {/* Position pill */}
+            <p className="text-xs font-medium text-muted-foreground">
+              <span className="text-foreground">{index + 1}</span> / {deck.length}
+              <span className="mx-1.5 text-white/20">·</span>
+              <span className={LEVEL_META[current.level].text}>{LEVEL_META[current.level].label}</span>
+            </p>
+          </>
+        ) : (
+          <div className="flex flex-col items-center py-8 text-center">
+            <div className="relative h-28 w-44 overflow-hidden rounded-xl border border-border">
+              <img src={emptySearchArt} alt="" aria-hidden="true" className="h-full w-full object-cover object-center" />
               <div className="absolute inset-0 bg-gradient-to-t from-card/80 to-transparent" />
             </div>
             <p className="mt-4 text-sm font-medium text-foreground">No road by that name</p>
             <p className="mt-1 text-sm text-muted-foreground">Try a broader name or code.</p>
           </div>
-        ) : (
-          <div className="space-y-7">
-            {LEVEL_ORDER.map((lvl) => {
-              const entries = visibleByLevel[lvl];
-              if (entries.length === 0) return null;
-              const meta = LEVEL_META[lvl];
-              const selectedInLevel = entries.reduce(
-                (count, entry) => count + (selected.has(entry.key) ? 1 : 0),
-                0,
-              );
-              return (
-                <section key={lvl}>
-                  {/* Level header — a character portrait gives each program a face. */}
-                  <div className="mb-3 flex items-center gap-2.5">
-                    <img
-                      src={meta.image}
-                      alt=""
-                      aria-hidden="true"
-                      loading="lazy"
-                      className={cn('h-8 w-8 rounded-lg object-cover object-top ring-2', meta.ring)}
-                    />
-                    <h3 className={cn('text-sm font-semibold tracking-tight', meta.text)}>
-                      {meta.label}
-                    </h3>
-                    <span className="text-xs text-muted-foreground">
-                      {selectedInLevel > 0 ? `${selectedInLevel} of ${entries.length} chosen` : `${entries.length} courses`}
-                    </span>
-                  </div>
-                  <ul className="grid gap-2 sm:grid-cols-2">
-                    {entries.map((entry) => {
-                      const isSelected = selected.has(entry.key);
-                      return (
-                        <li key={entry.key}>
-                          <button
-                            type="button"
-                            onClick={() => toggle(entry.key)}
-                            aria-pressed={isSelected}
-                            data-selected={isSelected}
-                            style={{ '--lvl': meta.color } as React.CSSProperties}
-                            className={cn(
-                              'selector-tile group relative flex w-full items-center gap-3 overflow-hidden rounded-xl border border-white/10 bg-white/[0.04] p-2.5 text-left backdrop-blur-md',
-                              'transition-[transform,box-shadow,border-color] duration-200 ease-out will-change-transform',
-                              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50 motion-safe:hover:-translate-y-0.5',
-                            )}
-                          >
-                            {/* Level-colour fill — wipes in on select, stays as a tint. */}
-                            <span aria-hidden="true" className="selector-fill" />
-
-                            {/* Character thumbnail, framed per course. */}
-                            <span className="relative z-10 shrink-0">
-                              <img
-                                src={meta.image}
-                                alt=""
-                                aria-hidden="true"
-                                loading="lazy"
-                                style={{ objectPosition: cropFor(entry.key) }}
-                                className={cn('h-11 w-11 rounded-lg object-cover ring-2', meta.ring)}
-                              />
-                            </span>
-
-                            {/* Selection is shown by the level-colour fill + glow
-                                alone (aria-pressed carries it for assistive tech)
-                                — no redundant checkbox. */}
-                            <span className="relative z-10 min-w-0">
-                              <span className="block truncate text-sm font-medium text-foreground">
-                                {entry.displayName}
-                              </span>
-                              <span className="block text-xs text-muted-foreground">
-                                {entry.courseCode ? `${entry.courseCode} · ` : ''}
-                                {entry.paperCount} {entry.paperCount === 1 ? 'paper' : 'papers'}
-                              </span>
-                            </span>
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </section>
-              );
-            })}
-          </div>
         )}
       </div>
 
+      {/* Chosen tray — your hand. Tap a card to discharge it. */}
+      {chosen.length > 0 && (
+        <div className="shrink-0 border-t border-white/10 px-4 py-2.5 sm:px-5">
+          <div className="flex items-center gap-2 overflow-x-auto pb-0.5">
+            {chosen.map((entry) => {
+              const meta = LEVEL_META[entry.level];
+              return (
+                <button
+                  key={entry.key}
+                  type="button"
+                  onClick={() => toggle(entry.key)}
+                  title={`Discharge ${entry.displayName}`}
+                  aria-label={`Discharge ${entry.displayName}`}
+                  style={{ '--lvl': meta.color } as React.CSSProperties}
+                  className="group relative h-12 w-9 shrink-0 overflow-hidden rounded-md border border-[color-mix(in_srgb,var(--lvl)_60%,transparent)] shadow-[0_0_12px_-4px_color-mix(in_srgb,var(--lvl)_70%,transparent)]"
+                >
+                  <img
+                    src={meta.image}
+                    alt=""
+                    aria-hidden="true"
+                    loading="lazy"
+                    style={{ objectPosition: cropFor(entry.key) }}
+                    className="h-full w-full object-cover"
+                  />
+                  <span className="absolute inset-0 bg-black/0 transition-colors group-hover:bg-black/55" />
+                  <X className="absolute left-1/2 top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 text-white opacity-0 transition-opacity group-hover:opacity-100" />
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Footer */}
       <div className="flex shrink-0 items-center justify-between gap-3 border-t border-white/10 bg-background/55 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-md sm:px-5">
-        <p className="text-sm text-muted-foreground">
-          {selected.size} chosen
-        </p>
+        <p className="text-sm text-muted-foreground">{selected.size} chosen</p>
         <div className="flex items-center gap-2">
           {!mandatory && (
             <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={saving}>
               Not yet
             </Button>
           )}
-          <Button onClick={handleSave} disabled={saving}>
+          <Button onClick={handleSave} disabled={saving || !dirty}>
             {saving ? 'Setting out…' : 'Set out'}
           </Button>
         </div>
       </div>
     </Dialog>
+  );
+}
+
+/** One portrait trading-card face — calm frosted glass with pointer tilt + glare. */
+function CourseCardFace({
+  entry,
+  charged,
+  onToggle,
+}: {
+  entry: CatalogueEntry;
+  charged: boolean;
+  onToggle: (key: string) => void;
+}) {
+  const meta = LEVEL_META[entry.level];
+  const ref = useRef<HTMLDivElement>(null);
+  const exams = entry.examSlugs.length;
+
+  const onMove = (event: React.MouseEvent) => {
+    const el = ref.current;
+    if (!el || prefersReducedMotion()) return;
+    const r = el.getBoundingClientRect();
+    const px = (event.clientX - r.left) / r.width;
+    const py = (event.clientY - r.top) / r.height;
+    el.style.setProperty('--ry', `${(px - 0.5) * 12}deg`);
+    el.style.setProperty('--rx', `${(0.5 - py) * 12}deg`);
+    el.style.setProperty('--gx', `${px * 100}%`);
+    el.style.setProperty('--gy', `${py * 100}%`);
+  };
+
+  const reset = () => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.setProperty('--ry', '0deg');
+    el.style.setProperty('--rx', '0deg');
+    el.style.setProperty('--gx', '50%');
+    el.style.setProperty('--gy', '50%');
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={() => onToggle(entry.key)}
+      onMouseMove={onMove}
+      onMouseLeave={reset}
+      aria-pressed={charged}
+      className="tcard-wrap shrink-0 rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+    >
+      <div
+        ref={ref}
+        data-charged={charged}
+        style={{ '--lvl': meta.color } as React.CSSProperties}
+        className="tcard relative flex h-[clamp(330px,50vh,420px)] w-[clamp(248px,66vw,300px)] flex-col overflow-hidden rounded-2xl border border-white/12 bg-white/[0.04] text-left backdrop-blur-md"
+      >
+        {/* Art window */}
+        <div className="relative h-[58%] overflow-hidden">
+          <img
+            src={meta.image}
+            alt=""
+            aria-hidden="true"
+            style={{ objectPosition: cropFor(entry.key) }}
+            className="h-full w-full object-cover"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-background/85 via-background/10 to-transparent" />
+
+          {/* Type badge — the level (character + name) */}
+          <span className="absolute left-2.5 top-2.5 inline-flex items-center gap-1.5 rounded-md border border-white/15 bg-black/35 py-0.5 pl-0.5 pr-2 backdrop-blur-md">
+            <img
+              src={meta.image}
+              alt=""
+              aria-hidden="true"
+              className={cn('h-4 w-4 rounded-[3px] object-cover object-top ring-1', meta.ring)}
+            />
+            <span className={cn('text-[10px] font-semibold uppercase tracking-[0.12em]', meta.text)}>
+              {meta.label.replace(/^Diploma · /, '')}
+            </span>
+          </span>
+
+          {/* Headline stat — papers (HP-style) */}
+          <span className="absolute right-2.5 top-2.5 flex items-baseline gap-1 rounded-md border border-white/15 bg-black/35 px-2 py-0.5 backdrop-blur-md">
+            <span className="text-base font-bold leading-none text-white">{entry.paperCount}</span>
+            <span className="text-[10px] uppercase tracking-wide text-white/70">papers</span>
+          </span>
+        </div>
+
+        {/* Info panel */}
+        <div className="relative flex flex-1 flex-col p-3.5">
+          <h3 className="font-display text-xl font-normal leading-tight tracking-tight text-foreground line-clamp-2">
+            {entry.displayName}
+          </h3>
+          <div className="mt-auto flex items-center gap-2 pt-3 text-xs text-muted-foreground">
+            {entry.courseCode && (
+              <span className="rounded border border-white/10 bg-white/[0.04] px-1.5 py-0.5 font-medium text-foreground/80">
+                {entry.courseCode}
+              </span>
+            )}
+            <span>{exams} {exams === 1 ? 'exam' : 'exams'}</span>
+            <span className="ml-auto text-foreground/70">{charged ? 'Charged' : 'Tap to charge'}</span>
+          </div>
+        </div>
+
+        {/* Glass glare reflection — follows the pointer on hover. */}
+        <span aria-hidden="true" className="tcard-glare" />
+      </div>
+    </button>
+  );
+}
+
+function DeckArrow({
+  dir,
+  disabled,
+  onClick,
+}: {
+  dir: 'prev' | 'next';
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={dir === 'prev' ? 'Previous road' : 'Next road'}
+      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/15 bg-white/[0.05] text-foreground backdrop-blur-md transition-colors hover:bg-white/[0.12] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50 disabled:pointer-events-none disabled:opacity-25"
+    >
+      {dir === 'prev' ? <ChevronLeft className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
+    </button>
   );
 }
 
