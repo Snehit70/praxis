@@ -78,6 +78,14 @@ export function CourseSelector({
   const [index, setIndex] = useState(0);
   // Direction of the last flip — drives which way the new card slides in.
   const [navDir, setNavDir] = useState<1 | -1>(1);
+  // Opening sequence: a quick deck-shuffle that settles on the first card.
+  // Skipped under reduced motion.
+  const [opening, setOpening] = useState(() => !prefersReducedMotion());
+  useEffect(() => {
+    if (!opening) return;
+    const t = window.setTimeout(() => setOpening(false), 850);
+    return () => window.clearTimeout(t);
+  }, [opening]);
   // The card-key currently playing its one-shot charge animation. Distinct from
   // `selected` (the persistent charged state) so flipping to an already-chosen
   // card glows but doesn't replay the ring race.
@@ -270,10 +278,9 @@ export function CourseSelector({
               />
               <div className="flex items-center justify-center">
                 <PeekCard entry={deck[clampedIndex - 1]} onClick={() => go(-1)} />
-                <div
+                <DeckSlot
                   key={current.key}
-                  data-dir={navDir}
-                  className="deck-enter relative z-10 -mx-7 sm:-mx-9"
+                  mode={opening ? 'reveal' : navDir > 0 ? 'next' : 'prev'}
                 >
                   <CourseCardFace
                     entry={current}
@@ -281,7 +288,7 @@ export function CourseSelector({
                     charging={chargingKey === current.key}
                     onToggle={toggle}
                   />
-                </div>
+                </DeckSlot>
                 <PeekCard entry={deck[clampedIndex + 1]} onClick={() => go(1)} />
               </div>
               <DeckArrow
@@ -308,6 +315,9 @@ export function CourseSelector({
             <p className="mt-1 text-sm text-muted-foreground">Try a broader name or code.</p>
           </div>
         )}
+
+        {/* Opening deck-shuffle — riffles fast, then the first card settles. */}
+        {opening && current && <DeckShuffle color={LEVEL_META[current.level].color} />}
       </div>
 
       {/* Footer */}
@@ -496,6 +506,54 @@ function CourseCardFace({
         <span aria-hidden="true" className="summon-burst" />
       </div>
     </button>
+  );
+}
+
+/** Freezes the hero card's entrance animation at mount so re-renders (e.g. a
+ *  charge) never replay it; navigation remounts via key with a fresh mode. */
+function DeckSlot({ mode, children }: { mode: 'reveal' | 'next' | 'prev'; children: React.ReactNode }) {
+  const [frozen] = useState(mode);
+  return (
+    <div
+      className={cn(
+        'relative z-10 -mx-7 sm:-mx-9',
+        frozen === 'reveal' ? 'deck-mode-reveal' : frozen === 'next' ? 'deck-mode-next' : 'deck-mode-prev',
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+/** Card-backs that riffle on open, then clear as the first card flips up. */
+const SHUFFLE_BACKS = [
+  { x: -132, r: -16, d: 0 },
+  { x: -66, r: -8, d: 0.05 },
+  { x: 0, r: 0, d: 0.1 },
+  { x: 70, r: 9, d: 0.15 },
+  { x: 136, r: 17, d: 0.2 },
+];
+
+function DeckShuffle({ color }: { color: string }) {
+  return (
+    <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-40 overflow-hidden">
+      {SHUFFLE_BACKS.map((b, i) => (
+        <span
+          key={i}
+          className="deck-back"
+          style={
+            {
+              '--rx': `${b.x}px`,
+              '--rot': `${b.r}deg`,
+              '--lvl': color,
+              animationDelay: `${b.d}s`,
+            } as React.CSSProperties
+          }
+        >
+          <span className="deck-back-emblem">✦</span>
+        </span>
+      ))}
+    </div>
   );
 }
 

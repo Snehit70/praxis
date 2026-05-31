@@ -277,19 +277,87 @@
   }
 }
 
+/* First card on open flips face-up after the shuffle (delayed so it lands as
+   the riffle clears). */
+@keyframes deck-reveal {
+  from {
+    opacity: 0;
+    transform: perspective(1100px) rotateY(-90deg) scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: perspective(1100px) rotateY(0deg) scale(1);
+  }
+}
+
 @media (prefers-reduced-motion: no-preference) {
-  .deck-enter[data-dir='1'] {
+  .deck-mode-next {
     animation: deck-in-next 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
   }
-  .deck-enter[data-dir='-1'] {
+  .deck-mode-prev {
     animation: deck-in-prev 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .deck-mode-reveal {
+    animation: deck-reveal 0.42s cubic-bezier(0.22, 1, 0.36, 1) 0.46s both;
   }
 }
 
 /* Reduced motion: keep a quick fade so the card change is still perceptible. */
 @media (prefers-reduced-motion: reduce) {
-  .deck-enter {
+  .deck-mode-next,
+  .deck-mode-prev,
+  .deck-mode-reveal {
     animation: deck-in-fade 0.2s ease-out both;
+  }
+}
+
+/* Opening deck-shuffle — ornate card-backs riffle out and collapse, fast. */
+.deck-back {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: clamp(256px, 68vw, 308px);
+  height: clamp(348px, 54vh, 452px);
+  border-radius: 16px;
+  border: 1px solid rgba(214, 178, 110, 0.5);
+  background: linear-gradient(160deg, #2a2622, #14110d);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--lvl, #62aef0) 28%, transparent),
+    inset 0 0 30px -8px color-mix(in srgb, var(--lvl, #62aef0) 50%, transparent),
+    0 14px 34px -12px rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+}
+
+.deck-back-emblem {
+  font-size: 3rem;
+  color: rgba(214, 178, 110, 0.7);
+  text-shadow: 0 0 14px color-mix(in srgb, var(--lvl, #62aef0) 60%, transparent);
+}
+
+@keyframes deck-riffle {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) translateX(0) rotate(0deg) scale(1);
+  }
+  16% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 1;
+    transform: translate(-50%, -50%) translateX(var(--rx, 0)) rotate(var(--rot, 0)) scale(0.96);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) translateX(0) rotate(0deg) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .deck-back {
+    animation: deck-riffle 0.6s ease-in-out both;
   }
 }
 
