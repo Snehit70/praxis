@@ -277,19 +277,6 @@
   }
 }
 
-/* First card on open flips face-up after the shuffle (delayed so it lands as
-   the riffle clears). */
-@keyframes deck-reveal {
-  from {
-    opacity: 0;
-    transform: perspective(1100px) rotateY(-90deg) scale(0.92);
-  }
-  to {
-    opacity: 1;
-    transform: perspective(1100px) rotateY(0deg) scale(1);
-  }
-}
-
 @media (prefers-reduced-motion: no-preference) {
   .deck-mode-next {
     animation: deck-in-next 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
@@ -297,24 +284,47 @@
   .deck-mode-prev {
     animation: deck-in-prev 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
   }
-  .deck-mode-reveal {
-    /* Flips face-up after the reel lands + the landed back flips edge-on. */
-    animation: deck-reveal 0.4s cubic-bezier(0.22, 1, 0.36, 1) 0.72s both;
-  }
 }
 
 /* Reduced motion: keep a quick fade so the card change is still perceptible. */
 @media (prefers-reduced-motion: reduce) {
   .deck-mode-next,
-  .deck-mode-prev,
-  .deck-mode-reveal {
+  .deck-mode-prev {
     animation: deck-in-fade 0.2s ease-out both;
   }
 }
 
-/* Slot-machine opening. A reel of ornate card-backs slides left→right and eases
-   to a stop centred; the landed back then flips edge-on (rotateY 0→90), handing
-   off to the real card which flips face-up (.deck-mode-reveal). No fireworks. */
+/* ── Slot-machine opening ──────────────────────────────────────────────────
+   A long reel of ornate card-backs streams left→right (one at a time, motion-
+   blurred while fast), eases smoothly to a stop, then fades — while the real
+   card (DeckSlot 'reveal') sits behind showing a matching ornate back and,
+   after a brief rest, does one continuous 3D flip to its real face. */
+
+/* Shared ornate card-back look (reel backs + the flip's front face). */
+.wish-reel-back,
+.deck-flip-back {
+  border-radius: 16px;
+  border: 1px solid rgba(214, 178, 110, 0.55);
+  background:
+    radial-gradient(circle at 50% 38%, color-mix(in srgb, var(--lvl, #62aef0) 26%, transparent), transparent 62%),
+    repeating-linear-gradient(135deg, rgba(214, 178, 110, 0.05) 0 8px, transparent 8px 18px),
+    linear-gradient(160deg, #2c2823, #131009);
+  box-shadow:
+    inset 0 0 0 1px rgba(214, 178, 110, 0.18),
+    inset 0 0 0 4px color-mix(in srgb, var(--lvl, #62aef0) 16%, transparent),
+    inset 0 0 38px -8px color-mix(in srgb, var(--lvl, #62aef0) 55%, transparent),
+    0 16px 38px -12px rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.wish-back-emblem {
+  font-size: 3.25rem;
+  color: rgba(214, 178, 110, 0.82);
+  text-shadow: 0 0 16px color-mix(in srgb, var(--lvl, #62aef0) 65%, transparent);
+}
+
 .wish-stage {
   position: relative;
   width: clamp(256px, 68vw, 308px);
@@ -323,82 +333,77 @@
 
 .wish-reel-row {
   --cw: clamp(256px, 68vw, 308px);
+  --gap: 52px;
   position: absolute;
   top: 0;
   bottom: 0;
   left: 50%;
   display: flex;
-  gap: 18px;
-}
-
-.wish-reel-back,
-.wish-back {
-  width: clamp(256px, 68vw, 308px);
-  flex: none;
-  border-radius: 16px;
-  border: 1px solid rgba(214, 178, 110, 0.55);
-  background:
-    radial-gradient(circle at 50% 40%, color-mix(in srgb, var(--lvl, #62aef0) 28%, transparent), transparent 60%),
-    linear-gradient(160deg, #2a2622, #14110d);
-  box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, var(--lvl, #62aef0) 30%, transparent),
-    inset 0 0 34px -8px color-mix(in srgb, var(--lvl, #62aef0) 55%, transparent),
-    0 16px 38px -12px rgba(0, 0, 0, 0.75);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  gap: var(--gap);
 }
 
 .wish-reel-back {
+  width: clamp(256px, 68vw, 308px);
   height: 100%;
+  flex: none;
 }
 
-.wish-back {
-  position: absolute;
-  inset: 0; /* fills the stage — card-sized, centred */
-  opacity: 0;
-  transform-origin: center;
-}
-
-.wish-back-emblem {
-  font-size: 3.25rem;
-  color: rgba(214, 178, 110, 0.8);
-  text-shadow: 0 0 16px color-mix(in srgb, var(--lvl, #62aef0) 65%, transparent);
-}
-
-/* Reel slides from a few cards left to centre, easing to a stop, then fades. */
+/* Streams ~6 cards' worth past, eases to centre, motion-blur sharpens, fades. */
 @keyframes wish-reel {
   0% {
     opacity: 1;
-    transform: translateX(-50%) translateX(calc(-3 * (var(--cw) + 18px)));
+    filter: blur(5px);
+    transform: translateX(-50%) translateX(calc(-6 * (var(--cw) + var(--gap))));
   }
-  86% {
+  60% {
+    filter: blur(2px);
+  }
+  88% {
     opacity: 1;
+    filter: blur(0);
   }
   100% {
     opacity: 0;
+    filter: blur(0);
     transform: translateX(-50%) translateX(0);
   }
 }
 
-/* The landed back flips edge-on (held hidden until the reel lands). */
-@keyframes wish-back-flip {
-  0% {
-    opacity: 1;
-    transform: perspective(1100px) rotateY(0deg);
+/* The real card's 3D flip: shows an ornate back, rests, then rotates 180° to
+   reveal its real face. Delay covers the reel run (~1.3s) + a brief rest. */
+.deck-flip {
+  position: relative;
+  width: clamp(256px, 68vw, 308px);
+  height: clamp(348px, 54vh, 452px);
+  transform-style: preserve-3d;
+}
+
+.deck-flip-face {
+  position: absolute;
+  inset: 0;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+.deck-flip-front {
+  transform: rotateY(180deg);
+}
+
+@keyframes deck-flip-rotate {
+  from {
+    transform: perspective(1300px) rotateY(0deg);
   }
-  100% {
-    opacity: 0;
-    transform: perspective(1100px) rotateY(90deg);
+  to {
+    transform: perspective(1300px) rotateY(180deg);
   }
 }
 
 @media (prefers-reduced-motion: no-preference) {
   .wish-reel-row {
-    animation: wish-reel 0.72s cubic-bezier(0.16, 0.74, 0.18, 1) both;
+    animation: wish-reel 1.3s cubic-bezier(0.12, 0.62, 0.12, 1) both;
   }
-  .wish-back {
-    animation: wish-back-flip 0.26s ease-in 0.66s forwards;
+  .deck-flip {
+    animation: deck-flip-rotate 0.5s cubic-bezier(0.4, 0, 0.2, 1) 1.5s both;
   }
 }
 

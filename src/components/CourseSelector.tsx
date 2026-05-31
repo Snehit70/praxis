@@ -83,7 +83,7 @@ export function CourseSelector({
   const [opening, setOpening] = useState(() => !prefersReducedMotion());
   useEffect(() => {
     if (!opening) return;
-    const t = window.setTimeout(() => setOpening(false), 1250);
+    const t = window.setTimeout(() => setOpening(false), 2050);
     return () => window.clearTimeout(t);
   }, [opening]);
   // The card-key currently playing its one-shot charge animation. Distinct from
@@ -281,6 +281,7 @@ export function CourseSelector({
                 <DeckSlot
                   key={current.key}
                   mode={opening ? 'reveal' : navDir > 0 ? 'next' : 'prev'}
+                  color={LEVEL_META[current.level].color}
                 >
                   <CourseCardFace
                     entry={current}
@@ -510,17 +511,36 @@ function CourseCardFace({
   );
 }
 
-/** Freezes the hero card's entrance animation at mount so re-renders (e.g. a
- *  charge) never replay it; navigation remounts via key with a fresh mode. */
-function DeckSlot({ mode, children }: { mode: 'reveal' | 'next' | 'prev'; children: React.ReactNode }) {
+/** Freezes the hero card's entrance at mount so re-renders (e.g. a charge) never
+ *  replay it. On open ('reveal') the card is the reverse face of a 3D flip whose
+ *  front is an ornate back — it sits showing the back behind the reel, then
+ *  rotates 180° to reveal the real card. Navigation just slides. */
+function DeckSlot({
+  mode,
+  color,
+  children,
+}: {
+  mode: 'reveal' | 'next' | 'prev';
+  color: string;
+  children: React.ReactNode;
+}) {
   const [frozen] = useState(mode);
+
+  if (frozen === 'reveal') {
+    return (
+      <div className="relative z-10 -mx-7 sm:-mx-9" style={{ '--lvl': color } as React.CSSProperties}>
+        <div className="deck-flip">
+          <span className="deck-flip-face deck-flip-back">
+            <span className="wish-back-emblem">✦</span>
+          </span>
+          <div className="deck-flip-face deck-flip-front">{children}</div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div
-      className={cn(
-        'relative z-10 -mx-7 sm:-mx-9',
-        frozen === 'reveal' ? 'deck-mode-reveal' : frozen === 'next' ? 'deck-mode-next' : 'deck-mode-prev',
-      )}
-    >
+    <div className={cn('relative z-10 -mx-7 sm:-mx-9', frozen === 'next' ? 'deck-mode-next' : 'deck-mode-prev')}>
       {children}
     </div>
   );
@@ -537,18 +557,15 @@ function WishReveal({ color }: { color: string }) {
       style={{ '--lvl': color } as React.CSSProperties}
     >
       <div className="wish-stage">
-        {/* The reel — backs sliding past, decelerating. */}
+        {/* The reel — many ornate backs streaming past, decelerating, then
+            fading as the card (DeckSlot) flips its matching back over. */}
         <div className="wish-reel-row">
-          {Array.from({ length: 7 }).map((_, i) => (
+          {Array.from({ length: 13 }).map((_, i) => (
             <span key={i} className="wish-reel-back">
               <span className="wish-back-emblem">✦</span>
             </span>
           ))}
         </div>
-        {/* The landed back, flipping edge-on as the real card flips up. */}
-        <span className="wish-back">
-          <span className="wish-back-emblem">✦</span>
-        </span>
       </div>
     </div>
   );
