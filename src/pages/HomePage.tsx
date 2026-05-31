@@ -9,6 +9,7 @@ import { StatePanel } from '@/components/ui/state-panel';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { CourseCard } from '@/components/CourseCard';
 import { CourseSelector } from '@/components/CourseSelector';
+import { Reveal } from '@/components/Reveal';
 import { useEnrolledCourses } from '@/hooks/useEnrolledCourses';
 import { useScrollParallax } from '@/hooks/useScrollParallax';
 import { getAllCourses, getHistory, type CatalogueCourse, type HistoryItem } from '@/lib/api';
@@ -68,6 +69,24 @@ const emptyArt = asset('feature-frieren-pray.jpeg');
 // dashboard — the test ahead is the ground you stand on. webp, dimmed enough to
 // keep the dark UI legible but present enough to actually read (DESIGN.md).
 const pageBg = asset('home-ground.webp');
+
+/** Inline `--rise-i` style so an element takes its place in the stagger cascade. */
+const rise = (i: number) => ({ '--rise-i': i }) as React.CSSProperties;
+
+/**
+ * Sparse drifting light-motes over the hero field — same atmosphere as the
+ * landing page (continuity: the road you return to). Fixed module-level config
+ * so positions stay stable across renders; the `.praxis-mote` class self-gates
+ * on reduced-motion (index.css).
+ */
+const heroMotes = [
+  { left: '12%', top: '34%', size: 7, dur: 14, delay: 0, op: 0.5 },
+  { left: '26%', top: '58%', size: 5, dur: 17, delay: 2.4, op: 0.4 },
+  { left: '41%', top: '40%', size: 9, dur: 19, delay: 4.8, op: 0.52 },
+  { left: '63%', top: '30%', size: 6, dur: 15, delay: 1.6, op: 0.46 },
+  { left: '78%', top: '52%', size: 8, dur: 18, delay: 3.6, op: 0.48 },
+  { left: '90%', top: '36%', size: 6, dur: 16, delay: 6, op: 0.42 },
+];
 
 /** Frosted-glass control styling for use over imagery (DESIGN.md secondary CTA). */
 const glassControl =
@@ -249,6 +268,25 @@ export default function HomePage() {
             <div className="absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-background/75 to-transparent" />
             <div className="absolute inset-0 bg-gradient-to-r from-background/55 via-transparent to-transparent" />
 
+            {/* Drifting light-motes — quiet atmosphere over the field (continuity
+                with the landing hero). Self-gates on reduced-motion. */}
+            <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
+              {heroMotes.map((m, i) => (
+                <span
+                  key={i}
+                  className="praxis-mote absolute rounded-full bg-white blur-[1px]"
+                  style={{
+                    left: m.left,
+                    top: m.top,
+                    width: m.size,
+                    height: m.size,
+                    ['--mote-opacity' as string]: m.op,
+                    animation: `praxis-mote ${m.dur}s ease-in-out ${m.delay}s infinite`,
+                  }}
+                />
+              ))}
+            </div>
+
             {/* Top row — Praxis left, actions + account right (the old navbar). */}
             <div className="absolute inset-x-0 top-0 z-20 flex items-center justify-between px-4 py-4 md:px-8 md:py-5">
               <Link
@@ -273,19 +311,20 @@ export default function HomePage() {
 
             {/* Bottom cluster — greeting (left) + section tabs (right). */}
             <div className="absolute inset-x-0 bottom-0 z-10 flex flex-col gap-4 p-5 md:flex-row md:items-end md:justify-between md:p-8">
-              <div className="max-w-xl">
-                <h1 className="font-display text-3xl font-normal leading-[1.05] tracking-tight text-foreground sm:text-4xl md:text-5xl">
+              <Reveal className="max-w-xl">
+                <h1 style={rise(0)} className="praxis-rise font-display text-3xl font-normal leading-[1.05] tracking-tight text-foreground sm:text-4xl md:text-5xl">
                   {greetingName ? `There you are, ${greetingName}` : 'There you are'}
                 </h1>
                 {/* Frieren's voice — keyed to the time of day (calm, fixed lines). */}
-                <p className="mt-1.5 font-display text-lg italic leading-snug text-foreground/85 sm:text-xl">
+                <p style={rise(1)} className="praxis-rise mt-1.5 font-display text-lg italic leading-snug text-foreground/85 sm:text-xl">
                   {roadLine()}
                 </p>
                 {/* Resume — pick up the last paper you were on, if any. */}
                 {resume && (
                   <Link
                     to={historyHref(resume)}
-                    className="group mt-2 inline-flex items-center gap-1.5 text-sm"
+                    style={rise(2)}
+                    className="praxis-rise group mt-2 inline-flex items-center gap-1.5 text-sm"
                   >
                     <span className="font-medium text-primary transition-colors group-hover:text-primary/80">
                       Last on the road
@@ -297,7 +336,7 @@ export default function HomePage() {
                     </span>
                   </Link>
                 )}
-              </div>
+              </Reveal>
 
               <TabsList className="inline-flex gap-1 self-start rounded-lg border border-white/15 bg-black/35 p-1 backdrop-blur-md md:self-auto">
                 <TabsTrigger
@@ -355,12 +394,12 @@ export default function HomePage() {
               </div>
             </div>
           ) : (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <Reveal className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {/* Companions tiles are clean — no per-tile toggle; manage via Edit courses. */}
-              {enrolledCourses.map((course) => (
-                <CourseCard key={course.key} course={course} enrolled />
+              {enrolledCourses.map((course, i) => (
+                <CourseCard key={course.key} course={course} enrolled revealIndex={i} />
               ))}
-            </div>
+            </Reveal>
           )}
         </TabsContent>
 
@@ -407,31 +446,35 @@ export default function HomePage() {
                 const meta = LEVEL_META[lvl];
                 return (
                   <section key={lvl} className={`border-l-4 ${meta.accent} pl-4 md:pl-6`}>
-                    <div className="mb-4 flex items-center gap-3">
-                      <img
-                        src={meta.image}
-                        alt=""
-                        aria-hidden="true"
-                        loading="lazy"
-                        className={cn('h-9 w-9 rounded-lg object-cover object-top ring-2', meta.ring)}
-                      />
-                      <div>
-                        <h2 className={cn('text-lg font-semibold', meta.text)}>{meta.label}</h2>
-                        <p className="text-sm text-muted-foreground">
-                          {entries.length} {entries.length === 1 ? 'course' : 'courses'}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                      {entries.map((course) => (
-                        <CourseCard
-                          key={course.key}
-                          course={course}
-                          enrolled={enrolled.has(course.key)}
-                          onToggleEnroll={handleToggleEnroll}
+                    <Reveal>
+                      {/* Header leads its grid in the reveal cascade. */}
+                      <div style={rise(0)} className="praxis-rise mb-4 flex items-center gap-3">
+                        <img
+                          src={meta.image}
+                          alt=""
+                          aria-hidden="true"
+                          loading="lazy"
+                          className={cn('h-9 w-9 rounded-lg object-cover object-top ring-2', meta.ring)}
                         />
-                      ))}
-                    </div>
+                        <div>
+                          <h2 className={cn('text-lg font-semibold', meta.text)}>{meta.label}</h2>
+                          <p className="text-sm text-muted-foreground">
+                            {entries.length} {entries.length === 1 ? 'course' : 'courses'}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                        {entries.map((course, i) => (
+                          <CourseCard
+                            key={course.key}
+                            course={course}
+                            enrolled={enrolled.has(course.key)}
+                            onToggleEnroll={handleToggleEnroll}
+                            revealIndex={i + 1}
+                          />
+                        ))}
+                      </div>
+                    </Reveal>
                   </section>
                 );
               })}

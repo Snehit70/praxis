@@ -153,6 +153,48 @@
   }
 }
 
+/* Entrance reveal — elements tagged `.praxis-rise` start hidden and animate up
+   once an ancestor gains `.reveal-on` (set by useRevealOnView on scroll-into-
+   view, or immediately for above-the-fold containers). Per-element cascade
+   comes from `--rise-delay`. Lively calibration: 22px travel, expo-out landing. */
+.praxis-rise {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .reveal-on .praxis-rise {
+    animation: praxis-rise 0.62s cubic-bezier(0.16, 1, 0.3, 1) both;
+    /* Cascade = step × this element's index. --rise-step shrinks on small/touch
+       screens (mobile auto-trim) so deep lists never feel sluggish. */
+    animation-delay: calc(var(--rise-step, 70ms) * var(--rise-i, 0));
+  }
+}
+
+/* Mobile auto-trim: tighter cascade on small or coarse-pointer screens. */
+@media (max-width: 767px), (pointer: coarse) {
+  :root {
+    --rise-step: 32ms;
+  }
+}
+
+@keyframes praxis-rise {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 22px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Reduced motion: never leave content stuck invisible — just show it. */
+@media (prefers-reduced-motion: reduce) {
+  .praxis-rise {
+    opacity: 1;
+  }
+}
+
 /* Subtle fade used by overlays/dialogs (no tailwindcss-animate dependency). */
 @keyframes praxis-fade-in {
   from {
