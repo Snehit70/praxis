@@ -298,7 +298,8 @@
     animation: deck-in-prev 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
   }
   .deck-mode-reveal {
-    animation: deck-reveal 0.42s cubic-bezier(0.22, 1, 0.36, 1) 0.46s both;
+    /* Flips face-up right as the wish card-back hits edge-on. */
+    animation: deck-reveal 0.4s cubic-bezier(0.22, 1, 0.36, 1) 0.3s both;
   }
 }
 
@@ -311,53 +312,104 @@
   }
 }
 
-/* Opening deck-shuffle — ornate card-backs riffle out and collapse, fast. */
-.deck-back {
-  position: absolute;
-  left: 50%;
-  top: 50%;
+/* Genshin-style wish reveal (opening). An ornate card-back materialises and
+   flips edge-on; a light flash bursts; gold sunburst rays bloom behind as the
+   real card flips face-up (.deck-mode-reveal). */
+.wish-back {
   width: clamp(256px, 68vw, 308px);
   height: clamp(348px, 54vh, 452px);
   border-radius: 16px;
-  border: 1px solid rgba(214, 178, 110, 0.5);
-  background: linear-gradient(160deg, #2a2622, #14110d);
+  border: 1px solid rgba(214, 178, 110, 0.55);
+  background:
+    radial-gradient(circle at 50% 40%, color-mix(in srgb, var(--lvl, #62aef0) 30%, transparent), transparent 60%),
+    linear-gradient(160deg, #2a2622, #14110d);
   box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, var(--lvl, #62aef0) 28%, transparent),
-    inset 0 0 30px -8px color-mix(in srgb, var(--lvl, #62aef0) 50%, transparent),
-    0 14px 34px -12px rgba(0, 0, 0, 0.7);
+    inset 0 0 0 1px color-mix(in srgb, var(--lvl, #62aef0) 30%, transparent),
+    inset 0 0 34px -8px color-mix(in srgb, var(--lvl, #62aef0) 55%, transparent),
+    0 16px 38px -12px rgba(0, 0, 0, 0.75);
   display: flex;
   align-items: center;
   justify-content: center;
   opacity: 0;
+  transform-origin: center;
 }
 
-.deck-back-emblem {
-  font-size: 3rem;
-  color: rgba(214, 178, 110, 0.7);
-  text-shadow: 0 0 14px color-mix(in srgb, var(--lvl, #62aef0) 60%, transparent);
+.wish-back-emblem {
+  font-size: 3.25rem;
+  color: rgba(214, 178, 110, 0.8);
+  text-shadow: 0 0 16px color-mix(in srgb, var(--lvl, #62aef0) 65%, transparent);
 }
 
-@keyframes deck-riffle {
+/* The back materialises, then flips edge-on (rotateY 0→90) and fades. */
+@keyframes wish-back-flip {
   0% {
     opacity: 0;
-    transform: translate(-50%, -50%) translateX(0) rotate(0deg) scale(1);
+    transform: perspective(1100px) rotateY(0deg) scale(0.86);
   }
-  16% {
+  25% {
     opacity: 1;
-  }
-  50% {
-    opacity: 1;
-    transform: translate(-50%, -50%) translateX(var(--rx, 0)) rotate(var(--rot, 0)) scale(0.96);
+    transform: perspective(1100px) rotateY(0deg) scale(1);
   }
   100% {
     opacity: 0;
-    transform: translate(-50%, -50%) translateX(0) rotate(0deg) scale(1);
+    transform: perspective(1100px) rotateY(90deg) scale(1);
   }
 }
 
+/* A bright flash at the flip hand-off. */
+.wish-flash {
+  position: absolute;
+  width: clamp(280px, 74vw, 340px);
+  height: clamp(360px, 56vh, 470px);
+  border-radius: 26px;
+  background: radial-gradient(ellipse at center, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0) 64%);
+  opacity: 0;
+  mix-blend-mode: screen;
+}
+
+@keyframes wish-flash {
+  0% { opacity: 0; }
+  45% { opacity: 0.8; }
+  100% { opacity: 0; }
+}
+
+/* Gold sunburst rays radiating from behind the card (a masked conic ring). */
+.wish-rays {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 0;
+  width: 560px;
+  height: 560px;
+  transform: translate(-50%, -50%) scale(0.5);
+  pointer-events: none;
+  opacity: 0;
+  mix-blend-mode: screen;
+  background: repeating-conic-gradient(
+    from 0deg,
+    rgba(252, 211, 77, 0) 0deg,
+    rgba(252, 211, 77, 0.4) 4deg,
+    rgba(252, 211, 77, 0) 11deg
+  );
+  -webkit-mask: radial-gradient(circle, transparent 24%, #000 32%, #000 60%, transparent 74%);
+  mask: radial-gradient(circle, transparent 24%, #000 32%, #000 60%, transparent 74%);
+}
+
+@keyframes wish-rays {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.5) rotate(0deg); }
+  45% { opacity: 0.85; }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1.3) rotate(24deg); }
+}
+
 @media (prefers-reduced-motion: no-preference) {
-  .deck-back {
-    animation: deck-riffle 0.6s ease-in-out both;
+  .wish-back {
+    animation: wish-back-flip 0.34s ease-in both;
+  }
+  .wish-flash {
+    animation: wish-flash 0.5s ease-out 0.12s both;
+  }
+  .wish-rays {
+    animation: wish-rays 0.8s ease-out 0.34s both;
   }
 }
 

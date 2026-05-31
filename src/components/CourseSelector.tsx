@@ -83,7 +83,7 @@ export function CourseSelector({
   const [opening, setOpening] = useState(() => !prefersReducedMotion());
   useEffect(() => {
     if (!opening) return;
-    const t = window.setTimeout(() => setOpening(false), 850);
+    const t = window.setTimeout(() => setOpening(false), 1250);
     return () => window.clearTimeout(t);
   }, [opening]);
   // The card-key currently playing its one-shot charge animation. Distinct from
@@ -276,7 +276,15 @@ export function CourseSelector({
                 onClick={() => go(-1)}
                 className="absolute left-0 z-20"
               />
-              <div className="flex items-center justify-center">
+              <div className="relative flex items-center justify-center">
+                {/* Gold sunburst rays — bloom behind the card as it's revealed. */}
+                {opening && (
+                  <span
+                    aria-hidden="true"
+                    className="wish-rays"
+                    style={{ '--lvl': LEVEL_META[current.level].color } as React.CSSProperties}
+                  />
+                )}
                 <PeekCard entry={deck[clampedIndex - 1]} onClick={() => go(-1)} />
                 <DeckSlot
                   key={current.key}
@@ -316,8 +324,9 @@ export function CourseSelector({
           </div>
         )}
 
-        {/* Opening deck-shuffle — riffles fast, then the first card settles. */}
-        {opening && current && <DeckShuffle color={LEVEL_META[current.level].color} />}
+        {/* Opening wish reveal — a card-back flips up, light flashes (rays bloom
+            behind the card via .wish-rays above). */}
+        {opening && current && <WishReveal color={LEVEL_META[current.level].color} />}
       </div>
 
       {/* Footer */}
@@ -525,34 +534,19 @@ function DeckSlot({ mode, children }: { mode: 'reveal' | 'next' | 'prev'; childr
   );
 }
 
-/** Card-backs that riffle on open, then clear as the first card flips up. */
-const SHUFFLE_BACKS = [
-  { x: -132, r: -16, d: 0 },
-  { x: -66, r: -8, d: 0.05 },
-  { x: 0, r: 0, d: 0.1 },
-  { x: 70, r: 9, d: 0.15 },
-  { x: 136, r: 17, d: 0.2 },
-];
-
-function DeckShuffle({ color }: { color: string }) {
+/** Genshin-style wish reveal: an ornate card-back flips edge-on as light flashes,
+ *  handing off to the real card (which flips face-up via .deck-mode-reveal). */
+function WishReveal({ color }: { color: string }) {
   return (
-    <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-40 overflow-hidden">
-      {SHUFFLE_BACKS.map((b, i) => (
-        <span
-          key={i}
-          className="deck-back"
-          style={
-            {
-              '--rx': `${b.x}px`,
-              '--rot': `${b.r}deg`,
-              '--lvl': color,
-              animationDelay: `${b.d}s`,
-            } as React.CSSProperties
-          }
-        >
-          <span className="deck-back-emblem">✦</span>
-        </span>
-      ))}
+    <div
+      aria-hidden="true"
+      className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center"
+      style={{ '--lvl': color } as React.CSSProperties}
+    >
+      <span className="wish-flash" />
+      <span className="wish-back">
+        <span className="wish-back-emblem">✦</span>
+      </span>
     </div>
   );
 }
