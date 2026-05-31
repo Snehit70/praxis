@@ -62,6 +62,10 @@ export function CourseSelector({
   const [selected, setSelected] = useState<Set<string>>(new Set(initialCourseKeys));
   const [query, setQuery] = useState('');
   const [index, setIndex] = useState(0);
+  // The card-key currently playing its one-shot charge animation. Distinct from
+  // `selected` (the persistent charged state) so flipping to an already-chosen
+  // card glows but doesn't replay the ring race.
+  const [chargingKey, setChargingKey] = useState<string | null>(null);
 
   // The deck: every course matching the active level filter + search, flattened
   // in level order — what you flip through one card at a time.
@@ -90,7 +94,8 @@ export function CourseSelector({
     setIndex(0);
   }, [filter, query]);
 
-  const current = deck[Math.min(index, deck.length - 1)] ?? null;
+  const clampedIndex = deck.length ? Math.min(index, deck.length - 1) : 0;
+  const current = deck[clampedIndex] ?? null;
 
   const go = (delta: number) =>
     setIndex((i) => Math.min(deck.length - 1, Math.max(0, i + delta)));
@@ -111,13 +116,22 @@ export function CourseSelector({
   }, [open, deck.length]);
 
   const toggle = (key: string) => {
+    const willCharge = !selected.has(key);
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key);
       else next.add(key);
       return next;
     });
+    if (willCharge) setChargingKey(key);
   };
+
+  // Clear the one-shot charge trigger once its animation has played.
+  useEffect(() => {
+    if (!chargingKey) return;
+    const t = window.setTimeout(() => setChargingKey(null), 900);
+    return () => window.clearTimeout(t);
+  }, [chargingKey]);
 
   const chosen = useMemo(
     () => catalogue.filter((entry) => selected.has(entry.key)),
@@ -211,29 +225,38 @@ export function CourseSelector({
       </div>
 
       {/* The deck — one card at a time, arrows either side. */}
-      <div className="relative flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-4 py-5 sm:px-5">
+      <div className="relative flex min-h-0 flex-1 flex-col items-center justify-center gap-3 overflow-hidden px-4 py-5 sm:px-5">
         {current ? (
           <>
-            <div className="flex w-full items-center justify-center gap-2 sm:gap-3">
+            <div className="relative flex w-full items-center justify-center">
               <DeckArrow
                 dir="prev"
-                disabled={index <= 0}
+                disabled={clampedIndex <= 0}
                 onClick={() => go(-1)}
+                className="absolute left-0 z-20"
               />
-              <CourseCardFace
-                entry={current}
-                charged={selected.has(current.key)}
-                onToggle={toggle}
-              />
+              <div className="flex items-center justify-center">
+                <PeekCard entry={deck[clampedIndex - 1]} onClick={() => go(-1)} />
+                <div className="relative z-10 -mx-7 sm:-mx-9">
+                  <CourseCardFace
+                    entry={current}
+                    charged={selected.has(current.key)}
+                    charging={chargingKey === current.key}
+                    onToggle={toggle}
+                  />
+                </div>
+                <PeekCard entry={deck[clampedIndex + 1]} onClick={() => go(1)} />
+              </div>
               <DeckArrow
                 dir="next"
-                disabled={index >= deck.length - 1}
+                disabled={clampedIndex >= deck.length - 1}
                 onClick={() => go(1)}
+                className="absolute right-0 z-20"
               />
             </div>
             {/* Position pill */}
             <p className="text-xs font-medium text-muted-foreground">
-              <span className="text-foreground">{index + 1}</span> / {deck.length}
+              <span className="text-foreground">{clampedIndex + 1}</span> / {deck.length}
               <span className="mx-1.5 text-white/20">·</span>
               <span className={LEVEL_META[current.level].text}>{LEVEL_META[current.level].label}</span>
             </p>
@@ -305,10 +328,12 @@ export function CourseSelector({
 function CourseCardFace({
   entry,
   charged,
+  charging,
   onToggle,
 }: {
   entry: CatalogueEntry;
   charged: boolean;
+  charging: boolean;
   onToggle: (key: string) => void;
 }) {
   const meta = LEVEL_META[entry.level];
@@ -343,6 +368,7 @@ function CourseCardFace({
       onMouseMove={onMove}
       onMouseLeave={reset}
       aria-pressed={charged}
+      data-charging={charging}
       className="tcard-wrap shrink-0 rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
     >
       <div
@@ -361,6 +387,10 @@ function CourseCardFace({
             className="h-full w-full object-cover"
           />
           <div className="absolute inset-0 bg-gradient-to-t from-background/85 via-background/10 to-transparent" />
+
+          {/* Holographic foil — confined to the art (keeps stats legible). Faint
+              on hover, blooms when charged; shimmer tracks the pointer. */}
+          <span aria-hidden="true" className="tcard-foil" />
 
           {/* Type badge — the level (character + name) */}
           <span className="absolute left-2.5 top-2.5 inline-flex items-center gap-1.5 rounded-md border border-white/15 bg-black/35 py-0.5 pl-0.5 pr-2 backdrop-blur-md">
@@ -400,6 +430,9 @@ function CourseCardFace({
 
         {/* Glass glare reflection — follows the pointer on hover. */}
         <span aria-hidden="true" className="tcard-glare" />
+        {/* Charge sequence — energy races the perimeter, a flare sweeps across. */}
+        <span aria-hidden="true" className="charge-ring" />
+        <span aria-hidden="true" className="charge-flare" />
       </div>
     </button>
   );
@@ -409,10 +442,12 @@ function DeckArrow({
   dir,
   disabled,
   onClick,
+  className,
 }: {
   dir: 'prev' | 'next';
   disabled: boolean;
   onClick: () => void;
+  className?: string;
 }) {
   return (
     <button
@@ -420,9 +455,39 @@ function DeckArrow({
       onClick={onClick}
       disabled={disabled}
       aria-label={dir === 'prev' ? 'Previous road' : 'Next road'}
-      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/15 bg-white/[0.05] text-foreground backdrop-blur-md transition-colors hover:bg-white/[0.12] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50 disabled:pointer-events-none disabled:opacity-25"
+      className={cn(
+        'flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/15 bg-white/[0.05] text-foreground backdrop-blur-md transition-colors hover:bg-white/[0.12] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50 disabled:pointer-events-none disabled:opacity-25',
+        className,
+      )}
     >
       {dir === 'prev' ? <ChevronLeft className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
+    </button>
+  );
+}
+
+/** Faint neighbour preview tucked behind the hero card — clickable to flip. */
+function PeekCard({ entry, onClick }: { entry?: CatalogueEntry; onClick: () => void }) {
+  if (!entry) return null;
+  const meta = LEVEL_META[entry.level];
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-hidden="true"
+      tabIndex={-1}
+      className="hidden shrink-0 sm:block"
+    >
+      <div className="relative h-[clamp(260px,40vh,340px)] w-[clamp(140px,32vw,180px)] scale-95 overflow-hidden rounded-2xl border border-white/10 opacity-35 blur-[1.5px] saturate-50">
+        <img
+          src={meta.image}
+          alt=""
+          aria-hidden="true"
+          loading="lazy"
+          style={{ objectPosition: cropFor(entry.key) }}
+          className="h-full w-full object-cover"
+        />
+        <div className="absolute inset-0 bg-background/40" />
+      </div>
     </button>
   );
 }
