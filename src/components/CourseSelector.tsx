@@ -37,19 +37,6 @@ const prefersReducedMotion = () =>
   typeof window !== 'undefined' &&
   window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
-/**
- * Deterministic crop from the course key so same-level art (which shares one
- * character portrait) frames a little differently — mirrors the dashboard
- * CourseCard. Biased toward the upper portion to keep faces in view.
- */
-function cropFor(key: string): string {
-  let h = 0;
-  for (let i = 0; i < key.length; i += 1) h = (h * 31 + key.charCodeAt(i)) >>> 0;
-  const x = 28 + (h % 45); // 28%..72%
-  const y = 8 + ((h >> 8) % 26); // 8%..33%
-  return `${x}% ${y}%`;
-}
-
 interface CourseSelectorProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -62,7 +49,13 @@ interface CourseSelectorProps {
   onSave: (payload: { level: string | null; courseKeys: string[] }) => void;
 }
 
-type LevelFilter = CourseLevel | 'All';
+type LevelFilter = CourseLevel | 'All' | 'Chosen';
+
+/** Display order for a course's "trials" (exam types) on the card. */
+const TRIAL_ORDER = ['quiz1', 'quiz2', 'end-term', 'oppe'];
+
+/** Consistent art framing — every course in a level shows the same shot. */
+const ART_POSITION = 'center 22%';
 
 export function CourseSelector({
   open,
@@ -96,7 +89,11 @@ export function CourseSelector({
     for (const lvl of LEVEL_ORDER) {
       for (const entry of catalogue) {
         if (entry.level !== lvl) continue;
-        if (filter !== 'All' && entry.level !== filter) continue;
+        if (filter === 'Chosen') {
+          if (!selected.has(entry.key)) continue;
+        } else if (filter !== 'All' && entry.level !== filter) {
+          continue;
+        }
         if (
           q &&
           !entry.displayName.toLowerCase().includes(q) &&
@@ -108,7 +105,7 @@ export function CourseSelector({
       }
     }
     return out;
-  }, [catalogue, filter, query]);
+  }, [catalogue, filter, query, selected]);
 
   // Reset to the first card whenever the deck's contents change.
   useEffect(() => {
@@ -159,6 +156,11 @@ export function CourseSelector({
     [catalogue, selected],
   );
 
+  // If you empty your party while viewing it, fall back to the full deck.
+  useEffect(() => {
+    if (filter === 'Chosen' && chosen.length === 0) setFilter('All');
+  }, [filter, chosen.length]);
+
   // Save is only meaningful when the chosen set differs from what we opened with.
   const dirty = useMemo(() => {
     if (selected.size !== initialCourseKeys.length) return true;
@@ -200,9 +202,9 @@ export function CourseSelector({
 
       {/* Filter chips + search */}
       <div className="shrink-0 space-y-3 border-b border-white/10 px-4 pb-3 sm:px-5">
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <FilterChip active={filter === 'All'} onClick={() => setFilter('All')}>
-            All levels
+            All
           </FilterChip>
           {SELECTABLE_LEVELS.map((lvl) => (
             <FilterChip
@@ -216,9 +218,15 @@ export function CourseSelector({
                 setLevel(lvl);
               }}
             >
-              {LEVEL_META[lvl].label}
+              {LEVEL_META[lvl].label.replace(/^Diploma · /, '')}
             </FilterChip>
           ))}
+          {chosen.length > 0 && (
+            <FilterChip active={filter === 'Chosen'} onClick={() => setFilter('Chosen')}>
+              <Star aria-hidden="true" className="h-3 w-3 fill-amber-300 text-amber-300" />
+              Party · {chosen.length}
+            </FilterChip>
+          )}
         </div>
 
         <div className="relative">
@@ -294,42 +302,6 @@ export function CourseSelector({
         )}
       </div>
 
-      {/* Chosen tray — your hand. Tap a card to discharge it. */}
-      {chosen.length > 0 && (
-        <div className="shrink-0 border-t border-white/10 px-4 py-2.5 sm:px-5">
-          <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-            Your party · {chosen.length}
-          </p>
-          <div className="flex items-center gap-2 overflow-x-auto pb-0.5">
-            {chosen.map((entry) => {
-              const meta = LEVEL_META[entry.level];
-              return (
-                <button
-                  key={entry.key}
-                  type="button"
-                  onClick={() => toggle(entry.key)}
-                  title={`Discharge ${entry.displayName}`}
-                  aria-label={`Discharge ${entry.displayName}`}
-                  style={{ '--lvl': meta.color } as React.CSSProperties}
-                  className="group relative h-12 w-9 shrink-0 overflow-hidden rounded-md border border-[color-mix(in_srgb,var(--lvl)_60%,transparent)] shadow-[0_0_12px_-4px_color-mix(in_srgb,var(--lvl)_70%,transparent)]"
-                >
-                  <img
-                    src={meta.image}
-                    alt=""
-                    aria-hidden="true"
-                    loading="lazy"
-                    style={{ objectPosition: cropFor(entry.key) }}
-                    className="h-full w-full object-cover"
-                  />
-                  <span className="absolute inset-0 bg-black/0 transition-colors group-hover:bg-black/55" />
-                  <X className="absolute left-1/2 top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 text-white opacity-0 transition-opacity group-hover:opacity-100" />
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
       {/* Footer */}
       <div className="flex shrink-0 items-center justify-between gap-3 border-t border-white/10 bg-background/55 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-md sm:px-5">
         <p className="text-sm text-muted-foreground">{selected.size} chosen</p>
@@ -363,7 +335,14 @@ function CourseCardFace({
   const meta = LEVEL_META[entry.level];
   const flavor = LEVEL_FLAVOR[entry.level];
   const ref = useRef<HTMLDivElement>(null);
-  const trials = entry.examSlugs.slice(0, 4).map(trialLabel);
+  const trials = [...entry.examSlugs]
+    .sort((a, b) => {
+      const ia = TRIAL_ORDER.indexOf(a);
+      const ib = TRIAL_ORDER.indexOf(b);
+      return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+    })
+    .slice(0, 4)
+    .map(trialLabel);
 
   const onMove = (event: React.MouseEvent) => {
     const el = ref.current;
@@ -408,7 +387,7 @@ function CourseCardFace({
           src={meta.image}
           alt=""
           aria-hidden="true"
-          style={{ objectPosition: cropFor(entry.key) }}
+          style={{ objectPosition: ART_POSITION }}
           className="absolute inset-0 h-full w-full object-cover"
         />
         {/* Sigil watermark — the course code, large + faint behind the panel. */}
@@ -557,7 +536,7 @@ function PeekCard({ entry, onClick }: { entry?: CatalogueEntry; onClick: () => v
           alt=""
           aria-hidden="true"
           loading="lazy"
-          style={{ objectPosition: cropFor(entry.key) }}
+          style={{ objectPosition: ART_POSITION }}
           className="h-full w-full object-cover"
         />
         <div className="absolute inset-0 bg-background/40" />
@@ -586,7 +565,7 @@ function FilterChip({
       type="button"
       onClick={onClick}
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-lg border py-1 text-xs font-medium backdrop-blur-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50',
+        'inline-flex shrink-0 items-center gap-1.5 rounded-lg border py-1 text-xs font-medium backdrop-blur-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50',
         image ? 'pl-1.5 pr-2.5' : 'px-3',
         active
           ? 'border-white/30 bg-white/[0.14] text-foreground'
