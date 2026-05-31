@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { CourseCard } from '@/components/CourseCard';
 import { CourseSelector } from '@/components/CourseSelector';
 import { useEnrolledCourses } from '@/hooks/useEnrolledCourses';
+import { useScrollParallax } from '@/hooks/useScrollParallax';
 import { getAllCourses, getHistory, type CatalogueCourse, type HistoryItem } from '@/lib/api';
 import { buildCatalogue, LEVEL_META, type CatalogueEntry } from '@/lib/courseCatalogue';
 import { getDisplayCourseName, LEVEL_ORDER, type CourseLevel } from '@/lib/courseMapping';
@@ -108,6 +109,8 @@ export default function HomePage() {
   const [autoOpened, setAutoOpened] = useState(false);
   const [archiveQuery, setArchiveQuery] = useState('');
   const [resume, setResume] = useState<HistoryItem | null>(null);
+  // Slow scroll-parallax on the fixed page backdrop (desktop, motion-safe only).
+  const bgParallaxRef = useScrollParallax<HTMLImageElement>();
 
   useEffect(() => {
     logger.info('Dashboard mounted');
@@ -206,10 +209,26 @@ export default function HomePage() {
     <div className="relative isolate">
       {/* Page backdrop — the soft Ep.18 exam frame held faintly behind the
           dashboard as cinematic ground. Dimmed hard (near-solid by the lower
-          half) so it's only a whisper of warmth, never a prominent blob. */}
+          half) so it's only a whisper of warmth, never a prominent blob. The
+          frame drifts on a slow scroll parallax (desktop only) for depth, and a
+          warm bleed carries the hero's golden field down so hero + dashboard
+          read as one continuous plane rather than two stacked rooms. */}
       <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
-        <img src={pageBg} alt="" className="h-full w-full object-cover object-center" />
+        <img
+          ref={bgParallaxRef}
+          src={pageBg}
+          alt=""
+          className="absolute inset-x-0 -top-[15%] h-[130%] w-full object-cover object-center will-change-transform"
+          style={{ transform: 'translate3d(0, var(--scroll-shift, 0px), 0)' }}
+        />
         <div className="absolute inset-0 bg-gradient-to-b from-background/55 via-background/72 to-background/84" />
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              'linear-gradient(to bottom, rgba(198,160,94,0.10) 14%, rgba(198,160,94,0.22) 42%, rgba(198,160,94,0.09) 64%, rgba(198,160,94,0) 88%)',
+          }}
+        />
       </div>
 
       <Tabs defaultValue="mine">
