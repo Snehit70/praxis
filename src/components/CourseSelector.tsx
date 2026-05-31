@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, Search, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Search, Star, X } from 'lucide-react';
 import { Dialog, DialogClose } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -9,6 +9,27 @@ import {
   SELECTABLE_LEVELS,
   type CatalogueEntry,
 } from '@/lib/courseCatalogue';
+import { getExamNameFromSlug } from '@/lib/examMapping';
+
+/**
+ * Coined RPG flavour per program — the card's "element" (type word) and a short
+ * epithet, tied to each level's Frieren character. ~5 strings, fully authored
+ * (no per-course auto-generation).
+ */
+const LEVEL_FLAVOR: Record<CourseLevel, { element: string; epithet: string }> = {
+  Foundation: { element: 'Origin', epithet: 'Where the road begins.' },
+  'Diploma in Programming': { element: 'Logic', epithet: "The hero's craft." },
+  'Diploma in Data Science': { element: 'Insight', epithet: 'Courage, told in numbers.' },
+  Degree: { element: 'Mastery', epithet: "The long road's far end." },
+  Other: { element: 'Grace', epithet: 'The paths between.' },
+};
+
+/** Short label for an exam slug (the card's "trials"). */
+function trialLabel(slug: string): string {
+  const name = getExamNameFromSlug(slug);
+  if (!name) return slug.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  return name.replace(/\bQuiz\b\s*1/, 'Quiz I').replace(/\bQuiz\b\s*2/, 'Quiz II').replace(/ Quiz$/, '');
+}
 import cardBg from '@/assets/Frieren wallpaper.jpeg';
 import emptySearchArt from '@/assets/hero-flower-field.jpeg';
 
@@ -324,7 +345,7 @@ export function CourseSelector({
   );
 }
 
-/** One portrait trading-card face — calm frosted glass with pointer tilt + glare. */
+/** A 5★ gacha "summon card" — full-bleed art, ornate element frame, RPG stats. */
 function CourseCardFace({
   entry,
   charged,
@@ -337,8 +358,9 @@ function CourseCardFace({
   onToggle: (key: string) => void;
 }) {
   const meta = LEVEL_META[entry.level];
+  const flavor = LEVEL_FLAVOR[entry.level];
   const ref = useRef<HTMLDivElement>(null);
-  const exams = entry.examSlugs.length;
+  const trials = entry.examSlugs.slice(0, 4).map(trialLabel);
 
   const onMove = (event: React.MouseEvent) => {
     const el = ref.current;
@@ -368,6 +390,7 @@ function CourseCardFace({
       onMouseMove={onMove}
       onMouseLeave={reset}
       aria-pressed={charged}
+      aria-label={`${charged ? 'Dismiss' : 'Summon'} ${entry.displayName}`}
       data-charging={charging}
       className="tcard-wrap shrink-0 rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
     >
@@ -375,64 +398,112 @@ function CourseCardFace({
         ref={ref}
         data-charged={charged}
         style={{ '--lvl': meta.color } as React.CSSProperties}
-        className="tcard relative flex h-[clamp(330px,50vh,420px)] w-[clamp(248px,66vw,300px)] flex-col overflow-hidden rounded-2xl border border-white/12 bg-white/[0.04] text-left backdrop-blur-md"
+        className="tcard relative flex h-[clamp(348px,54vh,452px)] w-[clamp(256px,68vw,308px)] flex-col overflow-hidden rounded-2xl border border-white/15 bg-black/20 text-left"
       >
-        {/* Art window */}
-        <div className="relative h-[58%] overflow-hidden">
-          <img
-            src={meta.image}
-            alt=""
-            aria-hidden="true"
-            style={{ objectPosition: cropFor(entry.key) }}
-            className="h-full w-full object-cover"
-          />
-          <div className="absolute inset-0 bg-gradient-to-t from-background/85 via-background/10 to-transparent" />
+        {/* Full-bleed character art */}
+        <img
+          src={meta.image}
+          alt=""
+          aria-hidden="true"
+          style={{ objectPosition: cropFor(entry.key) }}
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+        {/* Sigil watermark — the course code, large + faint behind the panel. */}
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute bottom-[20%] right-3 z-[1] font-display text-7xl font-bold uppercase leading-none text-white/[0.06]"
+        >
+          {entry.courseCode?.slice(0, 4)}
+        </span>
+        {/* Scrims: top (badge legibility) + tall bottom (stat panel). The bottom
+            scrim sits above the foil (z-2 > z-1) so the holo stays on the art. */}
+        <div className="absolute inset-x-0 top-0 z-[1] h-24 bg-gradient-to-b from-black/60 to-transparent" />
+        <div className="absolute inset-x-0 bottom-0 z-[2] h-[56%] bg-gradient-to-t from-background via-background/88 to-transparent" />
 
-          {/* Holographic foil — confined to the art (keeps stats legible). Faint
-              on hover, blooms when charged; shimmer tracks the pointer. */}
-          <span aria-hidden="true" className="tcard-foil" />
+        {/* Holographic foil — invisible at rest, blooms on summon. */}
+        <span aria-hidden="true" className="tcard-foil" />
 
-          {/* Type badge — the level (character + name) */}
-          <span className="absolute left-2.5 top-2.5 inline-flex items-center gap-1.5 rounded-md border border-white/15 bg-black/35 py-0.5 pl-0.5 pr-2 backdrop-blur-md">
-            <img
-              src={meta.image}
-              alt=""
-              aria-hidden="true"
-              className={cn('h-4 w-4 rounded-[3px] object-cover object-top ring-1', meta.ring)}
-            />
-            <span className={cn('text-[10px] font-semibold uppercase tracking-[0.12em]', meta.text)}>
-              {meta.label.replace(/^Diploma · /, '')}
+        {/* Content */}
+        <div className="relative z-10 flex h-full flex-col p-3.5">
+          {/* Top: element emblem (left) · POWER (right) */}
+          <div className="flex items-start justify-between">
+            <span className="inline-flex items-center gap-1.5 rounded-md border border-white/15 bg-black/40 py-0.5 pl-0.5 pr-2 backdrop-blur-md">
+              <img
+                src={meta.image}
+                alt=""
+                aria-hidden="true"
+                className={cn('h-4 w-4 rounded-[3px] object-cover object-top ring-1', meta.ring)}
+              />
+              <span className={cn('text-[10px] font-semibold uppercase tracking-[0.16em]', meta.text)}>
+                {flavor.element}
+              </span>
             </span>
-          </span>
+            <span className="flex flex-col items-end rounded-md border border-white/15 bg-black/40 px-2 py-0.5 text-right backdrop-blur-md">
+              <span className="text-lg font-bold leading-none text-white [text-shadow:0_1px_6px_rgba(0,0,0,0.6)]">
+                {entry.paperCount}
+              </span>
+              <span className="text-[9px] uppercase tracking-[0.18em] text-white/65">power</span>
+            </span>
+          </div>
 
-          {/* Headline stat — papers (HP-style) */}
-          <span className="absolute right-2.5 top-2.5 flex items-baseline gap-1 rounded-md border border-white/15 bg-black/35 px-2 py-0.5 backdrop-blur-md">
-            <span className="text-base font-bold leading-none text-white">{entry.paperCount}</span>
-            <span className="text-[10px] uppercase tracking-wide text-white/70">papers</span>
-          </span>
-        </div>
+          <div className="flex-1" />
 
-        {/* Info panel */}
-        <div className="relative flex flex-1 flex-col p-3.5">
-          <h3 className="font-display text-xl font-normal leading-tight tracking-tight text-foreground line-clamp-2">
+          {/* Rarity stars — flat 5★. */}
+          <div className="mb-1.5 flex items-center gap-0.5">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Star
+                key={i}
+                aria-hidden="true"
+                style={{ animationDelay: `${i * 70}ms` }}
+                className="tcard-star h-3.5 w-3.5 fill-amber-300 text-amber-300 drop-shadow-[0_0_4px_rgba(252,211,77,0.6)]"
+              />
+            ))}
+          </div>
+
+          {/* Name + epithet */}
+          <h3 className="font-display text-xl font-normal leading-tight tracking-tight text-foreground line-clamp-2 [text-shadow:0_1px_10px_rgba(0,0,0,0.6)]">
             {entry.displayName}
           </h3>
-          <div className="mt-auto flex items-center gap-2 pt-3 text-xs text-muted-foreground">
-            {entry.courseCode && (
-              <span className="rounded border border-white/10 bg-white/[0.04] px-1.5 py-0.5 font-medium text-foreground/80">
-                {entry.courseCode}
-              </span>
-            )}
-            <span>{exams} {exams === 1 ? 'exam' : 'exams'}</span>
-            <span className="ml-auto text-foreground/70">{charged ? 'Charged' : 'Tap to charge'}</span>
+          <p className="mt-0.5 font-display text-sm italic leading-snug text-foreground/70">
+            {flavor.epithet}
+          </p>
+
+          {/* Trials — exam types as the card's "moves". */}
+          {trials.length > 0 && (
+            <div className="mt-2.5">
+              <p className="text-[9px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Trials</p>
+              <div className="mt-1 flex flex-wrap gap-1">
+                {trials.map((t) => (
+                  <span
+                    key={t}
+                    className="rounded border border-white/10 bg-white/[0.05] px-1.5 py-0.5 text-[11px] font-medium text-foreground/85"
+                  >
+                    {t}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Class line · code sigil · summon hint */}
+          <div className="mt-2.5 flex items-center gap-2 border-t border-white/10 pt-2 text-[11px] text-muted-foreground">
+            <span className={cn('font-medium', meta.text)}>{meta.label}</span>
+            <span className="ml-auto text-foreground/60">{charged ? 'Summoned ✦' : 'Tap to summon'}</span>
           </div>
         </div>
 
-        {/* Glass glare reflection — follows the pointer on hover. */}
+        {/* Ornate element frame + gold filigree corners. */}
+        <span aria-hidden="true" className="tcard-frame" />
+        <i aria-hidden="true" className="tcard-corner tcard-corner-tl" />
+        <i aria-hidden="true" className="tcard-corner tcard-corner-tr" />
+        <i aria-hidden="true" className="tcard-corner tcard-corner-bl" />
+        <i aria-hidden="true" className="tcard-corner tcard-corner-br" />
+
+        {/* Glass glare + summon sequence overlays. */}
         <span aria-hidden="true" className="tcard-glare" />
-        {/* Charge sequence — energy races the perimeter, a flare sweeps across. */}
         <span aria-hidden="true" className="charge-ring" />
         <span aria-hidden="true" className="charge-flare" />
+        <span aria-hidden="true" className="summon-burst" />
       </div>
     </button>
   );
