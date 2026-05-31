@@ -195,6 +195,37 @@
   }
 }
 
+/* Specular sheen — a diagonal light streak sweeps once across a course tile on
+   hover-in, like light catching glass. Lives inside the tile's clip; replays on
+   each fresh hover. Motion-safe only. */
+.praxis-sheen {
+  position: absolute;
+  inset: 0;
+  transform: translateX(-120%);
+  background: linear-gradient(
+    105deg,
+    transparent 32%,
+    rgba(255, 255, 255, 0.3) 48%,
+    rgba(255, 255, 255, 0.06) 56%,
+    transparent 68%
+  );
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .group:hover .praxis-sheen {
+    animation: praxis-sheen 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  }
+}
+
+@keyframes praxis-sheen {
+  from {
+    transform: translateX(-120%);
+  }
+  to {
+    transform: translateX(120%);
+  }
+}
+
 /* Tab panel cross-fade — a quick fade + tiny rise on each switch (and initial
    mount) so Companions ↔ The World swap cinematically, not as a hard cut. */
 @keyframes praxis-tab-in {

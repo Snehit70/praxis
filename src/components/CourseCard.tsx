@@ -100,6 +100,9 @@ export function CourseCard({ course, enrolled = false, onToggleEnroll, revealInd
         <div className="absolute inset-0 bg-black/35" />
         <div className={cn('absolute inset-0 bg-gradient-to-t via-black/55 to-transparent', meta.glow)} />
 
+        {/* Specular sheen — sweeps across once on hover (light catching glass). */}
+        <div aria-hidden="true" className="praxis-sheen pointer-events-none z-30" />
+
         {/* Stretched primary link — the whole tile opens the course. */}
         <Link
           to={courseHref(course)}
