@@ -319,10 +319,45 @@
   justify-content: center;
 }
 
-.wish-back-emblem {
-  font-size: 3.25rem;
-  color: rgba(214, 178, 110, 0.82);
-  text-shadow: 0 0 16px color-mix(in srgb, var(--lvl, #62aef0) 65%, transparent);
+/* Arcane magic-circle sigil — the card-back motif (see ArcaneSigil.tsx). */
+.arcane-sigil {
+  width: 64%;
+  max-width: 210px;
+  aspect-ratio: 1;
+  filter: drop-shadow(0 0 9px color-mix(in srgb, var(--lvl, #62aef0) 50%, transparent));
+}
+
+.arcane-spin,
+.arcane-spin-rev {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+@keyframes arcane-rot {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .arcane-spin {
+    animation: arcane-rot 30s linear infinite;
+  }
+  .arcane-spin-rev {
+    animation: arcane-rot 42s linear infinite reverse;
+  }
+}
+
+/* 'Tap to summon' hint gently pulses to invite the tap. */
+@keyframes summon-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 0.95; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .summon-hint {
+    animation: summon-pulse 2.2s ease-in-out infinite;
+  }
 }
 
 .wish-stage {
@@ -371,6 +406,18 @@
 
 /* The real card's 3D flip: shows an ornate back, rests, then rotates 180° to
    reveal its real face. Delay covers the reel run (~1.3s) + a brief rest. */
+/* The card stays hidden behind the reel and fades in only as the reel lands,
+   so its static back never peeks through the gaps between moving reel cards. */
+.deck-reveal-appear {
+  opacity: 0;
+  animation: deck-appear 0.2s ease-out 1.2s forwards;
+}
+
+@keyframes deck-appear {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 .deck-flip {
   position: relative;
   width: clamp(256px, 68vw, 308px);

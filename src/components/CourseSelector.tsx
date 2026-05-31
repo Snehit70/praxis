@@ -10,6 +10,7 @@ import {
   type CatalogueEntry,
 } from '@/lib/courseCatalogue';
 import { getExamNameFromSlug } from '@/lib/examMapping';
+import { ArcaneSigil } from '@/components/ArcaneSigil';
 
 /**
  * Coined RPG flavour per program — the card's "element" (type word) and a short
@@ -277,7 +278,7 @@ export function CourseSelector({
                 className="absolute left-0 z-20"
               />
               <div className="relative flex items-center justify-center">
-                <PeekCard entry={deck[clampedIndex - 1]} onClick={() => go(-1)} />
+                {!opening && <PeekCard entry={deck[clampedIndex - 1]} onClick={() => go(-1)} />}
                 <DeckSlot
                   key={current.key}
                   mode={opening ? 'reveal' : navDir > 0 ? 'next' : 'prev'}
@@ -290,7 +291,7 @@ export function CourseSelector({
                     onToggle={toggle}
                   />
                 </DeckSlot>
-                <PeekCard entry={deck[clampedIndex + 1]} onClick={() => go(1)} />
+                {!opening && <PeekCard entry={deck[clampedIndex + 1]} onClick={() => go(1)} />}
               </div>
               <DeckArrow
                 dir="next"
@@ -490,7 +491,9 @@ function CourseCardFace({
           {/* Class line · code sigil · summon hint */}
           <div className="mt-2.5 flex items-center gap-2 border-t border-white/10 pt-2 text-[11px] text-muted-foreground">
             <span className={cn('font-medium', meta.text)}>{meta.label}</span>
-            <span className="ml-auto text-foreground/60">{charged ? 'Summoned ✦' : 'Tap to summon'}</span>
+            <span className={cn('ml-auto text-foreground/60', !charged && 'summon-hint')}>
+              {charged ? 'Summoned ✦' : 'Tap to summon'}
+            </span>
           </div>
         </div>
 
@@ -528,10 +531,13 @@ function DeckSlot({
 
   if (frozen === 'reveal') {
     return (
-      <div className="relative z-10 -mx-7 sm:-mx-9" style={{ '--lvl': color } as React.CSSProperties}>
+      <div
+        className="deck-reveal-appear relative z-10 -mx-7 sm:-mx-9"
+        style={{ '--lvl': color } as React.CSSProperties}
+      >
         <div className="deck-flip">
           <span className="deck-flip-face deck-flip-back">
-            <span className="wish-back-emblem">✦</span>
+            <ArcaneSigil />
           </span>
           <div className="deck-flip-face deck-flip-front">{children}</div>
         </div>
@@ -562,7 +568,7 @@ function WishReveal({ color }: { color: string }) {
         <div className="wish-reel-row">
           {Array.from({ length: 13 }).map((_, i) => (
             <span key={i} className="wish-reel-back">
-              <span className="wish-back-emblem">✦</span>
+              <ArcaneSigil />
             </span>
           ))}
         </div>
