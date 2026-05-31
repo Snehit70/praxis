@@ -111,7 +111,7 @@ export const LEVEL_META: Record<CourseLevel, LevelMeta> = {
     accent: 'border-l-violet-500',
     text: 'text-violet-300',
     ring: 'ring-violet-500/30',
-    glow: 'from-violet-500/45',
+    glow: 'from-violet-500/30',
   },
   // Diploma · Programming → Himmel (the hero), sky blue from his hair.
   'Diploma in Programming': {
@@ -120,7 +120,7 @@ export const LEVEL_META: Record<CourseLevel, LevelMeta> = {
     accent: 'border-l-sky-500',
     text: 'text-sky-300',
     ring: 'ring-sky-500/30',
-    glow: 'from-sky-500/45',
+    glow: 'from-sky-500/30',
   },
   // Diploma · Data Science → Stark (the warrior), rose/red from his coat over the cool crystal.
   'Diploma in Data Science': {
@@ -129,7 +129,7 @@ export const LEVEL_META: Record<CourseLevel, LevelMeta> = {
     accent: 'border-l-rose-500',
     text: 'text-rose-300',
     ring: 'ring-rose-500/30',
-    glow: 'from-rose-500/45',
+    glow: 'from-rose-500/30',
   },
   // Degree → Frieren (the master), indigo — "blue", deeper than Himmel's sky so they stay distinct.
   Degree: {
@@ -138,7 +138,7 @@ export const LEVEL_META: Record<CourseLevel, LevelMeta> = {
     accent: 'border-l-indigo-500',
     text: 'text-indigo-300',
     ring: 'ring-indigo-500/30',
-    glow: 'from-indigo-500/45',
+    glow: 'from-indigo-500/30',
   },
   // Other → Heiter (the priest), emerald to harmonize with his forest frame.
   Other: {
@@ -147,7 +147,7 @@ export const LEVEL_META: Record<CourseLevel, LevelMeta> = {
     accent: 'border-l-emerald-500',
     text: 'text-emerald-300',
     ring: 'ring-emerald-500/30',
-    glow: 'from-emerald-500/45',
+    glow: 'from-emerald-500/30',
   },
 };
 
