@@ -3,10 +3,25 @@
  * sigil. Gold ornament + element-coloured runes (driven by the `--lvl` custom
  * property on an ancestor). The runic ring rotates slowly and the inner
  * hexagram counter-rotates; both stop under reduced motion (see index.css).
+ *
+ * Pass a `seed` (e.g. a hash of a paper's uuid) to nudge the static rotation,
+ * scale and runic dash offset so no two sigils look identical while keeping the
+ * same family. Omit it for the canonical card-back look.
  */
-export function ArcaneSigil() {
+export function ArcaneSigil({ seed, className }: { seed?: number; className?: string }) {
+  // Deterministic per-seed variation. Kept subtle so the family stays coherent.
+  const rot = seed === undefined ? 0 : seed % 360;
+  const scale = seed === undefined ? 1 : 0.9 + ((seed >> 3) % 18) / 100; // 0.90–1.07
+  const dashOffset = seed === undefined ? 0 : seed % 11;
+
   return (
-    <svg className="arcane-sigil" viewBox="0 0 200 200" fill="none" aria-hidden="true">
+    <svg
+      className={className ? `arcane-sigil ${className}` : 'arcane-sigil'}
+      viewBox="0 0 200 200"
+      fill="none"
+      aria-hidden="true"
+      style={seed === undefined ? undefined : { transform: `rotate(${rot}deg) scale(${scale})` }}
+    >
       {/* Concentric outer rings */}
       <circle cx="100" cy="100" r="94" stroke="#d6b26e" strokeOpacity="0.7" strokeWidth="1.5" />
       <circle cx="100" cy="100" r="88" stroke="var(--lvl, #62aef0)" strokeOpacity="0.45" strokeWidth="1" />
@@ -29,6 +44,7 @@ export function ArcaneSigil() {
           strokeOpacity="0.6"
           strokeWidth="2.5"
           strokeDasharray="2 9"
+          strokeDashoffset={dashOffset}
         />
       </g>
 

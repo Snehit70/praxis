@@ -681,6 +681,49 @@
   }
 }
 
+/* ── CoursePage paper deck ─────────────────────────────────────────────────
+   Portrait paper cards deal into view as their bundle scrolls in: each card
+   rises and tilts up off the table, with a per-card stagger (animationDelay set
+   inline). The class is only applied when motion is allowed; before its section
+   is revealed the card is held hidden, then it animates in once. */
+@keyframes paper-deal {
+  from {
+    opacity: 0;
+    transform: perspective(900px) translateY(34px) rotateX(-16deg) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: perspective(900px) translateY(0) rotateX(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .paper-deal {
+    opacity: 0;
+    transform-origin: center bottom;
+  }
+  [data-revealed='true'] .paper-deal {
+    animation: paper-deal 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+}
+
+/* "New" badge — a slow gold breathing glow. */
+@keyframes paper-new-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(252, 211, 77, 0);
+  }
+  50% {
+    box-shadow: 0 0 12px 0 rgba(252, 211, 77, 0.45);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .paper-new {
+    animation: paper-new-pulse 2.4s ease-in-out infinite;
+  }
+}
+
 /* Dialog entrance — desktop springs up from 96% scale; mobile rises as a sheet.
    Scoped via a className on the panel, so the shared Dialog primitive is
    untouched. Backdrop keeps its own .animate-fade-in. */

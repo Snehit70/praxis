@@ -1,9 +1,9 @@
 import { useParams, Link, useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Search, X, FileText, Play, Layers } from 'lucide-react';
+import { ArrowLeft, Search, X, FileText, Play, Layers, Clock, ListChecks, Trophy, Sparkles } from 'lucide-react';
 import { logger } from '@/lib/logger';
 import { getExamUuidFromSlug, getExamNameFromSlug } from '@/lib/examMapping';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { getDisplayCourseName, getCourseLevel } from '@/lib/courseMapping';
 import { formatPaperName } from '@/lib/paperUtils';
 import {
@@ -16,9 +16,34 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { StatePanel } from '@/components/ui/state-panel';
 import { cn } from '@/lib/utils';
+import { ArcaneSigil } from '@/components/ArcaneSigil';
 import { LEVEL_META } from '@/lib/courseCatalogue';
 import pageBg from '@/assets/Sousou no Frieren - Ep. 18_ First-Class Mage Exam - 11_07.png';
-import variantBg from '@/assets/Stark-banner.jpeg';
+
+const prefersReducedMotion = () =>
+  typeof window !== 'undefined' &&
+  window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
+/** Cheap deterministic hash of a string → seeds the per-card arcane sigil. */
+function hashString(value: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < value.length; i++) {
+    h ^= value.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return Math.abs(h);
+}
+
+/**
+ * Rarity = age. The newest year in the set reads freshly-forged; each year
+ * older gains weathering. Returns the patina strength (0–0.62) and whether this
+ * is the freshest tier (drives the gold "forged" treatment on the year badge).
+ */
+function ageOf(year: number | null, newestYear: number): { patina: number; fresh: boolean } {
+  if (year === null) return { patina: 0.45, fresh: false };
+  const step = Math.max(0, newestYear - year);
+  return { patina: Math.min(step * 0.1, 0.4), fresh: step === 0 };
+}
 
 const EXAM_TABS = [
   { slug: 'quiz1', label: 'Quiz 1' },
@@ -61,40 +86,159 @@ function ExamTypeSwitcher({
   );
 }
 
+/** One stat in the card's stat block. */
+function Stat({ icon, value, label }: { icon: React.ReactNode; value: string; label: string }) {
+  return (
+    <div className="flex flex-col items-center gap-0.5 rounded-lg bg-black/25 px-1 py-2 text-center">
+      <span className="text-muted-foreground/80">{icon}</span>
+      <span className="font-display text-lg leading-none text-foreground">{value}</span>
+      <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70">{label}</span>
+    </div>
+  );
+}
+
+/**
+ * A summonable paper — a portrait trading card. Art is a per-paper arcane sigil
+ * (seeded from the uuid) over the level colour, aged by year (patina). Clicking
+ * anywhere charges the card for ~0.7s (a summoning flourish) before opening the
+ * test; under reduced motion it routes instantly.
+ */
 function PaperVariantCard({
   paper,
   courseId,
   examId,
+  levelColor,
+  newestYear,
+  variantCount,
+  variantIndex,
+  dealIndex,
+  motion,
 }: {
   paper: PaperSummary;
   courseId: string;
   examId: string;
+  levelColor: string;
+  newestYear: number;
+  variantCount: number;
+  variantIndex: number;
+  dealIndex: number;
+  motion: boolean;
 }) {
-  return (
-    <Link
-      to={`/paper/${paper.uuid}?course=${courseId}&exam=${examId}`}
-      className="group relative isolate flex flex-col overflow-hidden rounded-lg border border-border p-4 transition-colors hover:border-primary/50"
-    >
-      {/* Card backdrop — Stark banner, covered to fill the card and dimmed
-          left-to-bottom so the code, title and button stay legible. */}
-      <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10">
-        <img
-          src={variantBg}
-          alt=""
-          loading="lazy"
-          className="h-full w-full object-cover object-center transition-transform duration-500 group-hover:scale-105"
-        />
-        <div className="absolute inset-0 bg-gradient-to-t from-card via-card/85 to-card/55" />
-      </div>
+  const navigate = useNavigate();
+  const [charging, setCharging] = useState(false);
+  const to = `/paper/${paper.uuid}?course=${courseId}&exam=${examId}`;
+  const { patina, fresh } = ageOf(paper.year, newestYear);
+  const seed = useMemo(() => hashString(paper.uuid), [paper.uuid]);
 
-      <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">CODE: {paper.uuid}</div>
-      <p className="text-lg font-semibold text-foreground">{formatPaperName(paper.paperName, paper.year ?? undefined)}</p>
-      <p className="mt-1 text-sm text-muted-foreground">{paper.paperDescription || 'No description'}</p>
-      <Button className="mt-4 w-full gap-2 backdrop-blur-sm" variant="outline">
-        <Play className="h-4 w-4" />
-        Take Test
-      </Button>
-    </Link>
+  const activate = (e: React.MouseEvent) => {
+    // Let modified clicks / middle-click open normally (new tab etc.).
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+    e.preventDefault();
+    if (charging) return;
+    if (!motion) {
+      navigate(to);
+      return;
+    }
+    setCharging(true);
+    window.setTimeout(() => navigate(to), 700);
+  };
+
+  const track = (e: React.PointerEvent<HTMLAnchorElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    e.currentTarget.style.setProperty('--gx', `${((e.clientX - r.left) / r.width) * 100}%`);
+    e.currentTarget.style.setProperty('--gy', `${((e.clientY - r.top) / r.height) * 100}%`);
+  };
+
+  return (
+    <div
+      className={cn('tcard-wrap group relative', motion && 'paper-deal')}
+      data-charging={charging}
+      style={{ ['--lvl' as string]: levelColor, animationDelay: `${dealIndex * 70}ms` }}
+    >
+      <a
+        href={to}
+        onClick={activate}
+        onPointerMove={track}
+        className="tcard relative isolate flex aspect-[3/4] flex-col overflow-hidden rounded-2xl border border-[color-mix(in_srgb,var(--lvl)_55%,transparent)] bg-gradient-to-b from-[#35302a] via-[#241f19] to-[#15120c] p-4 text-left shadow-[inset_0_0_30px_-10px_color-mix(in_srgb,var(--lvl)_55%,transparent),inset_0_0_0_1px_rgba(214,178,110,0.14)]"
+      >
+        {/* Element glow + seeded arcane sigil — the card's art, no two alike. */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_42%,color-mix(in_srgb,var(--lvl)_26%,transparent),transparent_62%)]"
+        />
+        <div aria-hidden="true" className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          <ArcaneSigil seed={seed} className="opacity-40" />
+        </div>
+        {/* Age patina — weathers older papers; newest stays clear. */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 bg-gradient-to-br from-[#6b4f2a] via-transparent to-[#1a120a] mix-blend-overlay"
+          style={{ opacity: patina }}
+        />
+        <div className="tcard-foil" aria-hidden="true" />
+        <div className="tcard-glare" aria-hidden="true" />
+
+        {/* Top row — CODE + year/rarity badge */}
+        <div className="relative z-10 flex items-start justify-between gap-2">
+          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">
+            CODE: {paper.uuid}
+          </span>
+          {paper.year !== null && (
+            <span
+              className={cn(
+                'shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-semibold',
+                fresh
+                  ? 'border-amber-300/60 bg-amber-300/15 text-amber-200'
+                  : 'border-foreground/15 bg-black/30 text-muted-foreground',
+              )}
+            >
+              {paper.year}
+            </span>
+          )}
+        </div>
+
+        {/* Title + descriptor */}
+        <div className="relative z-10 mt-3">
+          {variantCount > 1 && (
+            <p className="mb-1 text-[11px] font-medium uppercase tracking-[0.16em] text-[color-mix(in_srgb,var(--lvl)_85%,white)]">
+              Set {variantIndex + 1} of {variantCount}
+            </p>
+          )}
+          <h3 className="font-display text-xl font-normal leading-snug tracking-tight text-foreground">
+            {formatPaperName(paper.paperName, paper.year ?? undefined)}
+          </h3>
+          {paper.isNew === 1 && (
+            <span className="paper-new mt-1.5 inline-flex items-center gap-1 rounded-full bg-amber-300/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-200">
+              <Sparkles className="h-3 w-3" /> New
+            </span>
+          )}
+        </div>
+
+        <div className="flex-1" />
+
+        {/* Stat block */}
+        <div className="relative z-10 mt-3 grid grid-cols-3 gap-1.5">
+          <Stat icon={<ListChecks className="h-3.5 w-3.5" />} value={`${paper.questionCount}`} label="Questions" />
+          <Stat icon={<Clock className="h-3.5 w-3.5" />} value={paper.duration ? `${paper.duration}m` : '—'} label="Duration" />
+          <Stat icon={<Trophy className="h-3.5 w-3.5" />} value={`${paper.calculatedTotalMarks || paper.totalScore || '—'}`} label="Marks" />
+        </div>
+
+        <Button className="relative z-10 mt-3 w-full gap-2" variant="outline">
+          <Play className="h-4 w-4" />
+          {charging ? 'Summoning…' : 'Take Test'}
+        </Button>
+
+        {/* Ornate frame, corner brackets and summon overlays (reused from deck). */}
+        <div className="tcard-frame" aria-hidden="true" />
+        <span className="tcard-corner tcard-corner-tl" aria-hidden="true" />
+        <span className="tcard-corner tcard-corner-tr" aria-hidden="true" />
+        <span className="tcard-corner tcard-corner-bl" aria-hidden="true" />
+        <span className="tcard-corner tcard-corner-br" aria-hidden="true" />
+        <div className="charge-ring" aria-hidden="true" />
+        <div className="charge-flare" aria-hidden="true" />
+        <div className="summon-burst" aria-hidden="true" />
+      </a>
+    </div>
   );
 }
 
@@ -102,29 +246,65 @@ function BundleCard({
   bundle,
   courseId,
   examId,
+  levelColor,
+  newestYear,
 }: {
   bundle: PaperBundle;
   courseId: string;
   examId: string;
+  levelColor: string;
+  newestYear: number;
 }) {
+  const motion = !prefersReducedMotion();
+  const [revealed, setRevealed] = useState(!motion);
+  const sectionRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (!motion) return;
+    const el = sectionRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setRevealed(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: '0px 0px -10% 0px', threshold: 0.1 },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [motion]);
+
   return (
-    <section className="space-y-3">
-      <div className="flex items-end justify-between gap-4 border-b border-border/70 pb-2">
+    <section ref={sectionRef} data-revealed={revealed} className="space-y-4">
+      <div className="flex items-end justify-between gap-4 border-b border-[color-mix(in_srgb,var(--lvl,#d6b26e)_30%,transparent)] pb-2">
         <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5">
-          <h2 className="font-display text-xl font-normal tracking-tight text-foreground">{bundle.bundleLabel}</h2>
+          <h2 className="font-display text-2xl font-normal tracking-tight text-foreground">{bundle.bundleLabel}</h2>
           <span className="text-sm text-muted-foreground">
             {bundle.dateLabel}
             {bundle.termLabel ? ` · ${bundle.termLabel}` : ''}
           </span>
         </div>
-        <span className="shrink-0 text-xs font-medium text-muted-foreground">
-          {bundle.variantCount} {bundle.variantCount === 1 ? 'variant' : 'variants'}
+        <span className="shrink-0 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          {bundle.variantCount}-card set
         </span>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {bundle.papers.map((paper) => (
-          <PaperVariantCard key={paper._id} paper={paper} courseId={courseId} examId={examId} />
+      <div className="grid gap-4 sm:grid-cols-2">
+        {bundle.papers.map((paper, i) => (
+          <PaperVariantCard
+            key={paper._id}
+            paper={paper}
+            courseId={courseId}
+            examId={examId}
+            levelColor={levelColor}
+            newestYear={newestYear}
+            variantCount={bundle.variantCount}
+            variantIndex={i}
+            dealIndex={i}
+            motion={motion}
+          />
         ))}
       </div>
     </section>
@@ -280,6 +460,13 @@ export default function CoursePage() {
     [course],
   );
 
+  // Newest year across all papers — the freshly-forged tier; everything older
+  // gains patina (see ageOf).
+  const newestYear = useMemo(() => {
+    const years = bundles.flatMap((b) => b.papers.map((p) => p.year).filter((y): y is number => y !== null));
+    return years.length ? Math.max(...years) : new Date().getFullYear();
+  }, [bundles]);
+
   if (!examUuid || !courseId) {
     return (
       <StatePanel
@@ -358,7 +545,7 @@ export default function CoursePage() {
   }
 
   return (
-    <div className="relative isolate space-y-8">
+    <div className="relative isolate mx-auto max-w-4xl space-y-8">
       {/* Page backdrop — the First-Class Mage Exam hall, held still behind the
           page and dimmed so the bundle list stays legible. `isolate` + `-z-10`
           keeps it above the app background but below the content. */}
@@ -443,9 +630,16 @@ export default function CoursePage() {
           </button>
         </div>
       ) : (
-        <div className="space-y-8">
+        <div className="space-y-12">
           {filteredBundles.map((bundle) => (
-            <BundleCard key={bundle.groupId} bundle={bundle} courseId={courseId!} examId={examId!} />
+            <BundleCard
+              key={bundle.groupId}
+              bundle={bundle}
+              courseId={courseId!}
+              examId={examId!}
+              levelColor={levelMeta.color}
+              newestYear={newestYear}
+            />
           ))}
         </div>
       )}
