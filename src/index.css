@@ -243,6 +243,56 @@
   }
 }
 
+/* Deck card change — the new card slides in from the side of the flip (next =
+   from the right, prev = from the left) so navigation is unmistakable even when
+   neighbouring cards share the same art. */
+@keyframes deck-in-next {
+  from {
+    opacity: 0;
+    transform: translate3d(42px, 0, 0) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes deck-in-prev {
+  from {
+    opacity: 0;
+    transform: translate3d(-42px, 0, 0) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes deck-in-fade {
+  from {
+    opacity: 0.15;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .deck-enter[data-dir='1'] {
+    animation: deck-in-next 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .deck-enter[data-dir='-1'] {
+    animation: deck-in-prev 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+}
+
+/* Reduced motion: keep a quick fade so the card change is still perceptible. */
+@media (prefers-reduced-motion: reduce) {
+  .deck-enter {
+    animation: deck-in-fade 0.2s ease-out both;
+  }
+}
+
 /* Ornate 5★ frame — an element-tinted inset border with a gold inner hairline
    and an inner element glow, plus gold filigree corner brackets. */
 .tcard-frame {

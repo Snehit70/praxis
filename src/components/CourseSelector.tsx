@@ -76,6 +76,8 @@ export function CourseSelector({
   const [selected, setSelected] = useState<Set<string>>(new Set(initialCourseKeys));
   const [query, setQuery] = useState('');
   const [index, setIndex] = useState(0);
+  // Direction of the last flip — drives which way the new card slides in.
+  const [navDir, setNavDir] = useState<1 | -1>(1);
   // The card-key currently playing its one-shot charge animation. Distinct from
   // `selected` (the persistent charged state) so flipping to an already-chosen
   // card glows but doesn't replay the ring race.
@@ -115,8 +117,10 @@ export function CourseSelector({
   const clampedIndex = deck.length ? Math.min(index, deck.length - 1) : 0;
   const current = deck[clampedIndex] ?? null;
 
-  const go = (delta: number) =>
+  const go = (delta: number) => {
+    setNavDir(delta >= 0 ? 1 : -1);
     setIndex((i) => Math.min(deck.length - 1, Math.max(0, i + delta)));
+  };
 
   // ←/→ flip the deck (unless you're typing in the search field).
   useEffect(() => {
@@ -266,7 +270,11 @@ export function CourseSelector({
               />
               <div className="flex items-center justify-center">
                 <PeekCard entry={deck[clampedIndex - 1]} onClick={() => go(-1)} />
-                <div className="relative z-10 -mx-7 sm:-mx-9">
+                <div
+                  key={current.key}
+                  data-dir={navDir}
+                  className="deck-enter relative z-10 -mx-7 sm:-mx-9"
+                >
                   <CourseCardFace
                     entry={current}
                     charged={selected.has(current.key)}
