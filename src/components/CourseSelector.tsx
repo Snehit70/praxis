@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Check, Search, X } from 'lucide-react';
+import { Search, X } from 'lucide-react';
 import { Dialog, DialogClose } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -255,6 +255,9 @@ export function CourseSelector({
                               />
                             </span>
 
+                            {/* Selection is shown by the level-colour fill + glow
+                                alone (aria-pressed carries it for assistive tech)
+                                — no redundant checkbox. */}
                             <span className="relative z-10 min-w-0">
                               <span className="block truncate text-sm font-medium text-foreground">
                                 {entry.displayName}
@@ -263,18 +266,6 @@ export function CourseSelector({
                                 {entry.courseCode ? `${entry.courseCode} · ` : ''}
                                 {entry.paperCount} {entry.paperCount === 1 ? 'paper' : 'papers'}
                               </span>
-                            </span>
-
-                            {/* Check — stays primary so 'selected' is unmistakable. */}
-                            <span
-                              className={cn(
-                                'relative z-10 ml-auto flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition-colors',
-                                isSelected
-                                  ? 'border-primary bg-primary text-primary-foreground'
-                                  : 'border-white/25 bg-white/5',
-                              )}
-                            >
-                              {isSelected && <Check className="selector-check h-3.5 w-3.5" />}
                             </span>
                           </button>
                         </li>
