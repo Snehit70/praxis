@@ -277,14 +277,6 @@ export function CourseSelector({
                 className="absolute left-0 z-20"
               />
               <div className="relative flex items-center justify-center">
-                {/* Gold sunburst rays — bloom behind the card as it's revealed. */}
-                {opening && (
-                  <span
-                    aria-hidden="true"
-                    className="wish-rays"
-                    style={{ '--lvl': LEVEL_META[current.level].color } as React.CSSProperties}
-                  />
-                )}
                 <PeekCard entry={deck[clampedIndex - 1]} onClick={() => go(-1)} />
                 <DeckSlot
                   key={current.key}
@@ -534,19 +526,30 @@ function DeckSlot({ mode, children }: { mode: 'reveal' | 'next' | 'prev'; childr
   );
 }
 
-/** Genshin-style wish reveal: an ornate card-back flips edge-on as light flashes,
- *  handing off to the real card (which flips face-up via .deck-mode-reveal). */
+/** Slot-machine opening: a reel of ornate card-backs slides left→right and
+ *  decelerates to rest; the landed back then flips edge-on, handing off to the
+ *  real card which flips face-up (.deck-mode-reveal). No fireworks. */
 function WishReveal({ color }: { color: string }) {
   return (
     <div
       aria-hidden="true"
-      className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center"
+      className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center overflow-hidden"
       style={{ '--lvl': color } as React.CSSProperties}
     >
-      <span className="wish-flash" />
-      <span className="wish-back">
-        <span className="wish-back-emblem">✦</span>
-      </span>
+      <div className="wish-stage">
+        {/* The reel — backs sliding past, decelerating. */}
+        <div className="wish-reel-row">
+          {Array.from({ length: 7 }).map((_, i) => (
+            <span key={i} className="wish-reel-back">
+              <span className="wish-back-emblem">✦</span>
+            </span>
+          ))}
+        </div>
+        {/* The landed back, flipping edge-on as the real card flips up. */}
+        <span className="wish-back">
+          <span className="wish-back-emblem">✦</span>
+        </span>
+      </div>
     </div>
   );
 }
