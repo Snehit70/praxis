@@ -85,7 +85,7 @@ export function CourseSelector({
       onOpenChange={onOpenChange}
       dismissable={!mandatory}
       labelledBy="course-selector-title"
-      className="bg-transparent sm:max-w-2xl"
+      className="animate-dialog-in bg-transparent sm:max-w-2xl"
     >
       {/* Card backdrop — Frieren in the meadow, fills the whole card and is
           dimmed so every section stays legible while the image reads through. */}

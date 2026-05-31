@@ -195,6 +195,43 @@
   }
 }
 
+/* Dialog entrance — desktop springs up from 96% scale; mobile rises as a sheet.
+   Scoped via a className on the panel, so the shared Dialog primitive is
+   untouched. Backdrop keeps its own .animate-fade-in. */
+@keyframes praxis-dialog-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes praxis-sheet-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 24px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .animate-dialog-in {
+    /* slight overshoot = spring */
+    animation: praxis-dialog-in 0.36s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  }
+  @media (max-width: 639px) {
+    .animate-dialog-in {
+      animation: praxis-sheet-in 0.34s cubic-bezier(0.16, 1, 0.3, 1) both;
+    }
+  }
+}
+
 /* Specular sheen — a diagonal light streak sweeps once across a course tile on
    hover-in, like light catching glass. Lives inside the tile's clip; replays on
    each fresh hover. Motion-safe only. */
