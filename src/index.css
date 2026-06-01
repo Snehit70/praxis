@@ -743,6 +743,15 @@
     inset 0 0 44px -18px color-mix(in srgb, var(--lvl, #62aef0) 60%, transparent);
 }
 
+/* The deck's ornate frame, calmed for the exam: softer level border + glow so
+   a long sitting stays restful. Scoped to .exam-tome so the deck is untouched. */
+.exam-tome .tcard-frame {
+  border-color: color-mix(in srgb, var(--lvl, #62aef0) 32%, transparent);
+  box-shadow:
+    inset 0 0 0 1px rgba(214, 178, 110, 0.08),
+    inset 0 0 24px -14px color-mix(in srgb, var(--lvl, #62aef0) 45%, transparent);
+}
+
 /* Framed panel (navigator, pager, clock) — gold hairline + level tint. */
 .exam-panel {
   border: 1px solid color-mix(in srgb, var(--lvl, #62aef0) 30%, rgba(214, 178, 110, 0.18));

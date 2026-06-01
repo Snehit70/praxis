@@ -275,38 +275,28 @@ function ResultsSummary({
   );
 }
 
+const QUESTION_TYPE_META: Record<string, { label: string; accent: string }> = {
+  MSQ: { label: 'MSQ', accent: '#a78bfa' },
+  COMPREHENSION: { label: 'Passage', accent: '#62aef0' },
+  SA: { label: 'Short Answer', accent: '#f0b462' },
+  OPPE: { label: 'OPPE', accent: '#2dd4bf' },
+  MCQ: { label: 'MCQ', accent: '#d6b26e' },
+};
+
+/** A single, theme-aligned chip: a quiet gold-tinted pill that carries the
+ *  question type's semantic colour as a soft accent (no loud default pills). */
 function QuestionTypeBadge({ type }: { type: string }) {
-  if (type === 'MSQ') {
-    return (
-      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold tracking-wide uppercase bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20">
-        MSQ
-      </span>
-    );
-  }
-  if (type === 'COMPREHENSION') {
-    return (
-      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold tracking-wide uppercase bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
-        Passage
-      </span>
-    );
-  }
-  if (type === 'SA') {
-    return (
-      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold tracking-wide uppercase bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
-        Short Answer
-      </span>
-    );
-  }
-  if (type === 'OPPE') {
-    return (
-      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold tracking-wide uppercase bg-teal-500/10 text-teal-600 dark:text-teal-400 border border-teal-500/20">
-        OPPE
-      </span>
-    );
-  }
+  const meta = QUESTION_TYPE_META[type] ?? { label: 'MCQ', accent: '#d6b26e' };
   return (
-    <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold tracking-wide uppercase bg-muted text-muted-foreground border border-border">
-      MCQ
+    <span
+      className="inline-flex items-center rounded px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+      style={{
+        color: `color-mix(in srgb, ${meta.accent} 90%, white)`,
+        backgroundColor: `color-mix(in srgb, ${meta.accent} 12%, transparent)`,
+        border: `1px solid color-mix(in srgb, ${meta.accent} 36%, transparent)`,
+      }}
+    >
+      {meta.label}
     </span>
   );
 }
@@ -440,6 +430,70 @@ function RichText({ text, compact = false }: { text: string; compact?: boolean }
   return <div className="max-w-none text-foreground leading-relaxed">{nodes}</div>;
 }
 
+/** Inline text fragment (no block <p>) — used when text and inline math images
+ *  are interleaved into one flowing line. */
+function InlineText({ text }: { text: string }) {
+  const trimmed = text?.trim();
+  if (!trimmed) return null;
+  return <>{renderInlineMarkdown(normalizeMarkup(trimmed))}</>;
+}
+
+/**
+ * An image that belongs to a question/option. The source stores math as small
+ * pre-rendered PNGs (~31px tall) meant to sit *inline* with the text; larger
+ * PNGs are real figures/diagrams. We start inline and, on load, promote tall
+ * images to a centered block. This is what reconnects "edge-length [2]
+ * centered…" into a readable sentence.
+ */
+function FlowImage({ src, alt }: { src: string; alt: string }) {
+  const [block, setBlock] = useState(false);
+  return (
+    <img
+      src={src}
+      alt={alt}
+      loading="lazy"
+      onLoad={(e) => {
+        const img = e.currentTarget;
+        if (img.naturalHeight > 44) setBlock(true);
+      }}
+      onError={(e) => {
+        (e.currentTarget as HTMLImageElement).style.display = 'none';
+      }}
+      className={
+        block
+          ? 'my-3 block max-h-72 max-w-full rounded-md object-contain p-1 invert mix-blend-screen'
+          : 'mx-[0.15em] inline-block h-[1.3em] w-auto max-w-full align-middle invert mix-blend-screen'
+      }
+    />
+  );
+}
+
+/**
+ * Interleaves question/option text fragments with their images in field order
+ * (text_1, image_1, text_2, image_2, …) so inline math lands where it belongs.
+ * Indices are kept aligned — empty slots are skipped, not compacted.
+ */
+function QuestionMedia({
+  texts,
+  images,
+  altPrefix,
+}: {
+  texts: Array<string | null | undefined>;
+  images: Array<string | undefined>;
+  altPrefix: string;
+}) {
+  const max = Math.max(texts.length, images.length);
+  const parts: React.ReactNode[] = [];
+  for (let i = 0; i < max; i++) {
+    const text = texts[i]?.trim();
+    if (text) parts.push(<InlineText key={`t-${i}`} text={text} />);
+    const image = images[i];
+    if (image) parts.push(<FlowImage key={`i-${i}`} src={image} alt={`${altPrefix} ${i + 1}`} />);
+  }
+  if (parts.length === 0) return null;
+  return <div className="max-w-none leading-relaxed text-foreground">{parts}</div>;
+}
+
 function OptionButton({
   option,
   optionIndex,
@@ -511,20 +565,10 @@ function OptionButton({
         )}
       </div>
 
-      <div className="flex-1 min-w-0">
-        {hasOptionText && (
-          <div className="text-sm">
-            <RichText text={optionText} compact />
-          </div>
-        )}
+      <div className="flex-1 min-w-0 text-sm">
+        {hasOptionText && <RichText text={optionText} compact />}
         {hasOptionImage && (
-          <img
-            src={getOptionImageUrl(option.optionImage ?? undefined)}
-            alt={`Option ${label}`}
-            className="mt-2 max-w-full rounded border border-border"
-            loading="lazy"
-            onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
-          />
+          <FlowImage src={getOptionImageUrl(option.optionImage ?? undefined) ?? ''} alt={`Option ${label}`} />
         )}
         {!hasOptionText && !hasOptionImage && (
           <span className="text-sm text-muted-foreground italic">
@@ -571,7 +615,7 @@ function NumericKeypad({
   };
 
   const keyClass =
-    'rounded-md border border-border bg-card/70 py-2.5 text-base font-medium text-foreground backdrop-blur-sm transition-colors hover:border-primary/40 hover:bg-muted active:bg-muted/70';
+    'rounded-md border border-[rgba(214,178,110,0.2)] bg-black/25 py-2.5 text-base font-medium text-foreground backdrop-blur-sm transition-colors hover:border-[color-mix(in_srgb,var(--lvl,#62aef0)_50%,transparent)] hover:bg-[color-mix(in_srgb,var(--lvl,#62aef0)_12%,transparent)] active:bg-black/40';
 
   return (
     <div className="max-w-[260px]">
@@ -629,7 +673,7 @@ function ShortAnswerField({
           onChange(numeric ? sanitizeNumeric(event.target.value) : event.target.value)
         }
         placeholder={numeric ? 'Enter numeric answer' : 'Enter your answer'}
-        className="w-full rounded-md border border-border bg-background/70 px-3 py-2 text-sm text-foreground outline-none backdrop-blur-sm focus:ring-2 focus:ring-primary/40"
+        className="w-full rounded-md border border-[rgba(214,178,110,0.22)] bg-black/25 px-3 py-2 text-sm text-foreground outline-none backdrop-blur-sm focus:border-[color-mix(in_srgb,var(--lvl,#62aef0)_55%,transparent)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--lvl,#62aef0)_40%,transparent)]"
       />
       {numeric && !disabled && <NumericKeypad value={value} onChange={onChange} />}
       <p className="text-xs italic text-muted-foreground">
@@ -657,13 +701,15 @@ function QuestionCard({
   isSubQuestion?: boolean;
 }) {
   const selectedAnswer = selectedAnswers[question.uuid];
+  // Kept index-aligned (no filter): text_i and image_i interleave so inline
+  // math images land between the right text fragments.
   const questionTexts = [
     question.questionText1,
     question.questionText2,
     question.questionText3,
     question.questionText4,
     question.questionText5,
-  ].filter(Boolean);
+  ];
 
   const questionImages = [
     getQuestionImageUrl(question.questionImage1),
@@ -676,7 +722,7 @@ function QuestionCard({
     getQuestionImageUrl(question.questionImage8),
     getQuestionImageUrl(question.questionImage9),
     getQuestionImageUrl(question.questionImage10),
-  ].filter(Boolean);
+  ];
 
   const marks = parseFloat(question.totalMark) || 0;
   const isMultiSelect = question.questionType === 'MSQ';
@@ -714,28 +760,11 @@ function QuestionCard({
                     </span>
                   )}
                 </div>
-                {questionTexts.map((text, textIndex) => (
-                  <div
-                    key={textIndex}
-                    className="prose prose-sm dark:prose-invert max-w-none text-foreground leading-relaxed"
-                  >
-                    <RichText text={text ?? ''} />
-                  </div>
-                ))}
-                {questionImages.length > 0 && (
-                  <div className="flex flex-wrap gap-2">
-                    {questionImages.map((image, imageIndex) => (
-                      <img
-                        key={imageIndex}
-                        src={image}
-                        alt={`Question ${index + 1} image ${imageIndex + 1}`}
-                        className="max-w-full max-h-48 rounded border border-border object-contain"
-                        loading="lazy"
-                        onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
-                      />
-                    ))}
-                  </div>
-                )}
+                <QuestionMedia
+                  texts={questionTexts}
+                  images={questionImages}
+                  altPrefix={`Question ${index + 1} image`}
+                />
               </div>
             </div>
             {!isComprehension && (
@@ -806,31 +835,13 @@ function QuestionCard({
             )}
           </div>
 
-          {/* Question text + images */}
-          <div className="space-y-3">
-            {questionTexts.map((text, textIndex) => (
-              <div
-                key={textIndex}
-                className="prose prose-sm dark:prose-invert max-w-none text-foreground leading-relaxed"
-              >
-                <RichText text={text ?? ''} />
-              </div>
-            ))}
-
-            {questionImages.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {questionImages.map((image, imageIndex) => (
-                  <img
-                    key={imageIndex}
-                    src={image}
-                    alt={`Question ${index + 1} image ${imageIndex + 1}`}
-                    className="max-w-full max-h-64 rounded-lg border border-border object-contain"
-                    loading="lazy"
-                    onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
-                  />
-                ))}
-              </div>
-            )}
+          {/* Question text with inline math images interleaved in field order */}
+          <div className="space-y-3 text-[15px]">
+            <QuestionMedia
+              texts={questionTexts}
+              images={questionImages}
+              altPrefix={`Question ${index + 1} image`}
+            />
           </div>
 
           {/* Options */}
@@ -1298,14 +1309,29 @@ export default function PaperPage() {
     });
   }, [groupedQuestions, selectedAnswers]);
 
-  // Keyboard paging with ← / → — ignored while typing into a short-answer field.
+  // Keyboard paging with ← / →. Inside a short-answer field the caret moves
+  // first; pressing the arrow again at the field's edge pages the question, so
+  // editing and navigation coexist.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
       const target = event.target as HTMLElement | null;
       const tag = target?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || target?.isContentEditable) return;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') {
+        const field = target as HTMLInputElement;
+        const start = field.selectionStart;
+        const end = field.selectionEnd;
+        const len = field.value.length;
+        const atStart = start === 0 && end === 0;
+        const atEnd = start === len && end === len;
+        if (event.key === 'ArrowLeft' && !atStart) return;
+        if (event.key === 'ArrowRight' && !atEnd) return;
+      } else if (target?.isContentEditable) {
+        return;
+      }
       if (event.key === 'ArrowLeft') goPrev();
-      else if (event.key === 'ArrowRight') goNext();
+      else goNext();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -1488,7 +1514,11 @@ export default function PaperPage() {
   return (
     <div
       className="relative isolate w-full space-y-5 pb-24"
-      style={levelColor ? ({ ['--lvl' as string]: levelColor }) : undefined}
+      style={{
+        ...(levelColor ? { ['--lvl' as string]: levelColor } : {}),
+        // Warm the focus ring within the exam (app default is blue).
+        ['--ring' as string]: levelColor ?? '#d6b26e',
+      }}
     >
       {/* Page backdrop — a still, dimmed winter scene held behind the exam so
           the question and navigator stay legible. isolate + -z-10 keeps it
@@ -1587,9 +1617,16 @@ export default function PaperPage() {
               Prev
             </Button>
 
-            <span className="text-sm tabular-nums text-muted-foreground">
-              Question {safeIndex + 1} of {pageCount}
-            </span>
+            <div className="flex flex-col items-center leading-tight">
+              <span className="text-sm tabular-nums text-muted-foreground">
+                Question {safeIndex + 1} of {pageCount}
+              </span>
+              <span className="hidden items-center gap-1 text-[10px] text-muted-foreground/60 sm:flex">
+                <kbd className="rounded border border-border px-1 py-px font-sans text-[9px]">←</kbd>
+                <kbd className="rounded border border-border px-1 py-px font-sans text-[9px]">→</kbd>
+                to move
+              </span>
+            </div>
 
             <div className="flex items-center gap-2">
               {!showResults && !isLastPage && (
