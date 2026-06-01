@@ -6,7 +6,9 @@ import { useState, useMemo, useEffect, useCallback } from 'react';
 import { cn } from '@/lib/utils';
 import { formatPaperName } from '@/lib/paperUtils';
 import { getExamSlugFromUuid, getExamUuidFromSlug, getExamDurationMinutes } from '@/lib/examMapping';
-import { getDisplayCourseName } from '@/lib/courseMapping';
+import { getDisplayCourseName, getCourseLevel } from '@/lib/courseMapping';
+import { LEVEL_META } from '@/lib/courseCatalogue';
+import { ArcaneSigil } from '@/components/ArcaneSigil';
 import { logger } from '@/lib/logger';
 import { getQuestionImageUrl, getOptionImageUrl } from '@/lib/imageUtils';
 import {
@@ -38,6 +40,10 @@ interface SavedPaperSession {
   timerRunning: boolean;
   remainingSeconds: number | null;
   timerEndsAt: number | null;
+}
+
+function prefersReducedMotion() {
+  return typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
 function getPaperSessionKey(paperId: string, courseId?: string | null, examId?: string | null) {
@@ -120,9 +126,9 @@ function LoadingSkeleton() {
 function ProgressBar({ answered, total }: { answered: number; total: number }) {
   const percentage = total > 0 ? (answered / total) * 100 : 0;
   return (
-    <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
+    <div className="h-1.5 w-full overflow-hidden rounded-full bg-black/30 ring-1 ring-inset ring-[rgba(214,178,110,0.14)]">
       <div
-        className="h-full bg-primary transition-all duration-500 ease-out"
+        className="h-full rounded-full bg-[color-mix(in_srgb,var(--lvl,#62aef0)_80%,white_10%)] transition-all duration-500 ease-out"
         style={{ width: `${percentage}%` }}
       />
     </div>
@@ -151,8 +157,11 @@ function CompactTimer({
   onReset: () => void;
   expired: boolean;
 }) {
+  // Urgent under the last 5 minutes — the clock flushes red and pulses.
+  const urgent = !expired && running && remainingSeconds !== null && remainingSeconds <= 300 && remainingSeconds > 0;
   return (
     <div
+      data-urgent={urgent}
       title={
         expired
           ? 'Time is up — answers were submitted automatically.'
@@ -161,12 +170,16 @@ function CompactTimer({
           : 'Start to simulate the real exam clock.'
       }
       className={cn(
-        'flex shrink-0 items-center gap-2 rounded-lg border px-2.5 py-1.5',
-        expired ? 'border-destructive/40 bg-destructive/10' : 'border-border bg-card/70',
+        'exam-clock exam-panel flex shrink-0 items-center gap-2 rounded-lg px-2.5 py-1.5 backdrop-blur-sm',
+        expired ? 'border-destructive/40 bg-destructive/10' : 'bg-[#1c1812]/70',
       )}
     >
-      <Timer className={cn('h-4 w-4', expired ? 'text-destructive' : 'text-primary')} aria-hidden="true" />
-      <span className={cn('text-base font-semibold tabular-nums', expired && 'text-destructive')}>
+      <Timer
+        className={cn('h-4 w-4', expired || urgent ? 'text-red-400' : '')}
+        style={expired || urgent ? undefined : { color: 'var(--lvl, var(--primary))' }}
+        aria-hidden="true"
+      />
+      <span className={cn('text-base font-semibold tabular-nums', (expired || urgent) && 'text-red-400')}>
         {formatRemainingTime(remainingSeconds)}
       </span>
       <span className="hidden text-xs text-muted-foreground sm:inline">/ {durationMinutes}m</span>
@@ -220,7 +233,7 @@ function ResultsSummary({
     : 'bg-red-500/10 border-red-500/20';
 
   return (
-    <div className={`rounded-xl border ${bgColor} p-5 sm:p-6`}>
+    <div className={`exam-verdict rounded-2xl border p-5 ring-1 ring-inset ring-[rgba(214,178,110,0.16)] sm:p-6 ${bgColor}`}>
       <div className="flex flex-col sm:flex-row sm:items-center gap-5">
         <div className="flex items-center gap-4 flex-1">
           <div className={`flex-shrink-0 w-14 h-14 rounded-full ${isGood ? 'bg-green-500/15' : isOkay ? 'bg-yellow-500/15' : 'bg-red-500/15'} flex items-center justify-center`}>
@@ -466,11 +479,12 @@ function OptionButton({
       indicatorClass += 'bg-muted text-muted-foreground';
     }
   } else if (isSelected) {
-    containerClass += 'border-primary bg-primary/5';
-    indicatorClass += 'bg-primary text-primary-foreground';
+    containerClass +=
+      'border-[color-mix(in_srgb,var(--lvl,#62aef0)_70%,transparent)] bg-[color-mix(in_srgb,var(--lvl,#62aef0)_12%,transparent)] shadow-[inset_0_0_24px_-12px_color-mix(in_srgb,var(--lvl,#62aef0)_80%,transparent)]';
+    indicatorClass += 'bg-[var(--lvl,#62aef0)] text-white';
   } else {
     containerClass +=
-      'border-border hover:border-primary/40 hover:bg-muted/40 active:bg-muted/60';
+      'border-[rgba(214,178,110,0.18)] bg-black/15 hover:border-[color-mix(in_srgb,var(--lvl,#62aef0)_45%,transparent)] hover:bg-[color-mix(in_srgb,var(--lvl,#62aef0)_8%,transparent)] active:bg-black/25';
     indicatorClass += 'bg-muted text-muted-foreground group-hover:text-foreground';
   }
 
@@ -684,9 +698,9 @@ function QuestionCard({
 
   if (isSubQuestion) {
     return (
-      <div className="rounded-lg border border-border bg-card/50 p-4">
+      <div className="rounded-lg border border-[rgba(214,178,110,0.16)] bg-black/20 p-4">
         <div className="flex gap-3">
-          <div className="flex-shrink-0 w-6 h-6 rounded-md flex items-center justify-center bg-muted text-muted-foreground text-xs font-bold">
+          <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md border border-[color-mix(in_srgb,var(--lvl,#62aef0)_40%,transparent)] bg-[color-mix(in_srgb,var(--lvl,#62aef0)_14%,transparent)] text-xs font-bold text-[color-mix(in_srgb,var(--lvl,#62aef0)_92%,white)]">
             {index + 1}
           </div>
           <div className="flex-1 min-w-0 space-y-3">
@@ -774,10 +788,10 @@ function QuestionCard({
   }
 
   return (
-    <div className="rounded-xl border border-border bg-card/80 p-5 backdrop-blur-sm sm:p-6">
-      <div className="flex gap-3 sm:gap-4">
+    <div className="exam-tome relative isolate overflow-hidden rounded-2xl border border-[color-mix(in_srgb,var(--lvl,#62aef0)_30%,rgba(214,178,110,0.2))] p-5 backdrop-blur-sm sm:p-6">
+      <div className="relative z-10 flex gap-3 sm:gap-4">
         {/* Question number */}
-        <div className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center bg-muted text-muted-foreground text-sm font-bold">
+        <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg border border-[color-mix(in_srgb,var(--lvl,#62aef0)_45%,transparent)] bg-[color-mix(in_srgb,var(--lvl,#62aef0)_16%,transparent)] text-sm font-bold text-[color-mix(in_srgb,var(--lvl,#62aef0)_92%,white)]">
           {index + 1}
         </div>
 
@@ -886,6 +900,13 @@ function QuestionCard({
           )}
         </div>
       </div>
+
+      {/* Ornate frame + corner brackets — the deck language, kept calm (no foil). */}
+      <div className="tcard-frame" aria-hidden="true" />
+      <span className="tcard-corner tcard-corner-tl" aria-hidden="true" />
+      <span className="tcard-corner tcard-corner-tr" aria-hidden="true" />
+      <span className="tcard-corner tcard-corner-bl" aria-hidden="true" />
+      <span className="tcard-corner tcard-corner-br" aria-hidden="true" />
     </div>
   );
 }
@@ -908,12 +929,16 @@ function QuestionNavigator({
 }) {
   const done = states.filter((state) => state === 'done').length;
   return (
-    <div className="sticky top-20 rounded-xl border border-border bg-card/60 p-4">
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-semibold tracking-tight">Questions</h2>
+    <div className="exam-panel exam-tome sticky top-20 isolate overflow-hidden rounded-2xl p-4 backdrop-blur-sm">
+      {/* Faint summoning sigil watermark — ties the rail to the deck. */}
+      <div aria-hidden="true" className="pointer-events-none absolute -right-8 -top-8 h-40 w-40 opacity-[0.06]">
+        <ArcaneSigil />
+      </div>
+      <div className="relative z-10 mb-3 flex items-center justify-between">
+        <h2 className="font-display text-base font-normal tracking-tight">Questions</h2>
         <span className="text-xs tabular-nums text-muted-foreground">{done}/{states.length} done</span>
       </div>
-      <div className="grid grid-cols-5 gap-2">
+      <div className="relative z-10 grid grid-cols-5 gap-2">
         {states.map((state, index) => {
           const isCurrent = index === currentIndex;
           return (
@@ -927,10 +952,12 @@ function QuestionNavigator({
               }`}
               className={cn(
                 'flex h-9 w-9 items-center justify-center rounded-md border text-sm font-medium transition-colors',
-                state === 'done' && 'border-primary/40 bg-primary/15 text-primary',
+                state === 'done' &&
+                  'border-[color-mix(in_srgb,var(--lvl,#62aef0)_50%,transparent)] bg-[color-mix(in_srgb,var(--lvl,#62aef0)_18%,transparent)] text-[color-mix(in_srgb,var(--lvl,#62aef0)_92%,white)]',
                 state === 'partial' && 'border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400',
-                state === 'none' && 'border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground',
-                isCurrent && 'ring-2 ring-primary ring-offset-1 ring-offset-background',
+                state === 'none' &&
+                  'border-[rgba(214,178,110,0.16)] bg-black/20 text-muted-foreground hover:border-[color-mix(in_srgb,var(--lvl,#62aef0)_45%,transparent)] hover:text-foreground',
+                isCurrent && 'ring-2 ring-[#d6b26e] ring-offset-1 ring-offset-background',
               )}
             >
               {index + 1}
@@ -938,9 +965,9 @@ function QuestionNavigator({
           );
         })}
       </div>
-      <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+      <div className="relative z-10 mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
         <span className="flex items-center gap-1">
-          <span className="h-2.5 w-2.5 rounded-sm bg-primary/40" aria-hidden="true" />
+          <span className="h-2.5 w-2.5 rounded-sm bg-[color-mix(in_srgb,var(--lvl,#62aef0)_55%,transparent)]" aria-hidden="true" />
           Answered
         </span>
         <span className="flex items-center gap-1">
@@ -970,6 +997,7 @@ export default function PaperPage() {
   );
   const [selectedAnswers, setSelectedAnswers] = useState<Record<string, string | string[]>>({});
   const [showResults, setShowResults] = useState(false);
+  const [summoning, setSummoning] = useState(false);
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
   const [paper, setPaper] = useState<PaperDetails | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1103,6 +1131,13 @@ export default function PaperPage() {
   const displayCourseName = useMemo(() => {
     if (!paper?.courseName) return '';
     return getDisplayCourseName(paper.courseName);
+  }, [paper?.courseName]);
+
+  // Course-level accent — carries the deck's per-level colour into the exam so
+  // the page reads as the "inside" of the card the user summoned.
+  const levelColor = useMemo(() => {
+    if (!paper?.courseName) return null;
+    return LEVEL_META[getCourseLevel(paper.courseName)]?.color ?? null;
   }, [paper?.courseName]);
 
   const displayPaperName = useMemo(() => {
@@ -1288,12 +1323,27 @@ export default function PaperPage() {
     }
   };
 
-  const handleSubmit = () => {
+  const reveal = () => {
     setShowResults(true);
     setTimerRunning(false);
     setTimerEndsAt(null);
     setCurrentIndex(0);
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleSubmit = () => {
+    // The climactic moment: a brief "summon" charge, then reveal the verdict.
+    // Reduced motion (or an already-summoning click) reveals immediately.
+    if (summoning) return;
+    if (prefersReducedMotion()) {
+      reveal();
+      return;
+    }
+    setSummoning(true);
+    window.setTimeout(() => {
+      setSummoning(false);
+      reveal();
+    }, 620);
   };
 
   const handleOptionSelect = (
@@ -1436,7 +1486,10 @@ export default function PaperPage() {
     : 'Answer to submit';
 
   return (
-    <div className="relative isolate w-full space-y-5 pb-24">
+    <div
+      className="relative isolate w-full space-y-5 pb-24"
+      style={levelColor ? ({ ['--lvl' as string]: levelColor }) : undefined}
+    >
       {/* Page backdrop — a still, dimmed winter scene held behind the exam so
           the question and navigator stay legible. isolate + -z-10 keeps it
           above the app background but below the content. */}
@@ -1453,9 +1506,14 @@ export default function PaperPage() {
             Back
           </Button>
           <div className="flex min-w-0 items-baseline gap-2">
-            <span className="shrink-0 text-sm font-medium text-primary">{paper.examName}</span>
+            <span
+              className="shrink-0 text-sm font-medium"
+              style={{ color: levelColor ?? undefined }}
+            >
+              {paper.examName}
+            </span>
             <span className="text-muted-foreground" aria-hidden="true">·</span>
-            <h1 className="truncate text-lg font-semibold tracking-tight" title={displayPaperName}>
+            <h1 className="truncate font-display text-xl font-normal tracking-tight" title={displayPaperName}>
               {displayPaperName}
             </h1>
           </div>
@@ -1502,7 +1560,7 @@ export default function PaperPage() {
 
       {/* One question per page */}
       {currentQuestion && (
-        <div key={currentQuestion.uuid} className="min-h-[55vh]">
+        <div key={currentQuestion.uuid} className="exam-q-enter min-h-[55vh]">
           <QuestionCard
             question={currentQuestion}
             index={safeIndex}
@@ -1516,7 +1574,7 @@ export default function PaperPage() {
 
       {/* Sticky pager — Prev · "Question X of N" · Next/Submit. ← / → also page. */}
       <div className="sticky bottom-4 z-30">
-        <div className="rounded-xl border border-border bg-background/90 px-4 py-3 shadow-sm backdrop-blur">
+        <div className="exam-panel rounded-xl bg-[#1c1812]/90 px-4 py-3 shadow-lg backdrop-blur">
           <div className="flex items-center justify-between gap-3">
             <Button
               variant="outline"
@@ -1539,17 +1597,17 @@ export default function PaperPage() {
                   variant="ghost"
                   size="sm"
                   onClick={handleSubmit}
-                  disabled={stats.answered === 0}
+                  disabled={stats.answered === 0 || summoning}
                   className="text-muted-foreground hover:text-foreground"
                 >
-                  Submit
+                  {summoning ? 'Summoning…' : 'Submit'}
                 </Button>
               )}
               {isLastPage && !showResults ? (
                 <Button
                   size="sm"
                   onClick={handleSubmit}
-                  disabled={stats.answered === 0}
+                  disabled={stats.answered === 0 || summoning}
                   className={cn(
                     'gap-1',
                     allAnswered
@@ -1557,7 +1615,7 @@ export default function PaperPage() {
                       : 'bg-primary text-primary-foreground hover:bg-primary/90',
                   )}
                 >
-                  {submitLabel}
+                  {summoning ? 'Summoning…' : submitLabel}
                   <ChevronRight className="h-4 w-4" />
                 </Button>
               ) : !isLastPage ? (

@@ -724,6 +724,64 @@
   }
 }
 
+/* ============================================================
+   Exam (PaperPage) — "restrained arcane". The deck's gold +
+   per-level (--lvl) language carried inside the card, but kept
+   calm: framed surfaces and accents, no foil/glare near the
+   question, spectacle reserved for submit + results.
+   ============================================================ */
+
+/* Tome surface for the question — warm card with a gold hairline and
+   a faint level-tinted inner glow. Legibility first: text stays high
+   contrast over the dark gradient. */
+.exam-tome {
+  background:
+    radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--lvl, #62aef0) 12%, transparent), transparent 60%),
+    linear-gradient(to bottom, #2b2620, #211c16 62%, #181410);
+  box-shadow:
+    inset 0 0 0 1px rgba(214, 178, 110, 0.14),
+    inset 0 0 44px -18px color-mix(in srgb, var(--lvl, #62aef0) 60%, transparent);
+}
+
+/* Framed panel (navigator, pager, clock) — gold hairline + level tint. */
+.exam-panel {
+  border: 1px solid color-mix(in srgb, var(--lvl, #62aef0) 30%, rgba(214, 178, 110, 0.18));
+  box-shadow: inset 0 0 0 1px rgba(214, 178, 110, 0.08);
+}
+
+/* Gold-framed exam clock; turns urgent (and pulses) under low time. */
+@keyframes exam-clock-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(248, 113, 113, 0); }
+  50% { box-shadow: 0 0 14px 0 rgba(248, 113, 113, 0.5); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .exam-clock[data-urgent='true'] {
+    animation: exam-clock-pulse 1.6s ease-in-out infinite;
+  }
+}
+
+/* Question page-change transition — a gentle settle, calm by design. */
+@keyframes exam-q-enter {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .exam-q-enter {
+    animation: exam-q-enter 0.26s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+}
+
+/* Results verdict — one-time reveal flourish (the climactic moment). */
+@keyframes exam-verdict-in {
+  from { opacity: 0; transform: scale(0.96) translateY(8px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .exam-verdict {
+    animation: exam-verdict-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+}
+
 /* Dialog entrance — desktop springs up from 96% scale; mobile rises as a sheet.
    Scoped via a className on the panel, so the shared Dialog primitive is
    untouched. Backdrop keeps its own .animate-fade-in. */
