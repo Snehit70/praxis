@@ -19,6 +19,7 @@ import { cn } from '@/lib/utils';
 import { ArcaneSigil } from '@/components/ArcaneSigil';
 import { LEVEL_META } from '@/lib/courseCatalogue';
 import pageBg from '@/assets/Sousou no Frieren - Ep. 18_ First-Class Mage Exam - 11_07.png';
+import cardBg from '@/assets/frieren-card-bg.png';
 
 const prefersReducedMotion = () =>
   typeof window !== 'undefined' &&
@@ -161,6 +162,18 @@ function PaperVariantCard({
         onPointerMove={track}
         className="tcard relative isolate flex aspect-[3/4] flex-col overflow-hidden rounded-2xl border border-[color-mix(in_srgb,var(--lvl)_55%,transparent)] bg-gradient-to-b from-[#35302a] via-[#241f19] to-[#15120c] p-4 text-left shadow-[inset_0_0_30px_-10px_color-mix(in_srgb,var(--lvl)_55%,transparent),inset_0_0_0_1px_rgba(214,178,110,0.14)]"
       >
+        {/* Dimmed Frieren portrait — the bottom texture layer. Kept faint so the
+            sigil/element glow read as the focal art and the per-level tint wins. */}
+        <img
+          src={cardBg}
+          alt=""
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 h-full w-full object-cover object-top opacity-[0.18] mix-blend-luminosity"
+        />
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 bg-gradient-to-b from-[#15120c]/70 via-[#15120c]/55 to-[#15120c]/85"
+        />
         {/* Element glow + seeded arcane sigil — the card's art, no two alike. */}
         <div
           aria-hidden="true"
