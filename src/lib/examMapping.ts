@@ -30,3 +30,20 @@ export function getExamSlugFromUuid(uuid: string): string | null {
 export function getExamNameFromSlug(slug: string): string | null {
   return EXAM_SLUG_TO_NAME[slug] || null;
 }
+
+// Timed-attempt length per exam type, in minutes. Quizzes run 60 minutes, the
+// End Term runs 90. Per-paper `duration` values in the dataset are placeholders
+// (almost all are 4), so the clock and the displayed duration are derived from
+// the exam type here instead. OPPE is unsupported for now and falls back below.
+export const EXAM_SLUG_TO_DURATION_MINUTES: Record<string, number> = {
+  'quiz1': 60,
+  'quiz2': 60,
+  'end-term': 90,
+};
+
+const DEFAULT_EXAM_DURATION_MINUTES = 60;
+
+export function getExamDurationMinutes(slug: string | null): number {
+  if (!slug) return DEFAULT_EXAM_DURATION_MINUTES;
+  return EXAM_SLUG_TO_DURATION_MINUTES[slug] ?? DEFAULT_EXAM_DURATION_MINUTES;
+}

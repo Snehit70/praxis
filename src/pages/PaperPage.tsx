@@ -5,7 +5,7 @@ import type React from 'react';
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { cn } from '@/lib/utils';
 import { formatPaperName } from '@/lib/paperUtils';
-import { getExamSlugFromUuid, getExamUuidFromSlug } from '@/lib/examMapping';
+import { getExamSlugFromUuid, getExamUuidFromSlug, getExamDurationMinutes } from '@/lib/examMapping';
 import { getDisplayCourseName } from '@/lib/courseMapping';
 import { logger } from '@/lib/logger';
 import { getQuestionImageUrl, getOptionImageUrl } from '@/lib/imageUtils';
@@ -28,9 +28,9 @@ interface QuestionWithChildren extends QuizQuestion {
 
 const OPTION_LABELS = ['A', 'B', 'C', 'D', 'E', 'F'];
 const PAPER_SESSION_STORAGE_PREFIX = 'praxis.paper-session';
-// Stored per-paper durations are placeholder values, so the timed attempt is
-// normalized to a standard 60-minute exam clock.
-const EXAM_DURATION_MINUTES = 60;
+// Stored per-paper `duration` values are placeholders, so the timed attempt is
+// driven by the exam type instead (see getExamDurationMinutes): 60m for the
+// quizzes, 90m for the End Term.
 
 interface SavedPaperSession {
   selectedAnswers: Record<string, string | string[]>;
@@ -1014,8 +1014,13 @@ export default function PaperPage() {
     ])
       .then(([paperData, questionData]) => {
         if (active) {
+          // Derive the clock from the freshly-fetched paper's exam type — the
+          // `durationMinutes` from render scope is still stale here (paper was
+          // null when this effect's closure was created).
+          const initDuration = getExamDurationMinutes(getExamSlugFromUuid(paperData.examUuid));
+          const initSeconds = initDuration * 60;
           const savedSession = storageKey
-            ? readPaperSession(storageKey, EXAM_DURATION_MINUTES)
+            ? readPaperSession(storageKey, initDuration)
             : null;
 
           setPaper(paperData);
@@ -1023,9 +1028,9 @@ export default function PaperPage() {
           setSelectedAnswers(savedSession?.selectedAnswers ?? {});
           setShowResults(savedSession?.showResults ?? false);
           setTimerRunning(savedSession?.timerRunning ?? false);
-          setRemainingSeconds(savedSession?.remainingSeconds ?? EXAM_DURATION_MINUTES * 60);
+          setRemainingSeconds(savedSession?.remainingSeconds ?? initSeconds);
           setTimerEndsAt(savedSession?.timerEndsAt ?? null);
-          setTimeExpired((savedSession?.remainingSeconds ?? EXAM_DURATION_MINUTES * 60) === 0);
+          setTimeExpired((savedSession?.remainingSeconds ?? initSeconds) === 0);
         }
       })
       .catch((error) => {
@@ -1092,6 +1097,8 @@ export default function PaperPage() {
     if (!paper?.examUuid) return null;
     return getExamSlugFromUuid(paper.examUuid);
   }, [paper?.examUuid]);
+
+  const durationMinutes = useMemo(() => getExamDurationMinutes(examSlug), [examSlug]);
 
   const displayCourseName = useMemo(() => {
     if (!paper?.courseName) return '';
@@ -1316,13 +1323,13 @@ export default function PaperPage() {
   const handleTimerStart = () => {
     if (!paper) return;
 
-    const nextRemaining = remainingSeconds ?? EXAM_DURATION_MINUTES * 60;
+    const nextRemaining = remainingSeconds ?? durationMinutes * 60;
     if (nextRemaining <= 0) {
-      setRemainingSeconds(EXAM_DURATION_MINUTES * 60);
+      setRemainingSeconds(durationMinutes * 60);
       setTimeExpired(false);
       setShowResults(false);
       setSelectedAnswers({});
-      setTimerEndsAt(Date.now() + EXAM_DURATION_MINUTES * 60 * 1000);
+      setTimerEndsAt(Date.now() + durationMinutes * 60 * 1000);
       setTimerRunning(true);
       return;
     }
@@ -1341,7 +1348,7 @@ export default function PaperPage() {
     if (!paper) return;
     setTimerRunning(false);
     setTimerEndsAt(null);
-    setRemainingSeconds(EXAM_DURATION_MINUTES * 60);
+    setRemainingSeconds(durationMinutes * 60);
     setTimeExpired(false);
   };
 
@@ -1350,7 +1357,7 @@ export default function PaperPage() {
     setShowResults(false);
     setTimerRunning(false);
     setTimerEndsAt(null);
-    setRemainingSeconds(paper ? EXAM_DURATION_MINUTES * 60 : null);
+    setRemainingSeconds(paper ? durationMinutes * 60 : null);
     setTimeExpired(false);
     setCurrentIndex(0);
     if (storageKey) clearPaperSession(storageKey);
@@ -1475,7 +1482,7 @@ export default function PaperPage() {
             </div>
             {hasTimer && (
               <CompactTimer
-                durationMinutes={EXAM_DURATION_MINUTES}
+                durationMinutes={durationMinutes}
                 remainingSeconds={remainingSeconds}
                 running={timerRunning}
                 onStart={handleTimerStart}

@@ -2,7 +2,7 @@ import { useParams, Link, useSearchParams, useNavigate, useLocation } from 'reac
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Search, X, FileText, Play, Layers, Clock, ListChecks, Trophy, Sparkles } from 'lucide-react';
 import { logger } from '@/lib/logger';
-import { getExamUuidFromSlug, getExamNameFromSlug } from '@/lib/examMapping';
+import { getExamUuidFromSlug, getExamNameFromSlug, getExamDurationMinutes } from '@/lib/examMapping';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { getDisplayCourseName, getCourseLevel } from '@/lib/courseMapping';
 import { formatPaperName } from '@/lib/paperUtils';
@@ -219,7 +219,7 @@ function PaperVariantCard({
         {/* Stat block */}
         <div className="relative z-10 mt-3 grid grid-cols-3 gap-1.5">
           <Stat icon={<ListChecks className="h-3.5 w-3.5" />} value={`${paper.questionCount}`} label="Questions" />
-          <Stat icon={<Clock className="h-3.5 w-3.5" />} value={paper.duration ? `${paper.duration}m` : '—'} label="Duration" />
+          <Stat icon={<Clock className="h-3.5 w-3.5" />} value={`${getExamDurationMinutes(examId)}m`} label="Duration" />
           <Stat icon={<Trophy className="h-3.5 w-3.5" />} value={`${paper.calculatedTotalMarks || paper.totalScore || '—'}`} label="Marks" />
         </div>
 
