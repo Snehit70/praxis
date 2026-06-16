@@ -50,7 +50,6 @@ const EXAM_TABS = [
   { slug: 'quiz1', label: 'Quiz 1' },
   { slug: 'quiz2', label: 'Quiz 2' },
   { slug: 'end-term', label: 'End Term' },
-  { slug: 'oppe', label: 'OPPE' },
 ];
 
 /** Pill row to jump to the same course under a different exam type. */

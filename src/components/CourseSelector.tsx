@@ -53,7 +53,7 @@ interface CourseSelectorProps {
 type LevelFilter = CourseLevel | 'All' | 'Chosen';
 
 /** Display order for a course's "trials" (exam types) on the card. */
-const TRIAL_ORDER = ['quiz1', 'quiz2', 'end-term', 'oppe'];
+const TRIAL_ORDER = ['quiz1', 'quiz2', 'end-term'];
 
 /** Consistent art framing — every course in a level shows the same shot. */
 const ART_POSITION = 'center 22%';

@@ -30,7 +30,10 @@ export interface CatalogueEntry {
 }
 
 /** Preferred exam type to open first when a course offers several. */
-const EXAM_PRIORITY = ['end-term', 'quiz1', 'quiz2', 'oppe'];
+const EXAM_PRIORITY = ['end-term', 'quiz1', 'quiz2'];
+
+/** Exam types we don't support — dropped from the catalogue entirely. */
+const UNSUPPORTED_EXAM_SLUGS = new Set(['oppe']);
 
 export function pickDefaultExamSlug(examSlugs: string[]): string | null {
   for (const slug of EXAM_PRIORITY) {
@@ -73,12 +76,15 @@ export function buildCatalogue(courses: CatalogueCourse[]): CatalogueEntry[] {
   }
 
   return Array.from(merged.values())
-    .map(({ primaryPaperCount: _drop, ...entry }) => ({
-      ...entry,
-      examSlugs: EXAM_PRIORITY.filter((slug) => entry.examSlugs.includes(slug)).concat(
-        entry.examSlugs.filter((slug) => !EXAM_PRIORITY.includes(slug)),
-      ),
-    }))
+    .map(({ primaryPaperCount: _drop, ...entry }) => {
+      const supported = entry.examSlugs.filter((slug) => !UNSUPPORTED_EXAM_SLUGS.has(slug));
+      return {
+        ...entry,
+        examSlugs: EXAM_PRIORITY.filter((slug) => supported.includes(slug)).concat(
+          supported.filter((slug) => !EXAM_PRIORITY.includes(slug)),
+        ),
+      };
+    })
     .sort((a, b) => a.displayName.localeCompare(b.displayName));
 }
 
