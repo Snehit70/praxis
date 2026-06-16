@@ -4,6 +4,7 @@ import { ArrowLeft, ArrowRight, FileSearch, Search } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { StatePanel } from '@/components/ui/state-panel';
 import {
   getSearchResults,
   type SearchCourseResult,
@@ -78,7 +79,7 @@ function PaperResultCard({ paper }: { paper: SearchPaperResult }) {
 
 function SearchSkeleton() {
   return (
-    <div className="space-y-8">
+    <div className="space-y-8" role="status" aria-live="polite" aria-label="Loading search results">
       {[1, 2].map((section) => (
         <div key={section} className="space-y-4">
           <Skeleton className="h-4 w-24" />
@@ -106,6 +107,7 @@ export default function SearchPage() {
   const [papers, setPapers] = useState<SearchPaperResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
+  const [retryNonce, setRetryNonce] = useState(0);
 
   useEffect(() => {
     setDraftQuery(query);
@@ -151,7 +153,7 @@ export default function SearchPage() {
       active = false;
       controller.abort();
     };
-  }, [query]);
+  }, [query, retryNonce]);
 
   const totalResults = useMemo(() => courses.length + papers.length, [courses.length, papers.length]);
 
@@ -180,12 +182,17 @@ export default function SearchPage() {
         </div>
 
         <form onSubmit={handleSubmit} className="relative max-w-2xl">
-          <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
+          <label htmlFor="global-search-input" className="sr-only">
+            Search courses and papers
+          </label>
+          <Search aria-hidden="true" className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
           <input
+            id="global-search-input"
             type="text"
             value={draftQuery}
             onChange={(event) => setDraftQuery(event.target.value)}
             placeholder="Search for a course, code, or paper..."
+            autoComplete="off"
             className="w-full rounded-xl border border-border bg-card py-3.5 pl-12 pr-28 text-base text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
           />
           <Button type="submit" className="absolute right-2 top-1/2 -translate-y-1/2">
@@ -201,28 +208,35 @@ export default function SearchPage() {
       </header>
 
       {!query ? (
-        <div className="rounded-2xl border border-dashed border-border bg-card/50 px-6 py-12 text-center">
-          <FileSearch className="mx-auto h-12 w-12 text-muted-foreground/70" />
-          <h2 className="mt-4 text-xl font-semibold">Start with a keyword</h2>
-          <p className="mt-2 text-muted-foreground">
-            Try a course name like Computational Thinking, a code like CT, or a paper title.
-          </p>
-        </div>
+        <StatePanel
+          dashed
+          icon={<FileSearch className="h-12 w-12 text-muted-foreground/70" />}
+          title="Start with a keyword"
+          description="Try a course name like Computational Thinking, a code like CT, or a paper title."
+          announce
+        />
       ) : loading ? (
         <SearchSkeleton />
       ) : loadFailed ? (
-        <div className="rounded-2xl border border-destructive/30 bg-destructive/10 px-6 py-12 text-center">
-          <h2 className="text-xl font-semibold">Unable to load results</h2>
-          <p className="mt-2 text-muted-foreground">Please try your search again.</p>
-        </div>
+        <StatePanel
+          tone="error"
+          title="Unable to load results"
+          description="Please try your search again."
+          actions={(
+            <Button onClick={() => setRetryNonce((value) => value + 1)}>
+              Retry
+            </Button>
+          )}
+          announce
+        />
       ) : totalResults === 0 ? (
-        <div className="rounded-2xl border border-dashed border-border bg-card/50 px-6 py-12 text-center">
-          <FileSearch className="mx-auto h-12 w-12 text-muted-foreground/70" />
-          <h2 className="mt-4 text-xl font-semibold">No matches found</h2>
-          <p className="mt-2 text-muted-foreground">
-            Try a broader course name, exam term, or paper title.
-          </p>
-        </div>
+        <StatePanel
+          dashed
+          icon={<FileSearch className="h-12 w-12 text-muted-foreground/70" />}
+          title="No matches found"
+          description="Try a broader course name, exam term, or paper title."
+          announce
+        />
       ) : (
         <div className="space-y-10">
           <SearchSection title="Courses" count={courses.length}>

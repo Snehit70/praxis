@@ -1,9 +1,15 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { createApiFetchHandler } from './app';
 import {
   createApiTestContext,
   seedAliasCourseFixture,
   type ApiTestContext,
 } from './testHelpers';
+
+/** Build a handler over the current test DB that authenticates as `userId`. */
+function authedHandler(userId: string) {
+  return createApiFetchHandler(context.database.sql, { resolveUserId: async () => userId });
+}
 
 let context: ApiTestContext;
 
@@ -227,5 +233,122 @@ describe('Praxis API integration', () => {
 
     expect(response.status).toBe(404);
     expect(json).toEqual({ error: 'Route not found' });
+  });
+});
+
+describe('Praxis API authenticated routes', () => {
+  test('rejects /api/me requests without a verified user', async () => {
+    const response = await context.fetchHandler(new Request('http://local.test/api/me/saved'));
+
+    expect(response.status).toBe(401);
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
+    expect(await response.json()).toEqual({ error: 'Unauthorized' });
+  });
+
+  test('saves, lists, and removes a paper for the signed-in user', async () => {
+    const handler = authedHandler('user_test_1');
+    const base = 'http://local.test/api/me/saved';
+
+    const add = await handler(
+      new Request(base, { method: 'POST', body: JSON.stringify({ paperId: 'variant-2025' }) }),
+    );
+    expect(add.status).toBe(200);
+    expect(await add.json()).toMatchObject({ ok: true, paperId: 'variant-2025' });
+
+    const listed = await handler(new Request(base));
+    const listedJson = (await listed.json()) as Array<{ id: string; uuid: string }>;
+    expect(listed.headers.get('cache-control')).toBe('private, no-store');
+    expect(listedJson).toHaveLength(1);
+    expect(listedJson[0]).toMatchObject({ id: 'variant-2025', uuid: 'paper-2025' });
+
+    const removed = await handler(new Request(`${base}/variant-2025`, { method: 'DELETE' }));
+    expect(removed.status).toBe(200);
+
+    const empty = await handler(new Request(base));
+    expect(await empty.json()).toEqual([]);
+  });
+
+  test('rejects saving an unknown paper id', async () => {
+    const handler = authedHandler('user_test_2');
+    const response = await handler(
+      new Request('http://local.test/api/me/saved', {
+        method: 'POST',
+        body: JSON.stringify({ paperId: 'does-not-exist' }),
+      }),
+    );
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: 'Paper not found' });
+  });
+
+  test('records and lists view history', async () => {
+    const handler = authedHandler('user_test_3');
+    const record = await handler(
+      new Request('http://local.test/api/me/history', {
+        method: 'POST',
+        body: JSON.stringify({ paperId: 'variant-2024' }),
+      }),
+    );
+    expect(record.status).toBe(200);
+
+    const history = await handler(new Request('http://local.test/api/me/history'));
+    const historyJson = (await history.json()) as Array<{ id: string; uuid: string }>;
+    expect(historyJson).toHaveLength(1);
+    expect(historyJson[0]).toMatchObject({ id: 'variant-2024', uuid: 'paper-2024' });
+  });
+
+  test('saves and lists the user course selection with level', async () => {
+    const handler = authedHandler('user_test_courses');
+    const base = 'http://local.test/api/me/courses';
+
+    const empty = await handler(new Request(base));
+    expect(empty.status).toBe(200);
+    expect(await empty.json()).toEqual({ level: null, courseKeys: [] });
+
+    const saved = await handler(
+      new Request(base, {
+        method: 'POST',
+        body: JSON.stringify({
+          level: 'Foundation',
+          courseKeys: ['Computational Thinking', 'Computational Thinking', 'Statistics I'],
+        }),
+      }),
+    );
+    expect(saved.status).toBe(200);
+
+    const listed = await handler(new Request(base));
+    const json = (await listed.json()) as { level: string | null; courseKeys: string[] };
+    expect(json.level).toBe('Foundation');
+    // De-duplicated, both kept.
+    expect([...json.courseKeys].sort()).toEqual(['Computational Thinking', 'Statistics I']);
+
+    // A second save replaces the whole set rather than appending.
+    await handler(
+      new Request(base, {
+        method: 'POST',
+        body: JSON.stringify({ level: 'Diploma in Programming', courseKeys: ['Statistics I'] }),
+      }),
+    );
+    const replaced = await handler(new Request(base));
+    const replacedJson = (await replaced.json()) as { level: string | null; courseKeys: string[] };
+    expect(replacedJson.level).toBe('Diploma in Programming');
+    expect(replacedJson.courseKeys).toEqual(['Statistics I']);
+  });
+});
+
+describe('Praxis API course catalogue', () => {
+  test('lists every course across exams with paper counts and exam slugs', async () => {
+    const { response, json } = await context.getJson<
+      Array<{ uuid: string; courseName: string; paperCount: number; examSlugs: string[] }>
+    >('/api/courses');
+
+    expect(response.status).toBe(200);
+    expect(json).toHaveLength(1);
+    expect(json[0]).toMatchObject({
+      uuid: 'course-1',
+      courseName: 'Computational Thinking',
+      courseCode: 'CT',
+      paperCount: 2,
+    });
+    expect(json[0]?.examSlugs).toEqual(['quiz1']);
   });
 });

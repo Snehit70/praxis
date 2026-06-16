@@ -1,255 +1,591 @@
-import { ArrowRight, FileText, Code, GraduationCap, Search, BookOpen, Clock, Award } from "lucide-react";
-import { Link, useNavigate } from "react-router-dom";
-import { logger } from "@/lib/logger";
-import { useEffect, useState } from "react";
-import { getDatasetStats, type DatasetStats } from "@/lib/api";
-import { Skeleton } from "@/components/ui/skeleton";
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { useAuth, useUser, UserButton } from '@clerk/clerk-react';
+import { ArrowRight, BookMarked, BookOpen, Clock, Pencil, Plus, Search, X } from 'lucide-react';
 
-export default function HomePage() {
-  const [stats, setStats] = useState<DatasetStats | null>(null);
-  const [searchQuery, setSearchQuery] = useState("");
-  const navigate = useNavigate();
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
+import { StatePanel } from '@/components/ui/state-panel';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { CourseCard } from '@/components/CourseCard';
+import { CourseSelector } from '@/components/CourseSelector';
+import { Reveal } from '@/components/Reveal';
+import { useEnrolledCourses } from '@/hooks/useEnrolledCourses';
+import { useScrollParallax } from '@/hooks/useScrollParallax';
+import { getAllCourses, getHistory, type CatalogueCourse, type HistoryItem } from '@/lib/api';
+import { buildCatalogue, LEVEL_META, type CatalogueEntry } from '@/lib/courseCatalogue';
+import { getDisplayCourseName, LEVEL_ORDER, type CourseLevel } from '@/lib/courseMapping';
+import { getExamSlugFromUuid } from '@/lib/examMapping';
+import { cn } from '@/lib/utils';
+import { logger } from '@/lib/logger';
 
-  useEffect(() => {
-    logger.info('HomePage mounted');
-    const controller = new AbortController();
+/**
+ * Frieren's voice, keyed to the local clock — the measured, slightly dry-warm
+ * register of someone who has walked this road many times and always returns.
+ * One fixed line per part of day (no random quips): calm, won't wear out.
+ */
+function roadLine(date = new Date()): string {
+  const h = date.getHours();
+  if (h >= 5 && h < 12) return 'Early on the road today.';
+  if (h >= 12 && h < 17) return "The road's still here. So are you.";
+  if (h >= 17 && h < 22) return 'Still walking. Good.';
+  return "Late. The road doesn't mind.";
+}
 
-    getDatasetStats({ signal: controller.signal })
-      .then((data) => {
-        setStats(data);
-      })
-      .catch((error) => {
-        if (error instanceof DOMException && error.name === 'AbortError') return;
-        logger.error('Failed to load dataset stats', error);
-      });
+/** Build the in-app paper route for a viewed-history item (mirrors SavedPage). */
+function historyHref(item: HistoryItem): string {
+  const examSlug = getExamSlugFromUuid(item.examUuid);
+  const params = new URLSearchParams();
+  if (item.courseUuid) params.set('course', item.courseUuid);
+  if (examSlug) params.set('exam', examSlug);
+  const suffix = params.toString() ? `?${params.toString()}` : '';
+  return `/paper/${encodeURIComponent(item.uuid)}${suffix}`;
+}
 
-    return () => {
-      controller.abort();
-      logger.debug('HomePage unmounted');
-    };
-  }, []);
+/**
+ * Asset filenames contain spaces / commas / unicode, which break plain ES
+ * imports — resolve them through Vite's glob and look them up by name (same
+ * pattern as the landing page).
+ */
+const assetUrls = import.meta.glob('../assets/*', {
+  eager: true,
+  query: '?url',
+  import: 'default',
+}) as Record<string, string>;
 
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (searchQuery.trim()) {
-      navigate(`/search?q=${encodeURIComponent(searchQuery.trim())}`);
-    }
-  };
+const asset = (name: string): string => {
+  const hit = Object.entries(assetUrls).find(([path]) => path.endsWith('/' + name));
+  return hit?.[1] ?? '';
+};
 
-  const exams = [
-    {
-      slug: 'quiz1',
-      name: 'Quiz 1',
-      description: 'Mid-term assessment covering the first half of each course',
-      icon: FileText,
-      color: 'text-blue-400',
-      bgColor: 'bg-blue-500/10',
-    },
-    {
-      slug: 'quiz2',
-      name: 'Quiz 2',
-      description: 'Mid-term assessment covering the second half of each course',
-      icon: FileText,
-      color: 'text-purple-400',
-      bgColor: 'bg-purple-500/10',
-    },
-    {
-      slug: 'end-term',
-      name: 'End Term',
-      description: 'Comprehensive final exam covering the entire course syllabus',
-      icon: GraduationCap,
-      color: 'text-emerald-400',
-      bgColor: 'bg-emerald-500/10',
-    },
-    {
-      slug: 'oppe',
-      name: 'OPPE',
-      description: 'Online Programming Practical Exam with hands-on coding questions',
-      icon: Code,
-      color: 'text-orange-400',
-      bgColor: 'bg-orange-500/10',
-    },
-  ];
+// Header banner: "the road you return to" — Frieren kneeling in a golden field
+// (Ep.11), web-optimized to webp. Continuity with the landing/sign-in: Himmel
+// handed you off, Frieren is the companion you travel with now. Greeting sits
+// over the open field to the lower-left; CSS object-cover keeps her centered.
+const headerImg = asset('home-road.webp');
+// Empty state: a quiet, contemplative frame inviting the first selection.
+const emptyArt = asset('feature-frieren-pray.jpeg');
+// Page backdrop: the Ep.18 First-Class Mage Exam frame held behind the whole
+// dashboard — the test ahead is the ground you stand on. webp, dimmed enough to
+// keep the dark UI legible but present enough to actually read (DESIGN.md).
+const pageBg = asset('home-ground.webp');
 
-  const features = [
-    {
-      icon: BookOpen,
-      title: "Browse by course",
-      description: "Find papers organized by course and program level",
-    },
-    {
-      icon: Clock,
-      title: "Practice anytime",
-      description: "Access questions with instant answer feedback",
-    },
-    {
-      icon: Award,
-      title: "Track progress",
-      description: "See your score and review correct answers",
-    },
-  ];
+/** Inline `--rise-i` style so an element takes its place in the stagger cascade. */
+const rise = (i: number) => ({ '--rise-i': i }) as React.CSSProperties;
 
+/**
+ * Sparse drifting light-motes over the hero field — same atmosphere as the
+ * landing page (continuity: the road you return to). Fixed module-level config
+ * so positions stay stable across renders; the `.praxis-mote` class self-gates
+ * on reduced-motion (index.css).
+ */
+const heroMotes = [
+  { left: '12%', top: '34%', size: 7, dur: 14, delay: 0, op: 0.5 },
+  { left: '26%', top: '58%', size: 5, dur: 17, delay: 2.4, op: 0.4 },
+  { left: '41%', top: '40%', size: 9, dur: 19, delay: 4.8, op: 0.52 },
+  { left: '63%', top: '30%', size: 6, dur: 15, delay: 1.6, op: 0.46 },
+  { left: '78%', top: '52%', size: 8, dur: 18, delay: 3.6, op: 0.48 },
+  { left: '90%', top: '36%', size: 6, dur: 16, delay: 6, op: 0.42 },
+];
+
+/** Frosted-glass control styling for use over imagery (DESIGN.md secondary CTA). */
+const glassControl =
+  'inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 text-sm font-medium text-white backdrop-blur-md transition-colors hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50';
+
+function DashboardSkeleton() {
   return (
-    <div className="space-y-16 pb-8">
-      {/* Hero Section */}
-      <section className="pt-8 md:pt-12">
-        <div className="max-w-2xl">
-          <h1 className="text-4xl font-bold tracking-tight md:text-5xl lg:text-6xl">
-            IITM BS exam archive
-          </h1>
-          <p className="mt-4 text-lg text-muted-foreground leading-relaxed">
-            Practice with{' '}
-            <span className="text-foreground font-medium">
-              {stats?.paperVariantCount?.toLocaleString() ?? '3,800+'}
-            </span>{' '}
-            past papers from{' '}
-            <span className="text-foreground font-medium">
-              {stats?.courseCount ? `${stats.courseCount}+` : '120+'}
-            </span>{' '}
-            courses. Browse by exam type, filter by year, and test yourself with real questions.
-          </p>
-
-          {/* Search Bar */}
-          <form onSubmit={handleSearch} className="mt-8">
-            <div className="relative">
-              <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
-              <input
-                type="text"
-                placeholder="Search for a course..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full rounded-xl border border-border bg-card py-4 pl-12 pr-4 text-base text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
-              />
-              <button
-                type="submit"
-                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
-              >
-                Search
-              </button>
-            </div>
-          </form>
-        </div>
-      </section>
-
-      {/* Exam Types Grid */}
-      <section className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold uppercase tracking-widest text-muted-foreground">
-            Browse by exam type
-          </h2>
-        </div>
-
-        <div className="grid gap-4 sm:grid-cols-2">
-          {exams.map((exam) => {
-            const Icon = exam.icon;
-            return (
-              <Link
-                key={exam.slug}
-                to={`/exam/${exam.slug}`}
-                className="group relative overflow-hidden rounded-xl border border-border bg-card p-6 transition-all hover:border-primary/40 hover:shadow-lg hover:shadow-primary/5"
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex items-start gap-4">
-                    <div className={`flex h-12 w-12 items-center justify-center rounded-xl ${exam.bgColor} ${exam.color} transition-colors`}>
-                      <Icon className="h-6 w-6" />
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-semibold text-foreground group-hover:text-primary transition-colors">
-                        {exam.name}
-                      </h3>
-                      <p className="mt-1 text-sm text-muted-foreground leading-relaxed">
-                        {exam.description}
-                      </p>
-                    </div>
-                  </div>
-                  <ArrowRight className="h-5 w-5 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all flex-shrink-0" />
-                </div>
-              </Link>
-            );
-          })}
-        </div>
-      </section>
-
-      {/* Stats Section */}
-      <section className="rounded-xl border border-border bg-card/50 p-8">
-        <div className="grid gap-8 sm:grid-cols-3">
-          <div className="text-center sm:text-left">
-            {stats ? (
-              <p className="text-3xl font-bold text-foreground tabular-nums">
-                {stats.paperVariantCount?.toLocaleString()}
-              </p>
-            ) : (
-              <Skeleton className="h-9 w-24 mb-1" />
-            )}
-            <p className="mt-1 text-sm text-muted-foreground">Past papers</p>
-          </div>
-          <div className="text-center sm:text-left">
-            {stats ? (
-              <p className="text-3xl font-bold text-foreground tabular-nums">
-                {stats.questionCount?.toLocaleString()}
-              </p>
-            ) : (
-              <Skeleton className="h-9 w-32 mb-1" />
-            )}
-            <p className="mt-1 text-sm text-muted-foreground">Practice questions</p>
-          </div>
-          <div className="text-center sm:text-left">
-            {stats ? (
-              <p className="text-3xl font-bold text-foreground tabular-nums">
-                {stats.courseCount}
-              </p>
-            ) : (
-              <Skeleton className="h-9 w-16 mb-1" />
-            )}
-            <p className="mt-1 text-sm text-muted-foreground">Courses covered</p>
-          </div>
-        </div>
-      </section>
-
-      {/* Features Section */}
-      <section className="space-y-6">
-        <h2 className="text-sm font-semibold uppercase tracking-widest text-muted-foreground">
-          How it works
-        </h2>
-
-        <div className="grid gap-6 sm:grid-cols-3">
-          {features.map((feature, index) => {
-            const Icon = feature.icon;
-            return (
-              <div key={index} className="space-y-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                  <Icon className="h-5 w-5" />
-                </div>
-                <h3 className="font-medium text-foreground">{feature.title}</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  {feature.description}
-                </p>
-              </div>
-            );
-          })}
-        </div>
-      </section>
-
-      {/* Programs Section */}
-      <section className="rounded-xl border border-border bg-card/50 p-8">
-        <h2 className="text-sm font-semibold uppercase tracking-widest text-muted-foreground mb-6">
-          Programs covered
-        </h2>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {[
-            { name: 'Foundation', courses: '8 courses', desc: 'Math, Stats, Programming, English' },
-            { name: 'Diploma in Programming', courses: '6 courses', desc: 'DBMS, PDSA, App Dev, Java' },
-            { name: 'Diploma in Data Science', courses: '7 courses', desc: 'ML, Analytics, Data Management' },
-            { name: 'Degree Level', courses: '40+ electives', desc: 'Advanced topics & specializations' },
-          ].map((program) => (
-            <div key={program.name} className="space-y-1">
-              <p className="font-medium text-foreground">{program.name}</p>
-              <p className="text-sm text-muted-foreground">{program.courses}</p>
-              <p className="text-xs text-muted-foreground/70">{program.desc}</p>
-            </div>
+    <div role="status" aria-live="polite" aria-label="Loading your courses">
+      <Skeleton className="h-[clamp(360px,48vh,520px)] w-full" />
+      <div className="container mx-auto space-y-6 px-4 py-6 md:px-8 md:py-8">
+        <Skeleton className="h-9 w-72" />
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {[1, 2, 3, 4, 5, 6].map((i) => (
+            <Skeleton key={i} className="h-32 w-full rounded-xl" />
           ))}
         </div>
-      </section>
+      </div>
+    </div>
+  );
+}
+
+export default function HomePage() {
+  const { user } = useUser();
+  const { getToken } = useAuth();
+  const {
+    level,
+    courseKeys,
+    enrolled,
+    loading: enrollLoading,
+    failed: enrollFailed,
+    saving,
+    save,
+    reload,
+  } = useEnrolledCourses();
+
+  const [catalogue, setCatalogue] = useState<CatalogueEntry[] | null>(null);
+  const [catalogueFailed, setCatalogueFailed] = useState(false);
+  const [selectorOpen, setSelectorOpen] = useState(false);
+  const [autoOpened, setAutoOpened] = useState(false);
+  const [archiveQuery, setArchiveQuery] = useState('');
+  const [resume, setResume] = useState<HistoryItem | null>(null);
+  const pendingEnrolled = useRef(new Set<string>());
+  // Slow scroll-parallax on the fixed page backdrop (desktop, motion-safe only).
+  const bgParallaxRef = useScrollParallax<HTMLImageElement>();
+
+  // Condensed sticky nav: the hero carries its own top row, so chrome scrolls
+  // away with it. A sentinel just below that row tells us when the in-hero nav
+  // has left the viewport — then we slide a compact bar in to replace it.
+  // Callback ref (not an effect) so the observer attaches the moment the
+  // sentinel mounts — the hero only renders after the catalogue loads, so an
+  // empty-deps effect would fire too early (while the skeleton is up) and miss.
+  const [showStickyNav, setShowStickyNav] = useState(false);
+  const stickyObserver = useRef<IntersectionObserver | null>(null);
+  const heroSentinelRef = useCallback((node: HTMLDivElement | null) => {
+    stickyObserver.current?.disconnect();
+    if (!node || typeof IntersectionObserver === 'undefined') return;
+    const io = new IntersectionObserver(
+      ([entry]) => setShowStickyNav(!(entry?.isIntersecting ?? true)),
+      { threshold: 0 },
+    );
+    io.observe(node);
+    stickyObserver.current = io;
+  }, []);
+
+  useEffect(() => {
+    logger.info('Dashboard mounted');
+    const controller = new AbortController();
+    getAllCourses({ signal: controller.signal })
+      .then((rows: CatalogueCourse[]) => setCatalogue(buildCatalogue(rows)))
+      .catch((error) => {
+        if (error instanceof DOMException && error.name === 'AbortError') return;
+        logger.error('Failed to load course catalogue', error);
+        setCatalogueFailed(true);
+      });
+    return () => controller.abort();
+  }, []);
+
+  // Resume affordance: surface the most recently viewed paper as "where you left
+  // off". Best-effort — a failure just hides the line, never blocks the page.
+  useEffect(() => {
+    let active = true;
+    getHistory(getToken)
+      .then((rows) => {
+        if (!active || rows.length === 0) return;
+        const latest = [...rows].sort(
+          (a, b) => (b.viewedAt ?? '').localeCompare(a.viewedAt ?? ''),
+        )[0];
+        if (latest?.viewedAt) setResume(latest);
+      })
+      .catch((error) => logger.debug('No resume history', error));
+    return () => {
+      active = false;
+    };
+  }, [getToken]);
+
+  // First-time setup: if the catalogue and enrollment have both loaded and the
+  // user has no courses yet, open the selector once.
+  useEffect(() => {
+    if (autoOpened) return;
+    if (catalogue && !enrollLoading && !enrollFailed && courseKeys.length === 0) {
+      setSelectorOpen(true);
+      setAutoOpened(true);
+    }
+  }, [autoOpened, catalogue, enrollLoading, enrollFailed, courseKeys.length]);
+
+  useEffect(() => {
+    if (!saving) pendingEnrolled.current = new Set(courseKeys);
+  }, [courseKeys, saving]);
+
+  const enrolledCourses = useMemo(
+    () => (catalogue ?? []).filter((entry) => enrolled.has(entry.key)),
+    [catalogue, enrolled],
+  );
+
+  const archiveByLevel = useMemo(() => {
+    const q = archiveQuery.trim().toLowerCase();
+    const groups = {} as Record<CourseLevel, CatalogueEntry[]>;
+    for (const lvl of LEVEL_ORDER) groups[lvl] = [];
+    for (const entry of catalogue ?? []) {
+      if (q && !entry.displayName.toLowerCase().includes(q) && !entry.courseCode.toLowerCase().includes(q)) {
+        continue;
+      }
+      groups[entry.level].push(entry);
+    }
+    return groups;
+  }, [catalogue, archiveQuery]);
+
+  const archiveTotal = LEVEL_ORDER.reduce((sum, lvl) => sum + archiveByLevel[lvl].length, 0);
+
+  const handleToggleEnroll = (course: CatalogueEntry) => {
+    const next = new Set(pendingEnrolled.current);
+    if (next.has(course.key)) next.delete(course.key);
+    else next.add(course.key);
+    pendingEnrolled.current = next;
+    void save({ level, courseKeys: Array.from(next) });
+  };
+
+  const handleSaveSelection = async (payload: { level: string | null; courseKeys: string[] }) => {
+    const ok = await save(payload);
+    if (ok) setSelectorOpen(false);
+  };
+
+  if (catalogueFailed) {
+    return (
+      <div className="container mx-auto px-4 py-10 md:px-8">
+        <StatePanel
+          tone="error"
+          title="Couldn't load courses"
+          description="We couldn't reach the course catalogue. Please try again in a moment."
+          actions={<Button onClick={() => window.location.reload()}>Reload</Button>}
+          announce
+        />
+      </div>
+    );
+  }
+
+  if (!catalogue || enrollLoading) {
+    return <DashboardSkeleton />;
+  }
+
+  const greetingName = user?.firstName?.trim();
+
+  return (
+    <div className="relative isolate">
+      {/* Page backdrop — the soft Ep.18 exam frame held faintly behind the
+          dashboard as cinematic ground. Dimmed hard (near-solid by the lower
+          half) so it's only a whisper of warmth, never a prominent blob. The
+          frame drifts on a slow scroll parallax (desktop only) for depth, and a
+          warm bleed carries the hero's golden field down so hero + dashboard
+          read as one continuous plane rather than two stacked rooms. */}
+      <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+        <img
+          ref={bgParallaxRef}
+          src={pageBg}
+          alt=""
+          className="absolute inset-x-0 -top-[15%] h-[130%] w-full object-cover object-center will-change-transform"
+          style={{ transform: 'translate3d(0, var(--scroll-shift, 0px), 0)' }}
+        />
+        <div className="absolute inset-0 bg-gradient-to-b from-background/55 via-background/72 to-background/90" />
+        {/* Vignette — transparent over the upper-centre (keeps the warm bleed +
+            parallax frame readable), deepening to solid toward the edges and
+            bottom where the backdrop's bright orange patch otherwise peeks
+            through between the lower cards. Frames the content, settles the blob. */}
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              'radial-gradient(125% 85% at 50% 16%, transparent 44%, var(--background) 100%)',
+          }}
+        />
+        {/* Warm bleed — `screen` blend so the hero's gold *adds* light to the
+            backdrop instead of laying a translucent brown film over it (which is
+            what normal compositing of warm-over-dark produces). One clean peak
+            just below the seam, fading out by the lower page. */}
+        <div
+          className="absolute inset-0 mix-blend-screen"
+          style={{
+            background:
+              'linear-gradient(to bottom, rgba(214,178,110,0) 8%, rgba(214,178,110,0.30) 40%, rgba(214,178,110,0.12) 60%, rgba(214,178,110,0) 82%)',
+          }}
+        />
+      </div>
+
+      {/* Condensed sticky nav — replaces the in-hero chrome once it scrolls off.
+          Slides + fades in; hidden (and inert) while you're up in the hero. */}
+      <div
+        className={cn(
+          'fixed inset-x-0 top-0 z-50 border-b border-border bg-background/90 backdrop-blur-md transition-all duration-300 ease-out',
+          showStickyNav
+            ? 'translate-y-0 opacity-100'
+            : 'pointer-events-none -translate-y-full opacity-0 motion-reduce:translate-y-0',
+        )}
+      >
+        <div className="container mx-auto flex h-14 items-center px-4 md:px-8">
+          <Link to="/" className="flex items-center gap-2.5 transition-opacity hover:opacity-80">
+            <BookOpen className="h-5 w-5 text-primary" />
+            <span className="text-base font-semibold tracking-tight">Praxis</span>
+          </Link>
+          <div className="ml-auto flex items-center gap-2">
+            <Link
+              to="/saved"
+              className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+            >
+              <BookMarked className="h-4 w-4" />
+              <span className="hidden sm:inline">Bookmarks</span>
+            </Link>
+            <button
+              type="button"
+              onClick={() => setSelectorOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+            >
+              <Pencil className="h-4 w-4" />
+              <span className="hidden sm:inline">Companions</span>
+            </button>
+            <UserButton afterSignOutUrl="/" />
+          </div>
+        </div>
+      </div>
+
+      <Tabs defaultValue="mine">
+        {/* ── Full-bleed cinematic hero — absorbs the top nav (no separate bar):
+            Praxis + account sit over the image, greeting lower-left, the section
+            tabs lower-right, so the whole page stays compact. ── */}
+        <header className="relative w-full overflow-hidden">
+          <div className="relative h-[clamp(360px,48vh,520px)] w-full">
+            <img
+              src={headerImg}
+              alt=""
+              aria-hidden="true"
+              fetchPriority="high"
+              className="animate-kenburns absolute inset-0 h-full w-full object-cover object-center"
+            />
+            {/* Legibility scrims: strong floor (greeting + tabs), top (nav), left. */}
+            <div className="absolute inset-0 bg-gradient-to-t from-background via-background/20 to-transparent" />
+            <div className="absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-background/75 to-transparent" />
+            <div className="absolute inset-0 bg-gradient-to-r from-background/55 via-transparent to-transparent" />
+
+            {/* Drifting light-motes — quiet atmosphere over the field (continuity
+                with the landing hero). Self-gates on reduced-motion. */}
+            <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
+              {heroMotes.map((m, i) => (
+                <span
+                  key={i}
+                  className="praxis-mote absolute rounded-full bg-white blur-[1px]"
+                  style={{
+                    left: m.left,
+                    top: m.top,
+                    width: m.size,
+                    height: m.size,
+                    ['--mote-opacity' as string]: m.op,
+                    animation: `praxis-mote ${m.dur}s ease-in-out ${m.delay}s infinite`,
+                  }}
+                />
+              ))}
+            </div>
+
+            {/* Top row — Praxis left, actions + account right (the old navbar). */}
+            <div className="absolute inset-x-0 top-0 z-20 flex items-center justify-between px-4 py-4 md:px-8 md:py-5">
+              <Link
+                to="/"
+                className="flex items-center gap-2.5 text-foreground transition-opacity hover:opacity-80 [text-shadow:0_1px_10px_rgba(0,0,0,0.7)]"
+              >
+                <BookOpen className="h-5 w-5 text-primary" />
+                <span className="text-lg font-semibold tracking-tight">Praxis</span>
+              </Link>
+              <div className="flex items-center gap-2">
+                <Link to="/saved" className={glassControl}>
+                  <BookMarked className="h-4 w-4" />
+                  <span className="hidden sm:inline">Bookmarks</span>
+                </Link>
+                <button type="button" onClick={() => setSelectorOpen(true)} className={glassControl}>
+                  <Pencil className="h-4 w-4" />
+                  <span className="hidden sm:inline">Companions</span>
+                </button>
+                <UserButton afterSignOutUrl="/" />
+              </div>
+            </div>
+
+            {/* Sentinel just below the hero's nav row: once it scrolls out of
+                view, the condensed sticky bar takes over. */}
+            <div ref={heroSentinelRef} aria-hidden="true" className="absolute left-0 top-16 h-px w-px" />
+
+            {/* Bottom cluster — greeting (left) + section tabs (right). */}
+            <div className="absolute inset-x-0 bottom-0 z-10 flex flex-col gap-4 p-5 md:flex-row md:items-end md:justify-between md:p-8">
+              <Reveal className="max-w-xl">
+                <h1 style={rise(0)} className="praxis-rise font-display text-3xl font-normal leading-[1.05] tracking-tight text-foreground sm:text-4xl md:text-5xl">
+                  {greetingName ? `There you are, ${greetingName}` : 'There you are'}
+                </h1>
+                {/* Frieren's voice — keyed to the time of day (calm, fixed lines). */}
+                <p style={rise(1)} className="praxis-rise mt-1.5 font-display text-lg italic leading-snug text-foreground/85 sm:text-xl">
+                  {roadLine()}
+                </p>
+                {/* Resume — pick up the last paper you were on, if any. */}
+                {resume && (
+                  <Link
+                    to={historyHref(resume)}
+                    style={rise(2)}
+                    className="praxis-rise group mt-2 inline-flex items-center gap-1.5 text-sm"
+                  >
+                    <span className="font-medium text-primary transition-colors group-hover:text-primary/80">
+                      Last on the road
+                    </span>
+                    <ArrowRight className="h-3.5 w-3.5 text-primary transition-transform group-hover:translate-x-0.5" />
+                    <span className="text-foreground/85">
+                      {getDisplayCourseName(resume.courseName)}
+                      {resume.examName ? ` · ${resume.examName}` : ''}
+                    </span>
+                  </Link>
+                )}
+              </Reveal>
+
+              <TabsList className="inline-flex gap-1 self-start rounded-lg border border-white/15 bg-black/35 p-1 backdrop-blur-md md:self-auto">
+                <TabsTrigger
+                  value="mine"
+                  className="rounded-md px-4 py-1.5 text-sm text-white/80 transition-colors data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+                >
+                  Companions
+                </TabsTrigger>
+                <TabsTrigger
+                  value="archive"
+                  className="rounded-md px-4 py-1.5 text-sm text-white/80 transition-colors data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+                >
+                  The World
+                </TabsTrigger>
+              </TabsList>
+            </div>
+          </div>
+        </header>
+
+        {/* ── Content below the hero ── */}
+        <div className="container mx-auto px-4 py-6 md:px-8 md:py-8">
+
+        {/* Companions — the courses you travel with this term. */}
+        <TabsContent value="mine" className="space-y-4">
+          {enrolledCourses.length > 0 && (
+            <p className="text-sm text-muted-foreground">
+              The courses you&apos;re taking this term.
+            </p>
+          )}
+          {enrolledCourses.length === 0 ? (
+            <div className="relative flex min-h-[380px] overflow-hidden rounded-2xl border border-border md:min-h-[440px]">
+              <img
+                src={emptyArt}
+                alt=""
+                aria-hidden="true"
+                className="absolute inset-0 h-full w-full object-cover object-center"
+              />
+              {/* Dark on the text side, image breathing on the right. */}
+              <div className="absolute inset-0 bg-gradient-to-r from-background via-background/90 to-background/30" />
+              <div className="absolute inset-0 bg-gradient-to-t from-background/60 to-transparent" />
+              <div className="relative z-10 flex max-w-lg flex-col justify-center p-8 md:p-12">
+                <h2 className="font-display text-3xl font-normal tracking-tight text-foreground md:text-4xl">
+                  Your journey starts here
+                </h2>
+                <p className="mt-3 max-w-md text-pretty leading-relaxed text-muted-foreground">
+                  Add the courses you&apos;re taking this term and they&apos;ll live here for quick
+                  practice — sit any past paper, review it, and arrive at the exam already ready.
+                </p>
+                <div className="mt-6">
+                  <Button size="lg" onClick={() => setSelectorOpen(true)} className="gap-1.5 shadow-lg shadow-primary/20">
+                    <Plus className="h-4 w-4" />
+                    Choose your courses
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <Reveal className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {/* Companions tiles are clean — no per-tile toggle; manage via the Companions button. */}
+              {enrolledCourses.map((course, i) => (
+                <CourseCard key={course.key} course={course} enrolled revealIndex={i} />
+              ))}
+            </Reveal>
+          )}
+        </TabsContent>
+
+        {/* The World — every course in the archive; roads not yet walked. */}
+        <TabsContent value="archive" className="space-y-6">
+          <p className="text-sm text-muted-foreground">
+            Every course in the archive — roads you haven&apos;t walked yet.
+          </p>
+          <div className="relative max-w-md">
+            <Search aria-hidden="true" className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="text"
+              value={archiveQuery}
+              onChange={(event) => setArchiveQuery(event.target.value)}
+              placeholder="Search all courses..."
+              autoComplete="off"
+              aria-label="Search all courses"
+              className="w-full rounded-lg border border-border bg-card py-2.5 pl-10 pr-9 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+            />
+            {archiveQuery && (
+              <button
+                type="button"
+                onClick={() => setArchiveQuery('')}
+                aria-label="Clear search"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+
+          {archiveTotal === 0 ? (
+            <StatePanel
+              dashed
+              icon={<Search className="h-10 w-10 text-muted-foreground/70" />}
+              title="No courses match"
+              description="Try a broader course name or code."
+            />
+          ) : (
+            <div className="space-y-10">
+              {LEVEL_ORDER.map((lvl) => {
+                const entries = archiveByLevel[lvl];
+                if (entries.length === 0) return null;
+                const meta = LEVEL_META[lvl];
+                return (
+                  <section key={lvl} className={`border-l-4 ${meta.accent} pl-4 md:pl-6`}>
+                    <Reveal>
+                      {/* Header leads its grid in the reveal cascade. */}
+                      <div style={rise(0)} className="praxis-rise mb-4 flex items-center gap-3">
+                        <img
+                          src={meta.image}
+                          alt=""
+                          aria-hidden="true"
+                          loading="lazy"
+                          className={cn('h-9 w-9 rounded-lg object-cover object-top ring-2', meta.ring)}
+                        />
+                        <div>
+                          <h2 className={cn('text-lg font-semibold', meta.text)}>{meta.label}</h2>
+                          <p className="text-sm text-muted-foreground">
+                            {entries.length} {entries.length === 1 ? 'course' : 'courses'}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                        {entries.map((course, i) => (
+                          <CourseCard
+                            key={course.key}
+                            course={course}
+                            enrolled={enrolled.has(course.key)}
+                            onToggleEnroll={handleToggleEnroll}
+                            revealIndex={i + 1}
+                          />
+                        ))}
+                      </div>
+                    </Reveal>
+                  </section>
+                );
+              })}
+            </div>
+          )}
+        </TabsContent>
+        </div>
+      </Tabs>
+
+      {enrollFailed && (
+        <p className="container mx-auto px-4 pb-6 text-sm text-muted-foreground md:px-8" role="status">
+          <Clock className="mr-1 inline h-3.5 w-3.5" />
+          We couldn&apos;t load your saved courses.{' '}
+          <button type="button" onClick={reload} className="text-primary hover:underline">
+            Retry
+          </button>
+        </p>
+      )}
+
+      {selectorOpen && (
+        <CourseSelector
+          open={selectorOpen}
+          onOpenChange={setSelectorOpen}
+          catalogue={catalogue}
+          initialLevel={level}
+          initialCourseKeys={courseKeys}
+          saving={saving}
+          mandatory={courseKeys.length === 0 && !enrollFailed}
+          onSave={handleSaveSelection}
+        />
+      )}
     </div>
   );
 }

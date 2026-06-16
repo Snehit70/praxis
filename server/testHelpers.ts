@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { createApiFetchHandler } from './app';
+import { createApiFetchHandler, type ApiHandlerOptions } from './app';
 import { createDbClient, type DbClient } from './db';
 import { ensureSchema } from './schema';
 
@@ -62,10 +62,12 @@ export async function createIsolatedTestDatabase(): Promise<IsolatedTestDatabase
   };
 }
 
-export async function createApiTestContext(): Promise<ApiTestContext> {
+export async function createApiTestContext(
+  options: ApiHandlerOptions = {},
+): Promise<ApiTestContext> {
   const database = await createIsolatedTestDatabase();
   await seedIntegrationFixture(database.sql);
-  const fetchHandler = createApiFetchHandler(database.sql);
+  const fetchHandler = createApiFetchHandler(database.sql, options);
 
   return {
     database,

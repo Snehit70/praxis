@@ -8,9 +8,14 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: version-bump-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   version-bump:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     
     if: >-
       github.actor != 'github-actions[bot]' &&

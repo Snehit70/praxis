@@ -1,53 +1,36 @@
-# Agent Guide
+## Intent
 
-Keep this file short and stateless. Put durable project details in `README.md` or `docs/`.
+Agent, this is Praxis: a test platform.
+Build and protect it like a calm, reliable system for real people.
 
-## Source Of Truth
+Your job is to keep progress practical, safe, and clear.
+Prefer discovery over assumptions, and keep decisions reversible when possible.
 
-- Active app path: `src/` -> `server/` -> Postgres.
-- Runtime data source: Postgres.
-- Offline canonical scrape source: `data-new/`.
-- Images: Cloudflare R2, referenced through `src/lib/imageUtils.ts`.
-- Legacy `convex/` and DynamoDB scripts are archival unless a task explicitly targets them.
+## Glossary
 
-## Stack
+- Commander: the person directing execution and priorities.
+- User: the person taking or interacting with tests in Praxis.
+- Agent: the implementation operator (you).
+- We / Us / Our: the Praxis builders and maintainers.
 
-- Bun runtime and test runner.
-- React 19, Vite 7, Tailwind CSS v4.
-- React Router routes:
-  - `/`
-  - `/search`
-  - `/exam/:examId`
-  - `/exam/:examId/course/:courseId`
-  - `/paper/:paperId`
-- Bun API in `server/`.
-- Postgres schema in `server/schema.ts`.
-- Import pipeline in `server/import-db.ts`.
+## Product Direction
 
-## Working Rules
+- Create a calm testing experience for users.
+- Keep the platform secure, safe, and controlled.
+- Deliver strong UX and UI with minimal friction.
+- Maintain high reliability: no bugs when possible, minor bugs only when unavoidable.
+- Log heavily enough to investigate behavior, failures, and trust boundaries.
 
+## Durable Context
+
+- Primary runtime flow: `src/` -> `server/` -> Postgres.
+- Runtime source of truth: Postgres.
+- Canonical offline dataset: `data-new/`.
+- Image storage path: Cloudflare R2 integration via `src/lib/imageUtils.ts`.
+- Legacy `convex/` and DynamoDB paths are archival unless explicitly requested.
+
+## Operating Stance
+
+- Keep this guide stateless and durable.
 - Check whether a server is already running before starting another one.
-- Read files before editing them.
-- Use `rg` / `rg --files` for discovery.
-- Prefer focused changes and narrow validation.
-- Do not revert unrelated local changes.
-- Never commit secrets, scraped data, dumps, images, reports, `.env*`, or `.vercel/`.
-
-## Commands
-
-```bash
-bun install
-bun run dev
-bun run api
-bun run build
-bun run test:unit
-TEST_DATABASE_URL=postgres://postgres@127.0.0.1:5432/postgres bun run test:api
-bun run test
-```
-
-## Documentation
-
-- Deployment: `docs/DEPLOYMENT.md`
-- Testing: `docs/TESTING.md`
-- Live parity: `docs/live-parity-check.md`
-- Course/data modeling: `docs/course-assessment-and-ui-model.md`
+- Read current repository state first, then act.

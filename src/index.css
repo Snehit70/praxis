@@ -2,6 +2,7 @@
 
 @theme {
   --font-body: var(--body-font);
+  --font-display: var(--display-font);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -26,7 +27,8 @@
 @layer base {
   /* Light theme (secondary) */
   :root {
-    --body-font: "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    --body-font: "Geist Variable", "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    --display-font: "Instrument Serif", Georgia, "Times New Roman", serif;
     --background: #fcfbf8;
     --foreground: rgba(0, 0, 0, 0.92);
     --card: #ffffff;
@@ -104,4 +106,812 @@
   ::selection {
     background: rgba(98, 174, 240, 0.2);
   }
+}
+
+/* Slow Ken-Burns drift for hero background imagery. Reduced-motion safe:
+   the animation only applies when the user has no motion preference set. */
+@keyframes kenburns {
+  from {
+    transform: scale(1);
+  }
+  to {
+    transform: scale(1.08);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .animate-kenburns {
+    animation: kenburns 18s ease-out forwards;
+    will-change: transform;
+  }
+}
+
+/* Drifting petal / light-mote float for the parallax hero foreground.
+   Individual motes loop this with staggered durations/delays; the layer they
+   live in is separately parallaxed by pointer, so the two motions compose. */
+@keyframes praxis-mote {
+  0% {
+    transform: translateY(6px) translateX(0);
+    opacity: 0;
+  }
+  12% {
+    opacity: var(--mote-opacity, 0.55);
+  }
+  88% {
+    opacity: var(--mote-opacity, 0.55);
+  }
+  100% {
+    transform: translateY(-42px) translateX(10px);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .praxis-mote {
+    animation: none !important;
+    opacity: 0 !important;
+  }
+}
+
+/* Entrance reveal — elements tagged `.praxis-rise` start hidden and animate up
+   once an ancestor gains `.reveal-on` (set by useRevealOnView on scroll-into-
+   view, or immediately for above-the-fold containers). Per-element cascade
+   comes from `--rise-delay`. Lively calibration: 22px travel, expo-out landing. */
+.praxis-rise {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .reveal-on .praxis-rise {
+    animation: praxis-rise 0.62s cubic-bezier(0.16, 1, 0.3, 1) both;
+    /* Cascade = step × this element's index. --rise-step shrinks on small/touch
+       screens (mobile auto-trim) so deep lists never feel sluggish. */
+    animation-delay: calc(var(--rise-step, 70ms) * var(--rise-i, 0));
+  }
+}
+
+/* Mobile auto-trim: tighter cascade on small or coarse-pointer screens. */
+@media (max-width: 767px), (pointer: coarse) {
+  :root {
+    --rise-step: 32ms;
+  }
+}
+
+@keyframes praxis-rise {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 22px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Reduced motion: never leave content stuck invisible — just show it. */
+@media (prefers-reduced-motion: reduce) {
+  .praxis-rise {
+    opacity: 1;
+  }
+}
+
+/* CourseSelector trading-card (the deck). `--lvl` is the per-level accent hex.
+   At rest: frosted glass with a top-light rim + a pointer-tracked glare. When
+   charged (selected) it takes a level-colour border + drop-glow. */
+.tcard {
+  transform: perspective(1000px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
+  transform-style: preserve-3d;
+}
+
+.tcard::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 2;
+  /* frosted top-light rim */
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.16), transparent 28%);
+}
+
+.tcard-glare {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 30;
+  opacity: 0;
+  mix-blend-mode: screen;
+  background: radial-gradient(
+    circle at var(--gx, 50%) var(--gy, 50%),
+    rgba(255, 255, 255, 0.3),
+    transparent 45%
+  );
+}
+
+.tcard[data-charged='true'] {
+  border-color: color-mix(in srgb, var(--lvl, #62aef0) 70%, transparent);
+  box-shadow: 0 0 34px -6px color-mix(in srgb, var(--lvl, #62aef0) 62%, transparent);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .tcard {
+    transition: transform 0.25s ease-out, box-shadow 0.3s ease-out, border-color 0.3s ease-out;
+  }
+  .tcard-wrap:hover .tcard-glare {
+    opacity: 0.9;
+  }
+}
+
+/* Deck card change — the new card slides in from the side of the flip (next =
+   from the right, prev = from the left) so navigation is unmistakable even when
+   neighbouring cards share the same art. */
+@keyframes deck-in-next {
+  from {
+    opacity: 0;
+    transform: translate3d(42px, 0, 0) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes deck-in-prev {
+  from {
+    opacity: 0;
+    transform: translate3d(-42px, 0, 0) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes deck-in-fade {
+  from {
+    opacity: 0.15;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .deck-mode-next {
+    animation: deck-in-next 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .deck-mode-prev {
+    animation: deck-in-prev 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+}
+
+/* Reduced motion: keep a quick fade so the card change is still perceptible. */
+@media (prefers-reduced-motion: reduce) {
+  .deck-mode-next,
+  .deck-mode-prev {
+    animation: deck-in-fade 0.2s ease-out both;
+  }
+}
+
+/* ── Slot-machine opening ──────────────────────────────────────────────────
+   A long reel of ornate card-backs streams left→right (one at a time, motion-
+   blurred while fast), eases smoothly to a stop, then fades — while the real
+   card (DeckSlot 'reveal') sits behind showing a matching ornate back and,
+   after a brief rest, does one continuous 3D flip to its real face. */
+
+/* Shared ornate card-back look (reel backs + the flip's front face). */
+.wish-reel-back,
+.deck-flip-back {
+  border-radius: 16px;
+  border: 1px solid rgba(214, 178, 110, 0.55);
+  background:
+    radial-gradient(circle at 50% 38%, color-mix(in srgb, var(--lvl, #62aef0) 26%, transparent), transparent 62%),
+    repeating-linear-gradient(135deg, rgba(214, 178, 110, 0.05) 0 8px, transparent 8px 18px),
+    linear-gradient(160deg, #2c2823, #131009);
+  box-shadow:
+    inset 0 0 0 1px rgba(214, 178, 110, 0.18),
+    inset 0 0 0 4px color-mix(in srgb, var(--lvl, #62aef0) 16%, transparent),
+    inset 0 0 38px -8px color-mix(in srgb, var(--lvl, #62aef0) 55%, transparent),
+    0 16px 38px -12px rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Arcane magic-circle sigil — the card-back motif (see ArcaneSigil.tsx). */
+.arcane-sigil {
+  width: 64%;
+  max-width: 210px;
+  aspect-ratio: 1;
+  filter: drop-shadow(0 0 9px color-mix(in srgb, var(--lvl, #62aef0) 50%, transparent));
+}
+
+.arcane-spin,
+.arcane-spin-rev {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+@keyframes arcane-rot {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .arcane-spin {
+    animation: arcane-rot 30s linear infinite;
+  }
+  .arcane-spin-rev {
+    animation: arcane-rot 42s linear infinite reverse;
+  }
+}
+
+/* 'Tap to summon' hint gently pulses to invite the tap. */
+@keyframes summon-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 0.95; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .summon-hint {
+    animation: summon-pulse 2.2s ease-in-out infinite;
+  }
+}
+
+.wish-stage {
+  position: relative;
+  width: clamp(256px, 68vw, 308px);
+  height: clamp(348px, 54vh, 452px);
+}
+
+.wish-reel-row {
+  --cw: clamp(256px, 68vw, 308px);
+  --gap: 52px;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  display: flex;
+  gap: var(--gap);
+}
+
+.wish-reel-back {
+  width: clamp(256px, 68vw, 308px);
+  height: 100%;
+  flex: none;
+}
+
+/* Streams ~6 cards' worth past, eases to centre, motion-blur sharpens, fades. */
+@keyframes wish-reel {
+  0% {
+    opacity: 1;
+    filter: blur(5px);
+    transform: translateX(-50%) translateX(calc(-6 * (var(--cw) + var(--gap))));
+  }
+  60% {
+    filter: blur(2px);
+  }
+  88% {
+    opacity: 1;
+    filter: blur(0);
+  }
+  100% {
+    opacity: 0;
+    filter: blur(0);
+    transform: translateX(-50%) translateX(0);
+  }
+}
+
+/* The real card's 3D flip: shows an ornate back, rests, then rotates 180° to
+   reveal its real face. Delay covers the reel run (~1.3s) + a brief rest. */
+/* The card stays hidden behind the reel and fades in only as the reel lands,
+   so its static back never peeks through the gaps between moving reel cards. */
+.deck-reveal-appear {
+  opacity: 0;
+  animation: deck-appear 0.2s ease-out 1.2s forwards;
+}
+
+@keyframes deck-appear {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.deck-flip {
+  position: relative;
+  width: clamp(256px, 68vw, 308px);
+  height: clamp(348px, 54vh, 452px);
+  transform-style: preserve-3d;
+}
+
+.deck-flip-face {
+  position: absolute;
+  inset: 0;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+.deck-flip-front {
+  transform: rotateY(180deg);
+}
+
+@keyframes deck-flip-rotate {
+  from {
+    transform: perspective(1300px) rotateY(0deg);
+  }
+  to {
+    transform: perspective(1300px) rotateY(180deg);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .wish-reel-row {
+    animation: wish-reel 1.3s cubic-bezier(0.12, 0.62, 0.12, 1) both;
+  }
+  .deck-flip {
+    animation: deck-flip-rotate 0.5s cubic-bezier(0.4, 0, 0.2, 1) 1.5s both;
+  }
+}
+
+/* Ornate 5★ frame — an element-tinted inset border with a gold inner hairline
+   and an inner element glow, plus gold filigree corner brackets. */
+.tcard-frame {
+  position: absolute;
+  inset: 5px;
+  border-radius: 14px;
+  pointer-events: none;
+  z-index: 20;
+  border: 1px solid color-mix(in srgb, var(--lvl, #62aef0) 50%, transparent);
+  box-shadow:
+    inset 0 0 0 1px rgba(214, 178, 110, 0.22),
+    inset 0 0 26px -10px color-mix(in srgb, var(--lvl, #62aef0) 60%, transparent);
+}
+
+.tcard-corner {
+  position: absolute;
+  z-index: 21;
+  width: 16px;
+  height: 16px;
+  pointer-events: none;
+  border-color: rgba(214, 178, 110, 0.85);
+}
+
+.tcard-corner-tl {
+  top: 7px;
+  left: 7px;
+  border-top: 2px solid;
+  border-left: 2px solid;
+  border-top-left-radius: 9px;
+}
+.tcard-corner-tr {
+  top: 7px;
+  right: 7px;
+  border-top: 2px solid;
+  border-right: 2px solid;
+  border-top-right-radius: 9px;
+}
+.tcard-corner-bl {
+  bottom: 7px;
+  left: 7px;
+  border-bottom: 2px solid;
+  border-left: 2px solid;
+  border-bottom-left-radius: 9px;
+}
+.tcard-corner-br {
+  bottom: 7px;
+  right: 7px;
+  border-bottom: 2px solid;
+  border-right: 2px solid;
+  border-bottom-right-radius: 9px;
+}
+
+.tcard[data-charged='true'] .tcard-frame {
+  border-color: color-mix(in srgb, var(--lvl, #62aef0) 80%, transparent);
+  box-shadow:
+    inset 0 0 0 1px rgba(214, 178, 110, 0.4),
+    inset 0 0 30px -8px color-mix(in srgb, var(--lvl, #62aef0) 75%, transparent);
+}
+
+/* Holographic foil — confined to the art window. Charge unlocks it: invisible
+   at rest, a faint hint on hover, full bloom when charged. Shimmer tracks the
+   pointer via --gx/--gy. */
+.tcard-foil {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  mix-blend-mode: color-dodge;
+  z-index: 1;
+  background: linear-gradient(
+    115deg,
+    transparent 26%,
+    hsla(185, 95%, 70%, 0.5) 40%,
+    hsla(280, 90%, 72%, 0.5) 50%,
+    hsla(330, 95%, 70%, 0.5) 60%,
+    transparent 76%
+  );
+  background-size: 220% 220%;
+  background-position: var(--gx, 50%) var(--gy, 50%);
+}
+
+.tcard-wrap:hover .tcard-foil {
+  opacity: 0.12;
+}
+
+.tcard[data-charged='true'] .tcard-foil {
+  opacity: 0.5;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .tcard-foil {
+    transition: opacity 0.5s ease-out;
+  }
+}
+
+/* Charge ring — a level-colour arc races the card's border once on charge. */
+.charge-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 40;
+  padding: 2px;
+  opacity: 0;
+  background: conic-gradient(from 0deg, transparent 0deg, var(--lvl, #62aef0) 40deg, transparent 95deg);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+
+/* Charge flare — a bright sweep across the whole card once on charge. */
+.charge-flare {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 40;
+  opacity: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 38%,
+    rgba(255, 255, 255, 0.55) 50%,
+    transparent 62%
+  );
+}
+
+@keyframes charge-spin {
+  0% {
+    opacity: 1;
+    transform: rotate(0turn);
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: rotate(1turn);
+  }
+}
+
+@keyframes charge-flare {
+  0% {
+    opacity: 1;
+    transform: translateX(-120%);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(120%);
+  }
+}
+
+@keyframes tcard-pulse {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.045);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* Summon burst — a flash of element light blooms from the card on summon. */
+.summon-burst {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 35;
+  opacity: 0;
+  mix-blend-mode: screen;
+  background: radial-gradient(
+    circle at 50% 46%,
+    color-mix(in srgb, var(--lvl, #62aef0) 75%, white) 0%,
+    color-mix(in srgb, var(--lvl, #62aef0) 30%, transparent) 35%,
+    transparent 60%
+  );
+}
+
+@keyframes summon-burst {
+  0% {
+    opacity: 0;
+    transform: scale(0.55);
+  }
+  28% {
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.5);
+  }
+}
+
+@keyframes star-ignite {
+  0% {
+    opacity: 0.25;
+    transform: scale(0.5) rotate(-25deg);
+  }
+  60% {
+    transform: scale(1.3) rotate(0deg);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .tcard-wrap[data-charging='true'] {
+    animation: tcard-pulse 0.55s ease-out;
+  }
+  .tcard-wrap[data-charging='true'] .charge-ring {
+    animation: charge-spin 0.7s cubic-bezier(0.3, 0.7, 0.2, 1) both;
+  }
+  .tcard-wrap[data-charging='true'] .charge-flare {
+    animation: charge-flare 0.6s ease-out both;
+  }
+  .tcard-wrap[data-charging='true'] .summon-burst {
+    animation: summon-burst 0.62s ease-out both;
+  }
+  /* Stars ignite left→right (per-star delay set inline). */
+  .tcard-wrap[data-charging='true'] .tcard-star {
+    animation: star-ignite 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  }
+}
+
+/* ── CoursePage paper deck ─────────────────────────────────────────────────
+   Portrait paper cards deal into view as their bundle scrolls in: each card
+   rises and tilts up off the table, with a per-card stagger (animationDelay set
+   inline). The class is only applied when motion is allowed; before its section
+   is revealed the card is held hidden, then it animates in once. */
+@keyframes paper-deal {
+  from {
+    opacity: 0;
+    transform: perspective(900px) translateY(34px) rotateX(-16deg) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: perspective(900px) translateY(0) rotateX(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .paper-deal {
+    opacity: 0;
+    transform-origin: center bottom;
+  }
+  [data-revealed='true'] .paper-deal {
+    animation: paper-deal 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+}
+
+/* "New" badge — a slow gold breathing glow. */
+@keyframes paper-new-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(252, 211, 77, 0);
+  }
+  50% {
+    box-shadow: 0 0 12px 0 rgba(252, 211, 77, 0.45);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .paper-new {
+    animation: paper-new-pulse 2.4s ease-in-out infinite;
+  }
+}
+
+/* ============================================================
+   Exam (PaperPage) — "restrained arcane". The deck's gold +
+   per-level (--lvl) language carried inside the card, but kept
+   calm: framed surfaces and accents, no foil/glare near the
+   question, spectacle reserved for submit + results.
+   ============================================================ */
+
+/* Tome surface for the question — warm card with a gold hairline and
+   a faint level-tinted inner glow. Legibility first: text stays high
+   contrast over the dark gradient. */
+.exam-tome {
+  background:
+    radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--lvl, #62aef0) 12%, transparent), transparent 60%),
+    linear-gradient(to bottom, #2b2620, #211c16 62%, #181410);
+  box-shadow:
+    inset 0 0 0 1px rgba(214, 178, 110, 0.14),
+    inset 0 0 44px -18px color-mix(in srgb, var(--lvl, #62aef0) 60%, transparent);
+}
+
+/* The deck's ornate frame, calmed for the exam: softer level border + glow so
+   a long sitting stays restful. Scoped to .exam-tome so the deck is untouched. */
+.exam-tome .tcard-frame {
+  border-color: color-mix(in srgb, var(--lvl, #62aef0) 32%, transparent);
+  box-shadow:
+    inset 0 0 0 1px rgba(214, 178, 110, 0.08),
+    inset 0 0 24px -14px color-mix(in srgb, var(--lvl, #62aef0) 45%, transparent);
+}
+
+/* Framed panel (navigator, pager, clock) — gold hairline + level tint. */
+.exam-panel {
+  border: 1px solid color-mix(in srgb, var(--lvl, #62aef0) 30%, rgba(214, 178, 110, 0.18));
+  box-shadow: inset 0 0 0 1px rgba(214, 178, 110, 0.08);
+}
+
+/* Gold-framed exam clock; turns urgent (and pulses) under low time. */
+@keyframes exam-clock-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(248, 113, 113, 0); }
+  50% { box-shadow: 0 0 14px 0 rgba(248, 113, 113, 0.5); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .exam-clock[data-urgent='true'] {
+    animation: exam-clock-pulse 1.6s ease-in-out infinite;
+  }
+}
+
+/* Question page-change transition — a gentle settle, calm by design. */
+@keyframes exam-q-enter {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .exam-q-enter {
+    animation: exam-q-enter 0.26s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+}
+
+/* Results verdict — one-time reveal flourish (the climactic moment). */
+@keyframes exam-verdict-in {
+  from { opacity: 0; transform: scale(0.96) translateY(8px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .exam-verdict {
+    animation: exam-verdict-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+}
+
+/* Dialog entrance — desktop springs up from 96% scale; mobile rises as a sheet.
+   Scoped via a className on the panel, so the shared Dialog primitive is
+   untouched. Backdrop keeps its own .animate-fade-in. */
+@keyframes praxis-dialog-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes praxis-sheet-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 24px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .animate-dialog-in {
+    /* slight overshoot = spring */
+    animation: praxis-dialog-in 0.36s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  }
+  @media (max-width: 639px) {
+    .animate-dialog-in {
+      animation: praxis-sheet-in 0.34s cubic-bezier(0.16, 1, 0.3, 1) both;
+    }
+  }
+}
+
+/* Specular sheen — a diagonal light streak sweeps once across a course tile on
+   hover-in, like light catching glass. Lives inside the tile's clip; replays on
+   each fresh hover. Motion-safe only. */
+.praxis-sheen {
+  position: absolute;
+  inset: 0;
+  transform: translateX(-120%);
+  background: linear-gradient(
+    105deg,
+    transparent 32%,
+    rgba(255, 255, 255, 0.3) 48%,
+    rgba(255, 255, 255, 0.06) 56%,
+    transparent 68%
+  );
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .group:hover .praxis-sheen {
+    animation: praxis-sheen 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  }
+}
+
+@keyframes praxis-sheen {
+  from {
+    transform: translateX(-120%);
+  }
+  to {
+    transform: translateX(120%);
+  }
+}
+
+/* Tab panel cross-fade — a quick fade + tiny rise on each switch (and initial
+   mount) so Companions ↔ The World swap cinematically, not as a hard cut. */
+@keyframes praxis-tab-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 6px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .animate-tab-in {
+    animation: praxis-tab-in 0.2s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+}
+
+/* Subtle fade used by overlays/dialogs (no tailwindcss-animate dependency). */
+@keyframes praxis-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.animate-fade-in {
+  animation: praxis-fade-in 0.2s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in {
+    animation: none;
+  }
+}
+
+/* Clerk <SignIn> is embedded in the right pane of our two-pane <AuthDialog>
+   (src/components/auth/AuthDialog.tsx); its card chrome and header are stripped
+   via per-instance appearance there. Keep the embedded form flush-left in its
+   pane. */
+.cl-rootBox,
+.cl-cardBox,
+.cl-card {
+  width: 100% !important;
+}
+
+/* Clerk injects its styles at runtime (after ours), so an equal-specificity
+   !important loses by source order. Double the class to win on specificity and
+   force our squircle radius onto the primary + social buttons. */
+.cl-formButtonPrimary.cl-formButtonPrimary,
+.cl-socialButtonsBlockButton.cl-socialButtonsBlockButton {
+  border-radius: 0.75rem !important;
 }
