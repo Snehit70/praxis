@@ -40,7 +40,7 @@ export function useScrollParallax<T extends HTMLElement>(factor = 0.18, max = 10
       window.removeEventListener('scroll', onScroll);
       if (raf) cancelAnimationFrame(raf);
     };
-  }, [reduced, factor]);
+  }, [reduced, factor, max]);
 
   return ref;
 }

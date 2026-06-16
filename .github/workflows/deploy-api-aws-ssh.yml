@@ -13,6 +13,9 @@ on:
       - ".github/workflows/deploy-api-aws-ssh.yml"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
   group: deploy-api-${{ github.ref }}
   cancel-in-progress: true
@@ -21,6 +24,7 @@ jobs:
   deploy:
     name: Deploy Praxis API on AWS host over SSH
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     env:
       DEPLOY_PATH: ${{ secrets.PRAXIS_DEPLOY_PATH }}
       AWS_SSH_HOST: ${{ secrets.AWS_SSH_HOST }}
@@ -39,6 +43,7 @@ jobs:
           test -n "${AWS_SSH_HOST}" || { echo "AWS_SSH_HOST missing"; exit 1; }
           test -n "${AWS_SSH_USER}" || { echo "AWS_SSH_USER missing"; exit 1; }
           test -n "${AWS_SSH_PORT}" || { echo "AWS_SSH_PORT missing"; exit 1; }
+          test -n "${{ secrets.AWS_SSH_PRIVATE_KEY }}" || { echo "AWS_SSH_PRIVATE_KEY missing"; exit 1; }
           test -n "${DEPLOY_PATH}" || { echo "PRAXIS_DEPLOY_PATH missing"; exit 1; }
           test -n "${API_DATABASE_URL}" || { echo "PRAXIS_API_DATABASE_URL missing"; exit 1; }
           [[ "${AWS_SSH_PORT}" =~ ^[0-9]+$ ]] || { echo "AWS_SSH_PORT must be numeric"; exit 1; }

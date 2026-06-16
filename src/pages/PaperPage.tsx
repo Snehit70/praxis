@@ -500,7 +500,6 @@ function OptionButton({
   isSelected,
   isCorrect,
   showResults,
-  isMultiSelect,
   onClick,
 }: {
   option: { optionText?: string | null; optionImage?: string | null };
@@ -508,7 +507,6 @@ function OptionButton({
   isSelected: boolean;
   isCorrect: boolean;
   showResults: boolean;
-  isMultiSelect: boolean;
   onClick: () => void;
 }) {
   const label = OPTION_LABELS[optionIndex] ?? String(optionIndex + 1);
@@ -796,7 +794,6 @@ function QuestionCard({
                           isSelected={isSelected}
                           isCorrect={isCorrect}
                           showResults={showResults}
-                          isMultiSelect={isMultiSelect}
                           onClick={() => onSelectAnswer(question.uuid, optionId, question.questionType)}
                         />
                       );
@@ -874,7 +871,6 @@ function QuestionCard({
                         isSelected={isSelected}
                         isCorrect={isCorrect}
                         showResults={showResults}
-                        isMultiSelect={isMultiSelect}
                         onClick={() => onSelectAnswer(question.uuid, optionId, question.questionType)}
                       />
                     );

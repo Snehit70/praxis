@@ -53,4 +53,6 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 )
 Button.displayName = "Button"
 
+// Shared UI primitive exports its variant helper for composition.
+// eslint-disable-next-line react-refresh/only-export-components
 export { Button, buttonVariants }
