@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '@clerk/clerk-react';
 import { getEnrolledCourses, saveEnrolledCourses, type EnrolledCourses } from '@/lib/api';
 import { logger } from '@/lib/logger';
@@ -24,6 +24,8 @@ export function useEnrolledCourses(): UseEnrolledCourses {
   const [failed, setFailed] = useState(false);
   const [saving, setSaving] = useState(false);
   const [nonce, setNonce] = useState(0);
+  const saveQueue = useRef(Promise.resolve());
+  const activeSaves = useRef(0);
 
   useEffect(() => {
     if (!isSignedIn) return;
@@ -50,18 +52,32 @@ export function useEnrolledCourses(): UseEnrolledCourses {
 
   const save = useCallback(
     async (next: EnrolledCourses) => {
+      // Course saves replace the whole user selection. Optimistically update
+      // locally, then serialize writes so rapid toggles cannot arrive out of order.
+      setLevel(next.level);
+      setCourseKeys(next.courseKeys);
       setSaving(true);
-      try {
-        await saveEnrolledCourses(next, getToken);
-        setLevel(next.level);
-        setCourseKeys(next.courseKeys);
-        return true;
-      } catch (error) {
-        logger.error('Failed to save enrolled courses', error);
-        return false;
-      } finally {
-        setSaving(false);
-      }
+      activeSaves.current += 1;
+
+      const request = saveQueue.current.then(async () => {
+        try {
+          await saveEnrolledCourses(next, getToken);
+          return true;
+        } catch (error) {
+          logger.error('Failed to save enrolled courses', error);
+          return false;
+        } finally {
+          activeSaves.current -= 1;
+          if (activeSaves.current === 0) setSaving(false);
+        }
+      });
+
+      saveQueue.current = request.then(
+        () => undefined,
+        () => undefined,
+      );
+
+      return request;
     },
     [getToken],
   );

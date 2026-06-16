@@ -128,6 +128,7 @@ export default function HomePage() {
   const [autoOpened, setAutoOpened] = useState(false);
   const [archiveQuery, setArchiveQuery] = useState('');
   const [resume, setResume] = useState<HistoryItem | null>(null);
+  const pendingEnrolled = useRef(new Set<string>());
   // Slow scroll-parallax on the fixed page backdrop (desktop, motion-safe only).
   const bgParallaxRef = useScrollParallax<HTMLImageElement>();
 
@@ -191,6 +192,10 @@ export default function HomePage() {
     }
   }, [autoOpened, catalogue, enrollLoading, enrollFailed, courseKeys.length]);
 
+  useEffect(() => {
+    if (!saving) pendingEnrolled.current = new Set(courseKeys);
+  }, [courseKeys, saving]);
+
   const enrolledCourses = useMemo(
     () => (catalogue ?? []).filter((entry) => enrolled.has(entry.key)),
     [catalogue, enrolled],
@@ -212,9 +217,10 @@ export default function HomePage() {
   const archiveTotal = LEVEL_ORDER.reduce((sum, lvl) => sum + archiveByLevel[lvl].length, 0);
 
   const handleToggleEnroll = (course: CatalogueEntry) => {
-    const next = new Set(enrolled);
+    const next = new Set(pendingEnrolled.current);
     if (next.has(course.key)) next.delete(course.key);
     else next.add(course.key);
+    pendingEnrolled.current = next;
     void save({ level, courseKeys: Array.from(next) });
   };
 
