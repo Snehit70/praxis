@@ -36,7 +36,7 @@ export async function createIsolatedTestDatabase(): Promise<IsolatedTestDatabase
   const schemaName = `test_${randomUUID().replaceAll('-', '_')}`;
   const adminSql = createDbClient(DEFAULT_TEST_DATABASE_URL, {
     max: 1,
-    idleTimeout: 5,
+    idleTimeout: 30,
     connectionTimeout: 5,
   });
 
@@ -44,7 +44,7 @@ export async function createIsolatedTestDatabase(): Promise<IsolatedTestDatabase
 
   const sql = createDbClient(getSchemaDatabaseUrl(schemaName), {
     max: 1,
-    idleTimeout: 5,
+    idleTimeout: 30,
     connectionTimeout: 5,
   });
 
