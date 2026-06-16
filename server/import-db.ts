@@ -118,7 +118,7 @@ function sanitizeSqlValue(value: unknown) {
   return value;
 }
 
-function collectImportRows() {
+export function collectImportRows(dataDir = DATA_DIR) {
   const exams = new Map<string, ExamRow>();
   const courses = new Map<string, CourseRow>();
   const paperVariants: PaperVariantRow[] = [];
@@ -127,8 +127,8 @@ function collectImportRows() {
   const skippedPaperPaths: string[] = [];
   let skippedCourseResolutionCount = 0;
 
-  for (const metadataPath of readdirSync(DATA_DIR)) {
-    const examDir = path.join(DATA_DIR, metadataPath);
+  for (const metadataPath of readdirSync(dataDir)) {
+    const examDir = path.join(dataDir, metadataPath);
     const metadataFile = path.join(examDir, 'metadata.json');
     if (!existsSync(examDir) || !existsSync(metadataFile)) {
       continue;
@@ -314,7 +314,7 @@ function collectImportRows() {
   };
 }
 
-async function insertInBatches(
+export async function insertInBatches(
   sql: ReturnType<typeof createDbClient>,
   tableName: string,
   columns: string[],
@@ -395,4 +395,6 @@ async function main() {
   }
 }
 
-void main();
+if (import.meta.main) {
+  void main();
+}

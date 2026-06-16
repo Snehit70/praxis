@@ -18,71 +18,33 @@ import {
   type PaperDetails,
 } from '@/lib/api';
 import type { QuestionType, QuizQuestion } from '@/lib/dataTransforms';
+import {
+  calculatePracticeRunStats,
+  clearPracticeRunSession,
+  getPracticeRunPageStates,
+  getPracticeRunStorageKey,
+  groupPracticeRunQuestions,
+  readPracticeRunSession,
+  selectPracticeRunOption,
+  writePracticeRunSession,
+  type PracticeRunPageState,
+  type QuestionWithChildren,
+  type SavedPracticeRunSession,
+  type SelectedAnswers,
+} from '@/lib/practiceRun';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StatePanel } from '@/components/ui/state-panel';
 import { SaveButton } from '@/components/SaveButton';
 import { useAuth } from '@clerk/clerk-react';
 import pageBg from '@/assets/Sousou no Frieren - Ep. 11_ Winter in the Northern Lands - 00_22.png';
 
-interface QuestionWithChildren extends QuizQuestion {
-  subQuestions?: QuizQuestion[];
-}
-
 const OPTION_LABELS = ['A', 'B', 'C', 'D', 'E', 'F'];
-const PAPER_SESSION_STORAGE_PREFIX = 'praxis.paper-session';
 // Stored per-paper `duration` values are placeholders, so the timed attempt is
 // driven by the exam type instead (see getExamDurationMinutes): 60m for the
 // quizzes, 90m for the End Term.
 
-interface SavedPaperSession {
-  selectedAnswers: Record<string, string | string[]>;
-  showResults: boolean;
-  timerRunning: boolean;
-  remainingSeconds: number | null;
-  timerEndsAt: number | null;
-}
-
 function prefersReducedMotion() {
   return typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-}
-
-function getPaperSessionKey(paperId: string, courseId?: string | null, examId?: string | null) {
-  return [PAPER_SESSION_STORAGE_PREFIX, paperId, courseId ?? 'none', examId ?? 'none'].join(':');
-}
-
-function readPaperSession(storageKey: string, durationMinutes: number): SavedPaperSession | null {
-  if (typeof window === 'undefined') return null;
-
-  const saved = window.localStorage.getItem(storageKey);
-  if (!saved) return null;
-
-  try {
-    const parsed = JSON.parse(saved) as Partial<SavedPaperSession>;
-    const durationSeconds = durationMinutes > 0 ? durationMinutes * 60 : null;
-    const timerEndsAt = typeof parsed.timerEndsAt === 'number' ? parsed.timerEndsAt : null;
-    const running = parsed.timerRunning === true && timerEndsAt !== null;
-    const remainingSeconds = running
-      ? Math.max(0, Math.ceil((timerEndsAt - Date.now()) / 1000))
-      : typeof parsed.remainingSeconds === 'number'
-      ? Math.max(0, parsed.remainingSeconds)
-      : durationSeconds;
-    const expiredWhileAway = running && remainingSeconds === 0;
-
-    return {
-      selectedAnswers: parsed.selectedAnswers ?? {},
-      showResults: parsed.showResults === true || expiredWhileAway,
-      timerRunning: running && remainingSeconds !== null && remainingSeconds > 0,
-      remainingSeconds,
-      timerEndsAt: running && remainingSeconds !== null && remainingSeconds > 0 ? timerEndsAt : null,
-    };
-  } catch {
-    return null;
-  }
-}
-
-function clearPaperSession(storageKey: string) {
-  if (typeof window === 'undefined') return;
-  window.localStorage.removeItem(storageKey);
 }
 
 function formatRemainingTime(totalSeconds: number | null) {
@@ -692,7 +654,7 @@ function QuestionCard({
 }: {
   question: QuestionWithChildren;
   index: number;
-  selectedAnswers: Record<string, string | string[]>;
+  selectedAnswers: SelectedAnswers;
   showResults: boolean;
   onSelectAnswer: (questionId: string, optionIndex: string, questionType: QuestionType) => void;
   onShortAnswerChange: (questionId: string, answer: string) => void;
@@ -918,8 +880,6 @@ function QuestionCard({
   );
 }
 
-type PageState = 'none' | 'partial' | 'done';
-
 /**
  * Right-rail navigator: a grid of question numbers that reflects answered /
  * partially-answered / untouched state and lets the user jump to any question.
@@ -930,7 +890,7 @@ function QuestionNavigator({
   currentIndex,
   onJump,
 }: {
-  states: PageState[];
+  states: PracticeRunPageState[];
   currentIndex: number;
   onJump: (index: number) => void;
 }) {
@@ -999,10 +959,10 @@ export default function PaperPage() {
   const examId = searchParams.get('exam');
   const examUuidFromSearch = examId ? getExamUuidFromSlug(examId) : null;
   const storageKey = useMemo(
-    () => (paperId ? getPaperSessionKey(paperId, courseId, examId) : null),
+    () => (paperId ? getPracticeRunStorageKey(paperId, courseId, examId) : null),
     [courseId, examId, paperId],
   );
-  const [selectedAnswers, setSelectedAnswers] = useState<Record<string, string | string[]>>({});
+  const [selectedAnswers, setSelectedAnswers] = useState<SelectedAnswers>({});
   const [showResults, setShowResults] = useState(false);
   const [summoning, setSummoning] = useState(false);
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
@@ -1055,7 +1015,7 @@ export default function PaperPage() {
           const initDuration = getExamDurationMinutes(getExamSlugFromUuid(paperData.examUuid));
           const initSeconds = initDuration * 60;
           const savedSession = storageKey
-            ? readPaperSession(storageKey, initDuration)
+            ? readPracticeRunSession(storageKey, initDuration)
             : null;
 
           setPaper(paperData);
@@ -1094,7 +1054,7 @@ export default function PaperPage() {
   useEffect(() => {
     if (!paper || !storageKey) return;
 
-    const payload: SavedPaperSession = {
+    const payload: SavedPracticeRunSession = {
       selectedAnswers,
       showResults,
       timerRunning,
@@ -1102,7 +1062,7 @@ export default function PaperPage() {
       timerEndsAt,
     };
 
-    window.localStorage.setItem(storageKey, JSON.stringify(payload));
+    writePracticeRunSession(storageKey, payload);
   }, [paper, remainingSeconds, selectedAnswers, showResults, storageKey, timerEndsAt, timerRunning]);
 
   useEffect(() => {
@@ -1152,120 +1112,12 @@ export default function PaperPage() {
     return formatPaperName(paper.paperName, paper.year ?? undefined);
   }, [paper?.paperName, paper?.year]);
 
-  const groupedQuestions = useMemo(() => {
-    const parentMap = new Map<string, QuestionWithChildren>();
-    const topLevel: QuestionWithChildren[] = [];
+  const groupedQuestions = useMemo(() => groupPracticeRunQuestions(questions), [questions]);
 
-    for (const question of questions) {
-      if (question.questionType === 'COMPREHENSION' || !question.parentQuestionUuid) {
-        parentMap.set(question.uuid, { ...question, subQuestions: [] });
-      }
-    }
-
-    for (const question of questions) {
-      if (!question.parentQuestionUuid) continue;
-      const parent = parentMap.get(question.parentQuestionUuid);
-      if (parent) parent.subQuestions!.push(question);
-    }
-
-    for (const question of questions) {
-      if (!question.parentQuestionUuid) {
-        topLevel.push(parentMap.get(question.uuid) ?? question);
-      }
-    }
-
-    return topLevel;
-  }, [questions]);
-
-  const stats = useMemo(() => {
-    const hasMeaningfulAnswer = (value: string | string[] | undefined) => {
-      if (value === undefined) return false;
-      if (Array.isArray(value)) return value.length > 0;
-      return value.trim().length > 0;
-    };
-
-    const allQuestionIds = new Set<string>();
-    let manualEvalCount = 0;
-    let gradableTotal = 0;
-
-    for (const question of groupedQuestions) {
-      if (question.questionType !== 'COMPREHENSION') {
-        allQuestionIds.add(question.uuid);
-        if (question.questionType === 'SA' || question.questionType === 'OPPE') {
-          manualEvalCount++;
-        } else {
-          gradableTotal++;
-        }
-      }
-      if (question.subQuestions) {
-        question.subQuestions.forEach((sq) => {
-          allQuestionIds.add(sq.uuid);
-          if (sq.questionType === 'SA' || sq.questionType === 'OPPE') {
-            manualEvalCount++;
-          } else {
-            gradableTotal++;
-          }
-        });
-      }
-    }
-
-    const answered = Object.keys(selectedAnswers).filter((id) => {
-      if (!allQuestionIds.has(id)) return false;
-      return hasMeaningfulAnswer(selectedAnswers[id]);
-    }).length;
-    let correct = 0;
-    let totalMarks = 0;
-    let scoredMarks = 0;
-
-    const countQuestion = (question: QuizQuestion) => {
-      const isManualEval = question.questionType === 'SA' || question.questionType === 'OPPE';
-      if (isManualEval) return;
-
-      const marks = parseFloat(question.totalMark) || 0;
-      totalMarks += marks;
-
-      if (!showResults || !hasMeaningfulAnswer(selectedAnswers[question.uuid])) return;
-
-      const correctIndices = question.options
-        .map((option, index) => (option.isCorrect === 1 ? String(index) : null))
-        .filter((value): value is string => value !== null);
-
-      const selected = selectedAnswers[question.uuid];
-
-      if (question.questionType === 'MCQ') {
-        if (correctIndices.includes(selected as string)) {
-          correct++;
-          scoredMarks += marks;
-        }
-      } else if (question.questionType === 'MSQ') {
-        const selectedEntries = selected as string[];
-        const isCorrect =
-          correctIndices.length === selectedEntries.length &&
-          correctIndices.every((v) => selectedEntries.includes(v));
-        if (isCorrect) {
-          correct++;
-          scoredMarks += marks;
-        }
-      }
-    };
-
-    for (const question of groupedQuestions) {
-      if (question.questionType !== 'COMPREHENSION') countQuestion(question);
-      if (question.subQuestions) {
-        for (const subQuestion of question.subQuestions) countQuestion(subQuestion);
-      }
-    }
-
-    return {
-      totalQuestions: allQuestionIds.size,
-      answered,
-      correct,
-      gradableTotal,
-      totalMarks,
-      scoredMarks,
-      manualEvalCount,
-    };
-  }, [groupedQuestions, selectedAnswers, showResults]);
+  const stats = useMemo(
+    () => calculatePracticeRunStats(groupedQuestions, selectedAnswers, showResults),
+    [groupedQuestions, selectedAnswers, showResults],
+  );
 
   const pageCount = groupedQuestions.length;
 
@@ -1288,22 +1140,10 @@ export default function PaperPage() {
   );
 
   // Per-page answered state for the navigator (done / partial / none).
-  const pageStates = useMemo<PageState[]>(() => {
-    const meaningful = (value: string | string[] | undefined) => {
-      if (value === undefined) return false;
-      return Array.isArray(value) ? value.length > 0 : value.trim().length > 0;
-    };
-    return groupedQuestions.map((question) => {
-      const ids =
-        question.questionType === 'COMPREHENSION'
-          ? (question.subQuestions ?? []).map((sub) => sub.uuid)
-          : [question.uuid];
-      if (ids.length === 0) return 'none';
-      const answered = ids.filter((id) => meaningful(selectedAnswers[id])).length;
-      if (answered === 0) return 'none';
-      return answered === ids.length ? 'done' : 'partial';
-    });
-  }, [groupedQuestions, selectedAnswers]);
+  const pageStates = useMemo<PracticeRunPageState[]>(
+    () => getPracticeRunPageStates(groupedQuestions, selectedAnswers),
+    [groupedQuestions, selectedAnswers],
+  );
 
   // Keyboard paging with ← / →. Inside a short-answer field the caret moves
   // first; pressing the arrow again at the field's edge pages the question, so
@@ -1375,16 +1215,9 @@ export default function PaperPage() {
   ) => {
     if (showResults) return;
 
-    setSelectedAnswers((prev) => {
-      if (questionType === 'MSQ') {
-        const current = (prev[questionId] as string[]) || [];
-        if (current.includes(optionIndex)) {
-          return { ...prev, [questionId]: current.filter((id) => id !== optionIndex) };
-        }
-        return { ...prev, [questionId]: [...current, optionIndex] };
-      }
-      return { ...prev, [questionId]: optionIndex };
-    });
+    setSelectedAnswers((prev) =>
+      selectPracticeRunOption(prev, questionId, optionIndex, questionType),
+    );
   };
 
   const handleShortAnswerChange = (questionId: string, answer: string) => {
@@ -1432,7 +1265,7 @@ export default function PaperPage() {
     setRemainingSeconds(paper ? durationMinutes * 60 : null);
     setTimeExpired(false);
     setCurrentIndex(0);
-    if (storageKey) clearPaperSession(storageKey);
+    if (storageKey) clearPracticeRunSession(storageKey);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
