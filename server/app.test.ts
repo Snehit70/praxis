@@ -149,6 +149,57 @@ describe('Praxis API integration', () => {
     expect(json.papers.every((paper) => paper.examSlug !== 'oppe')).toBe(true);
   });
 
+  test('keeps supported search matches when unsupported exams would otherwise fill the window', async () => {
+    await context.database.sql`
+      INSERT INTO exams (source_uuid, exam_name, exam_slug)
+      VALUES ('exam-oppe-many', 'OPPE', 'oppe')
+    `;
+
+    for (let i = 0; i < 30; i++) {
+      const year = 1900 + i;
+      await context.database.sql`
+        INSERT INTO paper_variants (
+          id,
+          source_uuid,
+          exam_uuid,
+          course_uuid,
+          group_id,
+          total_score,
+          duration,
+          paper_name,
+          paper_description,
+          year,
+          is_new,
+          source_path
+        )
+        VALUES (
+          ${`variant-oppe-many-${i}`},
+          ${`paper-oppe-many-${i}`},
+          'exam-oppe-many',
+          'course-1',
+          10 + ${i},
+          '1',
+          45,
+          'Computational Thinking OPPE filler',
+          'Unsupported exam filler paper',
+          ${year},
+          0,
+          ${`fixtures/paper-oppe-many-${i}.json`}
+        )
+      `;
+    }
+
+    const { response, json } = await context.getJson<{
+      courses: Array<{ examSlug: string }>;
+      papers: Array<{ examSlug: string; uuid: string }>;
+    }>('/api/search?q=computational');
+
+    expect(response.status).toBe(200);
+    expect(json.courses.map((course) => course.examSlug)).toEqual(['quiz1']);
+    expect(json.papers.some((paper) => paper.uuid === 'paper-2025')).toBe(true);
+    expect(json.papers.every((paper) => paper.examSlug !== 'oppe')).toBe(true);
+  });
+
   test('lists papers ordered by most recent year and computes marks', async () => {
     const { response, json } = await context.getJson<Array<Record<string, unknown>>>(
       '/api/exams/exam-1/courses/course-1/papers',
@@ -397,5 +448,53 @@ describe('Praxis API course catalogue', () => {
       paperCount: 2,
     });
     expect(json[0]?.examSlugs).toEqual(['quiz1']);
+  });
+
+  test('drops courses that only have unsupported exam slugs from the catalogue feed', async () => {
+    await context.database.sql`
+      INSERT INTO exams (source_uuid, exam_name, exam_slug)
+      VALUES ('exam-oppe-course', 'OPPE', 'oppe')
+    `;
+    await context.database.sql`
+      INSERT INTO courses (source_uuid, course_name, course_code, program_id, label, canonical_name)
+      VALUES ('course-oppe', 'Only OPPE Course', 'OPPE', 1, 'Foundation', 'Only OPPE Course')
+    `;
+    await context.database.sql`
+      INSERT INTO paper_variants (
+        id,
+        source_uuid,
+        exam_uuid,
+        course_uuid,
+        group_id,
+        total_score,
+        duration,
+        paper_name,
+        paper_description,
+        year,
+        is_new,
+        source_path
+      )
+      VALUES (
+        'variant-oppe-course',
+        'paper-oppe-course',
+        'exam-oppe-course',
+        'course-oppe',
+        7,
+        '1',
+        45,
+        'Only OPPE Course Paper',
+        'Unsupported-only course fixture paper',
+        2025,
+        0,
+        'fixtures/paper-oppe-course.json'
+      )
+    `;
+
+    const { response, json } = await context.getJson<
+      Array<{ uuid: string; courseName: string; paperCount: number; examSlugs: string[] }>
+    >('/api/courses');
+
+    expect(response.status).toBe(200);
+    expect(json.find((course) => course.uuid === 'course-oppe')).toBeUndefined();
   });
 });

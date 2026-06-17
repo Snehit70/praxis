@@ -5,7 +5,7 @@ import {
   getCourseUuids,
   getSearchPattern,
 } from './paperCatalogue';
-import { isSupportedExamSlug } from '../src/lib/examMapping';
+import { SUPPORTED_EXAM_SLUGS, isSupportedExamSlug } from '../src/lib/examMapping';
 
 const allowedOrigin = process.env.API_ALLOWED_ORIGIN?.trim() || '*';
 const cacheableApiResponse = 'public, max-age=60, s-maxage=300, stale-while-revalidate=600';
@@ -24,6 +24,7 @@ const clerk = clerkSecretKey
   ? createClerkClient({ secretKey: clerkSecretKey, publishableKey: clerkPublishableKey })
   : null;
 const authorizedParties = allowedOrigin === '*' ? undefined : [allowedOrigin];
+const [quiz1Slug, quiz2Slug, endTermSlug] = SUPPORTED_EXAM_SLUGS;
 
 function corsHeaders(): Record<string, string> {
   return {
@@ -369,6 +370,7 @@ export function createApiFetchHandler(sql: DbClient, options: ApiHandlerOptions 
           FROM courses c
           JOIN paper_variants p ON p.course_uuid = c.source_uuid
           JOIN exams e ON e.source_uuid = p.exam_uuid
+          WHERE e.exam_slug IN (${quiz1Slug}, ${quiz2Slug}, ${endTermSlug})
           GROUP BY c.source_uuid, c.course_name, c.course_code, c.program_id
           ORDER BY c.course_name ASC
         `;
@@ -405,9 +407,12 @@ export function createApiFetchHandler(sql: DbClient, options: ApiHandlerOptions 
           FROM paper_variants p
           JOIN courses c ON c.source_uuid = p.course_uuid
           JOIN exams e ON e.source_uuid = p.exam_uuid
-          WHERE c.course_name ILIKE ${pattern} ESCAPE '\\'
-             OR c.course_code ILIKE ${pattern} ESCAPE '\\'
-             OR c.canonical_name ILIKE ${pattern} ESCAPE '\\'
+          WHERE e.exam_slug IN (${quiz1Slug}, ${quiz2Slug}, ${endTermSlug})
+            AND (
+              c.course_name ILIKE ${pattern} ESCAPE '\\'
+              OR c.course_code ILIKE ${pattern} ESCAPE '\\'
+              OR c.canonical_name ILIKE ${pattern} ESCAPE '\\'
+            )
           GROUP BY c.source_uuid, c.course_name, c.course_code, e.source_uuid, e.exam_name, e.exam_slug
           ORDER BY
             CASE
@@ -459,10 +464,13 @@ export function createApiFetchHandler(sql: DbClient, options: ApiHandlerOptions 
           JOIN exams e ON e.source_uuid = p.exam_uuid
           JOIN courses c ON c.source_uuid = p.course_uuid
           LEFT JOIN questions q ON q.paper_variant_id = p.id
-          WHERE p.paper_name ILIKE ${pattern} ESCAPE '\\'
-             OR p.paper_description ILIKE ${pattern} ESCAPE '\\'
-             OR c.course_name ILIKE ${pattern} ESCAPE '\\'
-             OR c.course_code ILIKE ${pattern} ESCAPE '\\'
+          WHERE e.exam_slug IN (${quiz1Slug}, ${quiz2Slug}, ${endTermSlug})
+            AND (
+              p.paper_name ILIKE ${pattern} ESCAPE '\\'
+              OR p.paper_description ILIKE ${pattern} ESCAPE '\\'
+              OR c.course_name ILIKE ${pattern} ESCAPE '\\'
+              OR c.course_code ILIKE ${pattern} ESCAPE '\\'
+            )
           GROUP BY p.id, e.source_uuid, e.exam_name, e.exam_slug, c.source_uuid, c.course_name
           ORDER BY
             CASE

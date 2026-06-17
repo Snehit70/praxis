@@ -16,6 +16,8 @@ export const EXAM_SLUG_TO_NAME: Record<string, string> = {
   'end-term': 'End Term Quiz',
 };
 
+export const SUPPORTED_EXAM_SLUGS = ['quiz1', 'quiz2', 'end-term'] as const;
+
 export function isSupportedExamSlug(slug: string): boolean {
   return slug in EXAM_SLUG_TO_UUID;
 }
