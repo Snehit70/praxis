@@ -758,15 +758,154 @@
   box-shadow: inset 0 0 0 1px rgba(214, 178, 110, 0.08);
 }
 
+/* ============================================================
+   Runic ornament — extends the ArcaneSigil grammar into the
+   exam's structural furniture (dividers, corners, crest, rail).
+   Static line-work only: it enriches the frame without ever
+   moving under the reader. Scoped to the exam so the deck is
+   untouched.
+   ============================================================ */
+
+/* Divider: a gold rule that fades to a centered diamond node (or a runic
+   label). The structural break between header/stem/options/passage. */
+.runic-divider {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+.runic-divider-line {
+  flex: 1 1 0%;
+  height: 1px;
+  background: linear-gradient(
+    to right,
+    transparent,
+    rgba(214, 178, 110, 0.42) 38%,
+    rgba(214, 178, 110, 0.42) 62%,
+    transparent
+  );
+}
+.runic-divider-node {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  transform: rotate(45deg);
+  border: 1px solid rgba(214, 178, 110, 0.75);
+  background: color-mix(in srgb, var(--lvl, #62aef0) 45%, transparent);
+}
+.runic-divider-label {
+  flex-shrink: 0;
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--lvl, #62aef0) 55%, #c9b896);
+}
+
+/* Cover plate: the threshold gets a little more inner glow + lift than a
+   question tome — this is the one allowed moment of presence. */
+.exam-cover {
+  box-shadow:
+    inset 0 0 0 1px rgba(214, 178, 110, 0.16),
+    inset 0 0 90px -30px color-mix(in srgb, var(--lvl, #62aef0) 70%, transparent),
+    0 28px 64px -34px rgba(0, 0, 0, 0.72);
+}
+
+/* Runic corner marks — promote the plain L-brackets inside the exam to runic
+   nodes: a small glowing diamond seats in the elbow of each corner bracket. */
+.exam-tome .tcard-corner::after {
+  content: '';
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  transform: rotate(45deg);
+  background: color-mix(in srgb, var(--lvl, #62aef0) 70%, #d6b26e);
+  box-shadow: 0 0 6px -1px color-mix(in srgb, var(--lvl, #62aef0) 80%, transparent);
+}
+.exam-tome .tcard-corner-tl::after { top: 1px; left: 1px; }
+.exam-tome .tcard-corner-tr::after { top: 1px; right: 1px; }
+.exam-tome .tcard-corner-bl::after { bottom: 1px; left: 1px; }
+.exam-tome .tcard-corner-br::after { bottom: 1px; right: 1px; }
+
+/* Sticky comprehension passage — an opaque tome-toned panel so sub-questions
+   scrolling beneath it never bleed through while it's pinned. */
+.exam-passage {
+  background: linear-gradient(to bottom, #2b2620, #241f18);
+  box-shadow:
+    inset 0 0 0 1px rgba(214, 178, 110, 0.12),
+    0 10px 24px -18px rgba(0, 0, 0, 0.8);
+  padding: 0.75rem 0.85rem;
+}
+
+/* Question header crest — a runic underline beneath the type/marks row so each
+   tome opens with a small heraldic band. */
+.exam-crest-rule {
+  height: 1px;
+  background: linear-gradient(
+    to right,
+    color-mix(in srgb, var(--lvl, #62aef0) 50%, transparent),
+    rgba(214, 178, 110, 0.34) 60%,
+    transparent
+  );
+}
+
+/* Reading measure — cap the line length of question/option prose so long
+   stems stay comfortable on wide screens (~68ch). */
+.exam-measure {
+  max-width: 68ch;
+}
+
+/* Embedded enumerated facts, broken out of a dense stem into scannable lines
+   with a level-tinted marker. */
+.exam-stem-list {
+  margin: 0.6rem 0 0.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding-left: 0.25rem;
+}
+.exam-stem-list > li {
+  position: relative;
+  padding-left: 1.35rem;
+}
+.exam-stem-list > li::before {
+  content: '';
+  position: absolute;
+  left: 0.3rem;
+  top: 0.62em;
+  width: 6px;
+  height: 6px;
+  transform: translateY(-50%) rotate(45deg);
+  border: 1px solid color-mix(in srgb, var(--lvl, #62aef0) 70%, transparent);
+  background: color-mix(in srgb, var(--lvl, #62aef0) 35%, transparent);
+}
+
 /* Gold-framed exam clock; turns urgent (and pulses) under low time. */
 @keyframes exam-clock-pulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(248, 113, 113, 0); }
   50% { box-shadow: 0 0 14px 0 rgba(248, 113, 113, 0.5); }
 }
+@keyframes exam-clock-warn {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0); }
+  50% { box-shadow: 0 0 12px 0 rgba(251, 191, 36, 0.4); }
+}
 @media (prefers-reduced-motion: no-preference) {
   .exam-clock[data-urgent='true'] {
     animation: exam-clock-pulse 1.6s ease-in-out infinite;
   }
+  .exam-clock[data-warn='true'] {
+    animation: exam-clock-warn 2.2s ease-in-out infinite;
+  }
+}
+
+/* Low-time heads-up pill — appears, holds, then fades on its own. */
+@keyframes exam-lowtime-in {
+  0% { opacity: 0; transform: translateY(-4px) scale(0.96); }
+  10% { opacity: 1; transform: translateY(0) scale(1); }
+  85% { opacity: 1; transform: translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateY(-2px) scale(0.98); }
+}
+.exam-lowtime { animation: exam-lowtime-in 4.5s ease-in-out both; }
+@media (prefers-reduced-motion: reduce) {
+  .exam-lowtime { animation: none; }
 }
 
 /* Question page-change transition — a gentle settle, calm by design. */

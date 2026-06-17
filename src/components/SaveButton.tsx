@@ -62,7 +62,7 @@ export function SaveButton({ paperId }: { paperId: string }) {
           className="gap-1.5"
         >
           {saved ? <BookmarkCheck className="h-4 w-4" /> : <Bookmark className="h-4 w-4" />}
-          {saved ? 'Saved' : 'Save'}
+          {saved ? 'Bookmarked' : 'Bookmark'}
         </Button>
       </SignedIn>
       <SignedOut>

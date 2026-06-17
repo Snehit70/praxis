@@ -1,8 +1,9 @@
 import { useParams, Link, useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, CheckCircle2, XCircle, RotateCcw, Trophy, Timer, Play, Pause, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, XCircle, RotateCcw, Trophy, Timer, Play, Pause, ChevronLeft, ChevronRight, Flag, BookOpen, FileText, ListChecks } from 'lucide-react';
 import type React from 'react';
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { Dialog } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import { formatPaperName } from '@/lib/paperUtils';
 import { getExamSlugFromUuid, getExamUuidFromSlug, getExamDurationMinutes } from '@/lib/examMapping';
@@ -29,6 +30,7 @@ import {
   writePracticeRunSession,
   type PracticeRunPageState,
   type QuestionWithChildren,
+  type RunMode,
   type SavedPracticeRunSession,
   type SelectedAnswers,
 } from '@/lib/practiceRun';
@@ -119,11 +121,14 @@ function CompactTimer({
   onReset: () => void;
   expired: boolean;
 }) {
-  // Urgent under the last 5 minutes — the clock flushes red and pulses.
-  const urgent = !expired && running && remainingSeconds !== null && remainingSeconds <= 300 && remainingSeconds > 0;
+  // Amber under the last 5 minutes, red (and a stronger pulse) under the last
+  // minute — both flush the clock and pulse.
+  const warn = !expired && running && remainingSeconds !== null && remainingSeconds <= 300 && remainingSeconds > 60;
+  const urgent = !expired && running && remainingSeconds !== null && remainingSeconds <= 60 && remainingSeconds > 0;
   return (
     <div
-      data-urgent={urgent}
+      data-urgent={urgent || expired}
+      data-warn={warn}
       title={
         expired
           ? 'Time is up — answers were submitted automatically.'
@@ -137,11 +142,17 @@ function CompactTimer({
       )}
     >
       <Timer
-        className={cn('h-4 w-4', expired || urgent ? 'text-red-400' : '')}
-        style={expired || urgent ? undefined : { color: 'var(--lvl, var(--primary))' }}
+        className={cn('h-4 w-4', expired || urgent ? 'text-red-400' : warn ? 'text-amber-400' : '')}
+        style={expired || urgent || warn ? undefined : { color: 'var(--lvl, var(--primary))' }}
         aria-hidden="true"
       />
-      <span className={cn('text-base font-semibold tabular-nums', (expired || urgent) && 'text-red-400')}>
+      <span
+        className={cn(
+          'text-base font-semibold tabular-nums',
+          (expired || urgent) && 'text-red-400',
+          warn && 'text-amber-400',
+        )}
+      >
         {formatRemainingTime(remainingSeconds)}
       </span>
       <span className="hidden text-xs text-muted-foreground sm:inline">/ {durationMinutes}m</span>
@@ -169,6 +180,7 @@ function CompactTimer({
 function ResultsSummary({
   stats,
   onTryAgain,
+  timeExpired = false,
 }: {
   stats: {
     correct: number;
@@ -178,6 +190,7 @@ function ResultsSummary({
     manualEvalCount: number;
   };
   onTryAgain: () => void;
+  timeExpired?: boolean;
 }) {
   const percentage =
     stats.gradableTotal > 0 ? Math.round((stats.correct / stats.gradableTotal) * 100) : 0;
@@ -221,6 +234,12 @@ function ResultsSummary({
             <p className="text-sm text-muted-foreground mt-1.5">
               {stats.correct} of {stats.gradableTotal} auto-graded correct &middot; {percentage}%
             </p>
+            {timeExpired && (
+              <p className="mt-1 inline-flex items-center gap-1.5 text-xs font-medium text-amber-500">
+                <Timer className="h-3.5 w-3.5" />
+                Auto-submitted &middot; time expired
+              </p>
+            )}
             {stats.manualEvalCount > 0 && (
               <p className="text-sm text-muted-foreground mt-1">
                 {stats.manualEvalCount} response{stats.manualEvalCount === 1 ? '' : 's'} require manual evaluation.
@@ -401,6 +420,40 @@ function InlineText({ text }: { text: string }) {
 }
 
 /**
+ * Many source stems jam an enumerated list into one paragraph as literal bullet
+ * glyphs ("summary: ● 70% … ● 40% … ● Among…"). Split a fragment into its
+ * lead-in and list items, but only when there are genuinely ≥2 bullets — so a
+ * lone stray glyph never reflows ordinary prose.
+ */
+function splitStemBullets(text: string): { lead: string; items: string[] } | null {
+  if (!/[●•▪‣◦]/.test(text)) return null;
+  const parts = text.split(/[●•▪‣◦]+/);
+  const lead = (parts[0] ?? '').trim();
+  const items = parts.slice(1).map((part) => part.trim()).filter(Boolean);
+  if (items.length < 2) return null;
+  return { lead, items };
+}
+
+/** A stem text fragment: renders an embedded bullet list as real lines when
+ *  detected, otherwise flows inline (so interleaved math images still work). */
+function StemText({ text }: { text: string }) {
+  const trimmed = text?.trim();
+  if (!trimmed) return null;
+  const list = splitStemBullets(trimmed);
+  if (!list) return <InlineText text={trimmed} />;
+  return (
+    <>
+      {list.lead && <span className="block">{renderInlineMarkdown(normalizeMarkup(list.lead))}</span>}
+      <ul className="exam-stem-list">
+        {list.items.map((item, index) => (
+          <li key={index}>{renderInlineMarkdown(normalizeMarkup(item))}</li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
+/**
  * An image that belongs to a question/option. The source stores math as small
  * pre-rendered PNGs (~31px tall) meant to sit *inline* with the text; larger
  * PNGs are real figures/diagrams. We start inline and, on load, promote tall
@@ -448,7 +501,7 @@ function QuestionMedia({
   const parts: React.ReactNode[] = [];
   for (let i = 0; i < max; i++) {
     const text = texts[i]?.trim();
-    if (text) parts.push(<InlineText key={`t-${i}`} text={text} />);
+    if (text) parts.push(<StemText key={`t-${i}`} text={text} />);
     const image = images[i];
     if (image) parts.push(<FlowImage key={`i-${i}`} src={image} alt={`${altPrefix} ${i + 1}`} />);
   }
@@ -525,7 +578,7 @@ function OptionButton({
         )}
       </div>
 
-      <div className="flex-1 min-w-0 text-sm">
+      <div className="flex-1 min-w-0 text-[15px]">
         {hasOptionText && <RichText text={optionText} compact />}
         {hasOptionImage && (
           <FlowImage src={getOptionImageUrl(option.optionImage ?? undefined) ?? ''} alt={`Option ${label}`} />
@@ -651,6 +704,8 @@ function QuestionCard({
   onSelectAnswer,
   onShortAnswerChange,
   isSubQuestion = false,
+  isFlagged = false,
+  onToggleFlag,
 }: {
   question: QuestionWithChildren;
   index: number;
@@ -659,8 +714,12 @@ function QuestionCard({
   onSelectAnswer: (questionId: string, optionIndex: string, questionType: QuestionType) => void;
   onShortAnswerChange: (questionId: string, answer: string) => void;
   isSubQuestion?: boolean;
+  isFlagged?: boolean;
+  onToggleFlag?: () => void;
 }) {
   const selectedAnswer = selectedAnswers[question.uuid];
+  // Comprehension passages can be collapsed to reclaim room for the sub-questions.
+  const [passageOpen, setPassageOpen] = useState(true);
   // Kept index-aligned (no filter): text_i and image_i interleave so inline
   // math images land between the right text fragments.
   const questionTexts = [
@@ -784,28 +843,79 @@ function QuestionCard({
         </div>
 
         <div className="flex-1 min-w-0 space-y-4">
-          {/* Header row: type badge + marks */}
+          {/* Header row: type badge + marks + flag */}
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <QuestionTypeBadge type={question.questionType} />
-            {marks > 0 && (
-              <span className="text-xs font-medium text-muted-foreground bg-muted px-2 py-0.5 rounded">
-                {marks} {marks === 1 ? 'mark' : 'marks'}
-              </span>
-            )}
+            <div className="flex items-center gap-2">
+              {marks > 0 && (
+                <span className="text-xs font-medium text-muted-foreground bg-muted px-2 py-0.5 rounded">
+                  {marks} {marks === 1 ? 'mark' : 'marks'}
+                </span>
+              )}
+              {onToggleFlag && !showResults && (
+                <button
+                  type="button"
+                  onClick={onToggleFlag}
+                  aria-pressed={isFlagged}
+                  title="Flag for review (f)"
+                  className={cn(
+                    'inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-medium transition-colors',
+                    isFlagged
+                      ? 'border-amber-500/50 bg-amber-500/15 text-amber-300'
+                      : 'border-border text-muted-foreground hover:border-amber-500/40 hover:text-foreground',
+                  )}
+                >
+                  <Flag className={cn('h-3.5 w-3.5', isFlagged && 'fill-amber-400/80')} aria-hidden="true" />
+                  {isFlagged ? 'Flagged' : 'Flag'}
+                </button>
+              )}
+            </div>
           </div>
 
-          {/* Question text with inline math images interleaved in field order */}
-          <div className="space-y-3 text-[15px]">
-            <QuestionMedia
-              texts={questionTexts}
-              images={questionImages}
-              altPrefix={`Question ${index + 1} image`}
-            />
-          </div>
+          {/* Heraldic crest rule under the type/marks band */}
+          <div className="exam-crest-rule" aria-hidden="true" />
+
+          {/* Question text / comprehension passage — passage pins on wide
+              screens while its sub-questions scroll, and can be collapsed. */}
+          {isComprehension ? (
+            <div className="exam-passage rounded-lg lg:sticky lg:top-24 lg:z-20">
+              <div className="mb-1 flex items-center justify-between gap-2">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Passage
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setPassageOpen((open) => !open)}
+                  aria-expanded={passageOpen}
+                  className="rounded px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  {passageOpen ? 'Hide passage' : 'Show passage'}
+                </button>
+              </div>
+              {passageOpen && (
+                <div className="exam-measure space-y-3 text-[15.5px] leading-[1.72] sm:text-[16.5px] lg:max-h-[42vh] lg:overflow-y-auto lg:pr-1">
+                  <QuestionMedia
+                    texts={questionTexts}
+                    images={questionImages}
+                    altPrefix={`Question ${index + 1} image`}
+                  />
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="exam-measure space-y-3 text-[15.5px] leading-[1.72] sm:text-[16.5px]">
+              <QuestionMedia
+                texts={questionTexts}
+                images={questionImages}
+                altPrefix={`Question ${index + 1} image`}
+              />
+            </div>
+          )}
 
           {/* Options */}
           {!isComprehension && (
             <div className="space-y-2">
+              <RunicDivider className="!mb-3" />
               {isShortAnswer ? (
                 <ShortAnswerField
                   value={typeof selectedAnswer === 'string' ? selectedAnswer : ''}
@@ -849,10 +959,8 @@ function QuestionCard({
 
           {/* Comprehension sub-questions */}
           {isComprehension && question.subQuestions && question.subQuestions.length > 0 && (
-            <div className="space-y-3 pt-2 border-t border-border">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                Questions based on the above passage
-              </p>
+            <div className="space-y-3 pt-2">
+              <RunicDivider className="!mb-1" label="questions on the passage" />
               {question.subQuestions.map((subQuestion, subIndex) => (
                 <QuestionCard
                   key={subQuestion.uuid}
@@ -887,12 +995,18 @@ function QuestionCard({
  */
 function QuestionNavigator({
   states,
+  flagged,
+  flaggedCount,
   currentIndex,
   onJump,
+  onJumpNextFlagged,
 }: {
   states: PracticeRunPageState[];
+  flagged: boolean[];
+  flaggedCount: number;
   currentIndex: number;
   onJump: (index: number) => void;
+  onJumpNextFlagged: () => void;
 }) {
   const done = states.filter((state) => state === 'done').length;
   return (
@@ -901,10 +1015,11 @@ function QuestionNavigator({
       <div aria-hidden="true" className="pointer-events-none absolute -right-8 -top-8 h-40 w-40 opacity-[0.06]">
         <ArcaneSigil />
       </div>
-      <div className="relative z-10 mb-3 flex items-center justify-between">
+      <div className="relative z-10 mb-2 flex items-center justify-between">
         <h2 className="font-display text-base font-normal tracking-tight">Questions</h2>
         <span className="text-xs tabular-nums text-muted-foreground">{done}/{states.length} done</span>
       </div>
+      <RunicDivider className="relative z-10 mb-3" />
       <div className="relative z-10 grid grid-cols-5 gap-2">
         {states.map((state, index) => {
           const isCurrent = index === currentIndex;
@@ -916,9 +1031,9 @@ function QuestionNavigator({
               aria-current={isCurrent ? 'true' : undefined}
               aria-label={`Go to question ${index + 1}${
                 state === 'done' ? ', answered' : state === 'partial' ? ', partly answered' : ''
-              }`}
+              }${flagged[index] ? ', flagged' : ''}`}
               className={cn(
-                'flex h-9 w-9 items-center justify-center rounded-md border text-sm font-medium transition-colors',
+                'relative flex h-9 w-9 items-center justify-center rounded-md border text-sm font-medium transition-colors',
                 state === 'done' &&
                   'border-[color-mix(in_srgb,var(--lvl,#62aef0)_50%,transparent)] bg-[color-mix(in_srgb,var(--lvl,#62aef0)_18%,transparent)] text-[color-mix(in_srgb,var(--lvl,#62aef0)_92%,white)]',
                 state === 'partial' && 'border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400',
@@ -928,10 +1043,29 @@ function QuestionNavigator({
               )}
             >
               {index + 1}
+              {flagged[index] && (
+                <span
+                  aria-hidden="true"
+                  className="absolute -right-1 -top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-amber-500 ring-2 ring-background"
+                >
+                  <Flag className="h-2 w-2 fill-black text-black" />
+                </span>
+              )}
             </button>
           );
         })}
       </div>
+
+      {flaggedCount > 0 && (
+        <button
+          type="button"
+          onClick={onJumpNextFlagged}
+          className="relative z-10 mt-3 flex w-full items-center justify-center gap-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-xs font-medium text-amber-300 transition-colors hover:bg-amber-500/20"
+        >
+          <Flag className="h-3 w-3 fill-amber-400/80" aria-hidden="true" />
+          Next flagged ({flaggedCount})
+        </button>
+      )}
       <div className="relative z-10 mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
         <span className="flex items-center gap-1">
           <span className="h-2.5 w-2.5 rounded-sm bg-[color-mix(in_srgb,var(--lvl,#62aef0)_55%,transparent)]" aria-hidden="true" />
@@ -945,6 +1079,168 @@ function QuestionNavigator({
           <span className="h-2.5 w-2.5 rounded-sm border border-border" aria-hidden="true" />
           Unanswered
         </span>
+        <span className="flex items-center gap-1">
+          <Flag className="h-2.5 w-2.5 fill-amber-400/80 text-amber-400" aria-hidden="true" />
+          Flagged
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/** Runic rule line with a centered diamond node — the structural divider that
+ *  carries the ArcaneSigil grammar into the header crest and section breaks. */
+function RunicDivider({ className, label }: { className?: string; label?: string }) {
+  return (
+    <div className={cn('runic-divider', className)} role="presentation">
+      <span className="runic-divider-line" aria-hidden="true" />
+      {label ? (
+        <span className="runic-divider-label">{label}</span>
+      ) : (
+        <span className="runic-divider-node" aria-hidden="true" />
+      )}
+      <span className="runic-divider-line" aria-hidden="true" />
+    </div>
+  );
+}
+
+/** A single stat cell on the cover plate (questions / marks / duration). */
+function CoverStat({ icon, value, label }: { icon: React.ReactNode; value: string; label: string }) {
+  return (
+    <div className="flex flex-col items-center gap-1 px-3">
+      <span className="text-muted-foreground/70" aria-hidden="true">{icon}</span>
+      <span className="font-display text-xl font-normal tabular-nums leading-none">{value}</span>
+      <span className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</span>
+    </div>
+  );
+}
+
+/**
+ * Cover plate: the threshold shown on entering a paper variant. Opening the
+ * tome, the user chooses to *sit* it (Timed Run) or simply *read* it (Open Run).
+ * Doubles as the showcase for the runic ornament language.
+ */
+function RunCoverPlate({
+  examName,
+  paperName,
+  courseName,
+  levelColor,
+  totalQuestions,
+  totalMarks,
+  durationMinutes,
+  onBeginTimed,
+  onBeginOpen,
+  onBack,
+}: {
+  examName: string;
+  paperName: string;
+  courseName: string;
+  levelColor: string | null;
+  totalQuestions: number;
+  totalMarks: number;
+  durationMinutes: number;
+  onBeginTimed: () => void;
+  onBeginOpen: () => void;
+  onBack: () => void;
+}) {
+  // Deterministic per-paper sigil variation, same family across the deck.
+  const seed = useMemo(() => {
+    let hash = 0;
+    for (let i = 0; i < paperName.length; i++) hash = (hash * 31 + paperName.charCodeAt(i)) >>> 0;
+    return hash;
+  }, [paperName]);
+
+  return (
+    <div
+      className="relative isolate flex min-h-[70vh] w-full items-center justify-center px-4 py-8"
+      style={{
+        ...(levelColor ? { ['--lvl' as string]: levelColor } : {}),
+        ['--ring' as string]: levelColor ?? '#d6b26e',
+      }}
+    >
+      <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+        <img src={pageBg} alt="" className="h-full w-full object-cover object-center" />
+        <div className="absolute inset-0 bg-gradient-to-b from-background/88 via-background/92 to-background/96" />
+      </div>
+
+      <button
+        type="button"
+        onClick={onBack}
+        className="absolute left-0 top-0 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+        Back
+      </button>
+
+      <div className="exam-tome exam-cover relative isolate w-full max-w-xl overflow-hidden rounded-2xl border border-[color-mix(in_srgb,var(--lvl,#62aef0)_30%,rgba(214,178,110,0.2))] px-6 py-8 text-center backdrop-blur-sm sm:px-10 sm:py-10 exam-q-enter">
+        {/* Sigil crest */}
+        <div className="mx-auto mb-5 h-24 w-24">
+          <ArcaneSigil seed={seed} />
+        </div>
+
+        {courseName && (
+          <p className="mb-1 text-xs font-medium uppercase tracking-[0.18em]" style={{ color: levelColor ?? undefined }}>
+            {courseName}
+          </p>
+        )}
+        <p className="text-sm text-muted-foreground">{examName}</p>
+        <h1 className="mt-1 font-display text-2xl font-normal leading-tight tracking-tight sm:text-3xl">
+          {paperName}
+        </h1>
+
+        <RunicDivider className="my-6" />
+
+        <div className="flex items-stretch justify-center divide-x divide-[rgba(214,178,110,0.18)]">
+          <CoverStat icon={<ListChecks className="h-4 w-4" />} value={String(totalQuestions)} label={totalQuestions === 1 ? 'question' : 'questions'} />
+          {totalMarks > 0 && (
+            <CoverStat icon={<FileText className="h-4 w-4" />} value={String(totalMarks)} label="marks" />
+          )}
+          <CoverStat icon={<Timer className="h-4 w-4" />} value={`${durationMinutes}m`} label="duration" />
+        </div>
+
+        <RunicDivider className="my-6" label="choose your run" />
+
+        <div className="space-y-3">
+          <button
+            type="button"
+            onClick={onBeginTimed}
+            className="exam-cover-cta group flex w-full items-center justify-between gap-3 rounded-xl border border-[color-mix(in_srgb,var(--lvl,#62aef0)_55%,transparent)] bg-[color-mix(in_srgb,var(--lvl,#62aef0)_14%,transparent)] px-5 py-3.5 text-left transition-colors hover:bg-[color-mix(in_srgb,var(--lvl,#62aef0)_22%,transparent)]"
+          >
+            <span className="flex items-center gap-3">
+              <Timer className="h-5 w-5 shrink-0" style={{ color: levelColor ?? undefined }} aria-hidden="true" />
+              <span>
+                <span className="block font-medium">Begin Timed Run</span>
+                <span className="block text-xs text-muted-foreground">{durationMinutes}-minute clock · auto-submits at 0:00</span>
+              </span>
+            </span>
+            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+          </button>
+
+          <button
+            type="button"
+            onClick={onBeginOpen}
+            className="group flex w-full items-center justify-between gap-3 rounded-xl border border-[rgba(214,178,110,0.22)] bg-black/15 px-5 py-3.5 text-left transition-colors hover:border-[rgba(214,178,110,0.4)] hover:bg-black/25"
+          >
+            <span className="flex items-center gap-3">
+              <BookOpen className="h-5 w-5 shrink-0 text-muted-foreground" aria-hidden="true" />
+              <span>
+                <span className="block font-medium">Open Run</span>
+                <span className="block text-xs text-muted-foreground">No clock · read and review freely</span>
+              </span>
+            </span>
+            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+          </button>
+        </div>
+
+        <p className="mt-5 text-[11px] text-muted-foreground/70">
+          Your progress autosaves and survives a refresh, either way.
+        </p>
+
+        <div className="tcard-frame" aria-hidden="true" />
+        <span className="tcard-corner tcard-corner-tl" aria-hidden="true" />
+        <span className="tcard-corner tcard-corner-tr" aria-hidden="true" />
+        <span className="tcard-corner tcard-corner-bl" aria-hidden="true" />
+        <span className="tcard-corner tcard-corner-br" aria-hidden="true" />
       </div>
     </div>
   );
@@ -975,6 +1271,16 @@ export default function PaperPage() {
   const [timerEndsAt, setTimerEndsAt] = useState<number | null>(null);
   const [timeExpired, setTimeExpired] = useState(false);
   const [retryNonce, setRetryNonce] = useState(0);
+  const [flaggedIds, setFlaggedIds] = useState<Set<string>>(new Set());
+  // null while the cover plate is up; set once the user picks Timed/Open Run.
+  const [runMode, setRunMode] = useState<RunMode | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [autoSubmitting, setAutoSubmitting] = useState(false);
+  const [lowTimeWarning, setLowTimeWarning] = useState<'5min' | '1min' | null>(null);
+  // One-shot guards so each low-time warning fires exactly once per run.
+  const warned5Ref = useRef(false);
+  const warned1Ref = useRef(false);
+  const warningTimeoutRef = useRef<number | null>(null);
   const { getToken, isSignedIn } = useAuth();
 
   // Record a view in the signed-in user's history once the paper resolves.
@@ -1026,6 +1332,15 @@ export default function PaperPage() {
           setRemainingSeconds(savedSession?.remainingSeconds ?? initSeconds);
           setTimerEndsAt(savedSession?.timerEndsAt ?? null);
           setTimeExpired((savedSession?.remainingSeconds ?? initSeconds) === 0);
+          setFlaggedIds(new Set(savedSession?.flaggedIds ?? []));
+          // Restore the chosen mode; a fresh paper (no save) shows the cover
+          // plate. A finished/reviewing run skips the gate and goes straight in.
+          setRunMode(savedSession?.runMode ?? (savedSession?.showResults ? 'open' : null));
+          // If we restored into already-low time, suppress the (now stale)
+          // crossing warnings so they don't fire spuriously on the next tick.
+          const restoredSeconds = savedSession?.remainingSeconds ?? initSeconds;
+          warned5Ref.current = restoredSeconds <= 300;
+          warned1Ref.current = restoredSeconds <= 60;
         }
       })
       .catch((error) => {
@@ -1060,25 +1375,57 @@ export default function PaperPage() {
       timerRunning,
       remainingSeconds,
       timerEndsAt,
+      flaggedIds: Array.from(flaggedIds),
+      runMode,
     };
 
     writePracticeRunSession(storageKey, payload);
-  }, [paper, remainingSeconds, selectedAnswers, showResults, storageKey, timerEndsAt, timerRunning]);
+  }, [paper, remainingSeconds, selectedAnswers, showResults, storageKey, timerEndsAt, timerRunning, flaggedIds, runMode]);
 
   useEffect(() => {
     if (!paper || !timerRunning || showResults || timerEndsAt === null) {
       return;
     }
 
+    const flashWarning = (which: '5min' | '1min') => {
+      setLowTimeWarning(which);
+      if (warningTimeoutRef.current) window.clearTimeout(warningTimeoutRef.current);
+      warningTimeoutRef.current = window.setTimeout(() => setLowTimeWarning(null), 4500);
+    };
+
     const syncRemaining = () => {
       const nextRemaining = Math.max(0, Math.ceil((timerEndsAt - Date.now()) / 1000));
       setRemainingSeconds(nextRemaining);
+
+      // Crossing low-time thresholds — each fires once (refs reset on start/reset).
+      if (nextRemaining <= 60 && nextRemaining > 0 && !warned1Ref.current) {
+        warned1Ref.current = true;
+        warned5Ref.current = true;
+        flashWarning('1min');
+      } else if (nextRemaining <= 300 && nextRemaining > 60 && !warned5Ref.current) {
+        warned5Ref.current = true;
+        flashWarning('5min');
+      }
 
       if (nextRemaining === 0) {
         setTimerRunning(false);
         setTimerEndsAt(null);
         setTimeExpired(true);
-        setShowResults(true);
+        setLowTimeWarning(null);
+        // Don't snap silently to results — show a brief "time's up" beat first.
+        if (prefersReducedMotion()) {
+          setShowResults(true);
+          setCurrentIndex(0);
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        } else {
+          setAutoSubmitting(true);
+          window.setTimeout(() => {
+            setAutoSubmitting(false);
+            setShowResults(true);
+            setCurrentIndex(0);
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }, 900);
+        }
       }
     };
 
@@ -1087,6 +1434,10 @@ export default function PaperPage() {
 
     return () => window.clearInterval(interval);
   }, [paper, showResults, timerEndsAt, timerRunning]);
+
+  useEffect(() => () => {
+    if (warningTimeoutRef.current) window.clearTimeout(warningTimeoutRef.current);
+  }, []);
 
   const examSlug = useMemo(() => {
     if (!paper?.examUuid) return null;
@@ -1145,6 +1496,43 @@ export default function PaperPage() {
     [groupedQuestions, selectedAnswers],
   );
 
+  // Flagged-for-review overlay, aligned to the navigator pages.
+  const flaggedPages = useMemo(
+    () => groupedQuestions.map((question) => flaggedIds.has(question.uuid)),
+    [groupedQuestions, flaggedIds],
+  );
+  const flaggedCount = useMemo(() => flaggedPages.filter(Boolean).length, [flaggedPages]);
+
+  // First page that isn't fully answered — drives the confirm dialog's jump.
+  const firstIncompleteIndex = useMemo(
+    () => pageStates.findIndex((state) => state !== 'done'),
+    [pageStates],
+  );
+  const partialCount = useMemo(
+    () => pageStates.filter((state) => state === 'partial').length,
+    [pageStates],
+  );
+
+  const toggleFlag = useCallback((uuid: string) => {
+    setFlaggedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(uuid)) next.delete(uuid);
+      else next.add(uuid);
+      return next;
+    });
+  }, []);
+
+  const goNextFlagged = useCallback(() => {
+    const total = flaggedPages.length;
+    for (let step = 1; step <= total; step++) {
+      const idx = (currentIndex + step) % total;
+      if (flaggedPages[idx]) {
+        goTo(idx);
+        return;
+      }
+    }
+  }, [flaggedPages, currentIndex, goTo]);
+
   // Keyboard paging with ← / →. Inside a short-answer field the caret moves
   // first; pressing the arrow again at the field's edge pages the question, so
   // editing and navigation coexist.
@@ -1173,6 +1561,24 @@ export default function PaperPage() {
     return () => window.removeEventListener('keydown', onKey);
   }, [goPrev, goNext]);
 
+  // `f` flags / unflags the current question (ignored while typing or reviewing).
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'f' && event.key !== 'F') return;
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || target?.isContentEditable) return;
+      if (showResults) return;
+      const question = groupedQuestions[Math.min(currentIndex, groupedQuestions.length - 1)];
+      if (!question) return;
+      event.preventDefault();
+      toggleFlag(question.uuid);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [currentIndex, groupedQuestions, toggleFlag, showResults]);
+
   // Pop back to the page we came from (the course page in the normal flow)
   // rather than pushing a fresh course entry — pushing created a Paper ⇄ Course
   // loop with the course page's own history-pop back button. Fall back to the
@@ -1193,7 +1599,7 @@ export default function PaperPage() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleSubmit = () => {
+  const performSubmit = () => {
     // The climactic moment: a brief "summon" charge, then reveal the verdict.
     // Reduced motion (or an already-summoning click) reveals immediately.
     if (summoning) return;
@@ -1206,6 +1612,19 @@ export default function PaperPage() {
       setSummoning(false);
       reveal();
     }, 620);
+  };
+
+  // Manual submit always confirms first (see the submit-confirm Dialog).
+  const handleSubmit = () => setConfirmOpen(true);
+
+  const handleConfirmReviewUnanswered = () => {
+    setConfirmOpen(false);
+    if (firstIncompleteIndex >= 0) goTo(firstIncompleteIndex);
+  };
+
+  const handleConfirmSubmit = () => {
+    setConfirmOpen(false);
+    performSubmit();
   };
 
   const handleOptionSelect = (
@@ -1236,12 +1655,17 @@ export default function PaperPage() {
       setSelectedAnswers({});
       setTimerEndsAt(Date.now() + durationMinutes * 60 * 1000);
       setTimerRunning(true);
+      warned5Ref.current = false;
+      warned1Ref.current = false;
       return;
     }
 
     setTimeExpired(false);
     setTimerEndsAt(Date.now() + nextRemaining * 1000);
     setTimerRunning(true);
+    // Arm whichever warnings are still ahead of where the clock resumes.
+    warned5Ref.current = nextRemaining <= 300;
+    warned1Ref.current = nextRemaining <= 60;
   };
 
   const handleTimerPause = () => {
@@ -1255,16 +1679,54 @@ export default function PaperPage() {
     setTimerEndsAt(null);
     setRemainingSeconds(durationMinutes * 60);
     setTimeExpired(false);
+    setLowTimeWarning(null);
+    warned5Ref.current = false;
+    warned1Ref.current = false;
+  };
+
+  // Cover-plate choice: begin a Timed Run with the clock already ticking, so a
+  // timed attempt can never be silently un-started.
+  const handleBeginTimed = () => {
+    if (!paper) return;
+    setRunMode('timed');
+    setSelectedAnswers({});
+    setShowResults(false);
+    setCurrentIndex(0);
+    setTimeExpired(false);
+    setLowTimeWarning(null);
+    setRemainingSeconds(durationMinutes * 60);
+    setTimerEndsAt(Date.now() + durationMinutes * 60 * 1000);
+    setTimerRunning(true);
+    warned5Ref.current = false;
+    warned1Ref.current = false;
+  };
+
+  // Cover-plate choice: begin an Open Run — no clock, free reading and review.
+  const handleBeginOpen = () => {
+    if (!paper) return;
+    setRunMode('open');
+    setTimerRunning(false);
+    setTimerEndsAt(null);
+    setRemainingSeconds(null);
+    setTimeExpired(false);
+    setLowTimeWarning(null);
   };
 
   const handleTryAgain = () => {
     setSelectedAnswers({});
+    setFlaggedIds(new Set());
     setShowResults(false);
     setTimerRunning(false);
     setTimerEndsAt(null);
     setRemainingSeconds(paper ? durationMinutes * 60 : null);
     setTimeExpired(false);
+    setLowTimeWarning(null);
+    setAutoSubmitting(false);
+    warned5Ref.current = false;
+    warned1Ref.current = false;
     setCurrentIndex(0);
+    // Return to the cover plate so the user re-picks Timed vs Open.
+    setRunMode(null);
     if (storageKey) clearPracticeRunSession(storageKey);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -1329,8 +1791,26 @@ export default function PaperPage() {
     );
   }
 
+  // The cover plate gates entry: pick Timed Run (clock) or Open Run (review).
+  if (runMode === null) {
+    return (
+      <RunCoverPlate
+        examName={paper.examName}
+        paperName={displayPaperName}
+        courseName={displayCourseName}
+        levelColor={levelColor}
+        totalQuestions={stats.totalQuestions}
+        totalMarks={stats.totalMarks}
+        durationMinutes={durationMinutes}
+        onBeginTimed={handleBeginTimed}
+        onBeginOpen={handleBeginOpen}
+        onBack={goBack}
+      />
+    );
+  }
+
   const allAnswered = stats.answered === stats.totalQuestions;
-  const hasTimer = paper.duration > 0;
+  const hasTimer = runMode === 'timed';
   const safeIndex = Math.min(currentIndex, pageCount - 1);
   const currentQuestion = groupedQuestions[safeIndex];
   const isLastPage = safeIndex >= pageCount - 1;
@@ -1396,7 +1876,49 @@ export default function PaperPage() {
                 </span>
               </div>
               <ProgressBar answered={stats.answered} total={stats.totalQuestions} />
+              <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                <span
+                  className="inline-flex items-center gap-1"
+                  title="Your answers and timer autosave and survive a refresh."
+                >
+                  <CheckCircle2 className="h-3 w-3 text-emerald-400/80" aria-hidden="true" />
+                  Saved
+                </span>
+                <span className="text-muted-foreground/40" aria-hidden="true">·</span>
+                <span className="tabular-nums">
+                  {Math.max(0, stats.totalQuestions - stats.answered)} left
+                </span>
+                {partialCount > 0 && (
+                  <span className="tabular-nums text-amber-500/90">{partialCount} partial</span>
+                )}
+                {flaggedCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={goNextFlagged}
+                    className="inline-flex items-center gap-1 text-amber-400/90 transition-colors hover:text-amber-300"
+                    title="Jump to next flagged question"
+                  >
+                    <Flag className="h-3 w-3 fill-amber-400/70" aria-hidden="true" />
+                    {flaggedCount} flagged
+                  </button>
+                )}
+              </div>
             </div>
+            {lowTimeWarning && (
+              <span
+                key={lowTimeWarning}
+                role="status"
+                className={cn(
+                  'exam-lowtime hidden shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-semibold sm:inline-flex',
+                  lowTimeWarning === '1min'
+                    ? 'border-red-500/40 bg-red-500/10 text-red-400'
+                    : 'border-amber-500/40 bg-amber-500/10 text-amber-400',
+                )}
+              >
+                <Timer className="h-3.5 w-3.5" aria-hidden="true" />
+                {lowTimeWarning === '1min' ? '1 minute left' : '5 minutes left'}
+              </span>
+            )}
             {hasTimer && (
               <CompactTimer
                 durationMinutes={durationMinutes}
@@ -1415,7 +1937,7 @@ export default function PaperPage() {
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px] xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0 space-y-5">
       {/* Results summary shown above the question while reviewing */}
-      {showResults && <ResultsSummary stats={stats} onTryAgain={handleTryAgain} />}
+      {showResults && <ResultsSummary stats={stats} onTryAgain={handleTryAgain} timeExpired={timeExpired} />}
 
       {/* One question per page */}
       {currentQuestion && (
@@ -1427,6 +1949,8 @@ export default function PaperPage() {
             showResults={showResults}
             onSelectAnswer={handleOptionSelect}
             onShortAnswerChange={handleShortAnswerChange}
+            isFlagged={flaggedIds.has(currentQuestion.uuid)}
+            onToggleFlag={() => toggleFlag(currentQuestion.uuid)}
           />
         </div>
       )}
@@ -1499,9 +2023,69 @@ export default function PaperPage() {
         </div>
 
         <aside className="hidden lg:block">
-          <QuestionNavigator states={pageStates} currentIndex={safeIndex} onJump={goTo} />
+          <QuestionNavigator
+            states={pageStates}
+            flagged={flaggedPages}
+            flaggedCount={flaggedCount}
+            currentIndex={safeIndex}
+            onJump={goTo}
+            onJumpNextFlagged={goNextFlagged}
+          />
         </aside>
       </div>
+
+      {/* Submit confirmation — adaptive copy + a jump to the first gap. */}
+      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen} labelledBy="submit-confirm-title">
+        <div className="p-5 sm:p-6">
+          <h2 id="submit-confirm-title" className="font-display text-xl font-normal tracking-tight">
+            {allAnswered ? 'Submit all answers?' : 'Submit your test?'}
+          </h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            {allAnswered ? (
+              <>All {stats.totalQuestions} answered. Your answers lock after submitting.</>
+            ) : (
+              <>
+                {stats.totalQuestions - stats.answered} unanswered
+                {partialCount > 0 && ` · ${partialCount} partial`}. You can't change answers
+                after submitting.
+              </>
+            )}
+          </p>
+          {flaggedCount > 0 && (
+            <p className="mt-2.5 inline-flex items-center gap-1.5 text-sm font-medium text-amber-400">
+              <Flag className="h-3.5 w-3.5 fill-amber-400/70" aria-hidden="true" />
+              {flaggedCount} {flaggedCount === 1 ? 'question is' : 'questions are'} still flagged for review.
+            </p>
+          )}
+          <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            {!allAnswered && firstIncompleteIndex >= 0 && (
+              <Button variant="outline" onClick={handleConfirmReviewUnanswered}>
+                Review unanswered
+              </Button>
+            )}
+            <Button variant="ghost" onClick={() => setConfirmOpen(false)}>
+              {allAnswered ? 'Keep reviewing' : 'Keep going'}
+            </Button>
+            <Button
+              onClick={handleConfirmSubmit}
+              className={cn('gap-1', allAnswered && 'bg-green-600 text-white hover:bg-green-700')}
+            >
+              {allAnswered ? 'Submit' : 'Submit anyway'}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+
+      {/* Graceful auto-submit — a brief beat so 0:00 never feels like a glitch. */}
+      {autoSubmitting && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/70 backdrop-blur-sm">
+          <div className="exam-verdict rounded-2xl border border-amber-500/30 bg-card px-7 py-6 text-center shadow-2xl">
+            <Timer className="mx-auto h-8 w-8 text-amber-400" aria-hidden="true" />
+            <p className="mt-2.5 font-display text-lg tracking-tight">Time's up</p>
+            <p className="text-sm text-muted-foreground">Submitting your answers…</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
