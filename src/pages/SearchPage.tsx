@@ -11,6 +11,7 @@ import {
   type SearchPaperResult,
 } from '@/lib/api';
 import { getDisplayCourseName } from '@/lib/courseMapping';
+import { isSupportedExamSlug } from '@/lib/examMapping';
 import { logger } from '@/lib/logger';
 import { formatPaperName } from '@/lib/paperUtils';
 
@@ -134,8 +135,8 @@ export default function SearchPage() {
     getSearchResults(query, { signal: controller.signal })
       .then((results) => {
         if (!active) return;
-        setCourses(results.courses);
-        setPapers(results.papers);
+        setCourses(results.courses.filter((course) => isSupportedExamSlug(course.examSlug)));
+        setPapers(results.papers.filter((paper) => isSupportedExamSlug(paper.examSlug)));
       })
       .catch((error) => {
         if (error instanceof DOMException && error.name === 'AbortError') return;

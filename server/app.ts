@@ -5,6 +5,7 @@ import {
   getCourseUuids,
   getSearchPattern,
 } from './paperCatalogue';
+import { isSupportedExamSlug } from '../src/lib/examMapping';
 
 const allowedOrigin = process.env.API_ALLOWED_ORIGIN?.trim() || '*';
 const cacheableApiResponse = 'public, max-age=60, s-maxage=300, stale-while-revalidate=600';
@@ -475,7 +476,10 @@ export function createApiFetchHandler(sql: DbClient, options: ApiHandlerOptions 
           LIMIT 24
         `;
 
-        return json({ courses, papers });
+        return json({
+          courses: courses.filter((course) => isSupportedExamSlug(course.examSlug)),
+          papers: papers.filter((paper) => isSupportedExamSlug(paper.examSlug)),
+        });
       }
 
       const examCoursesMatch = url.pathname.match(/^\/api\/exams\/([^/]+)\/courses$/);

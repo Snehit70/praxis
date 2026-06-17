@@ -16,6 +16,10 @@ export const EXAM_SLUG_TO_NAME: Record<string, string> = {
   'end-term': 'End Term Quiz',
 };
 
+export function isSupportedExamSlug(slug: string): boolean {
+  return slug in EXAM_SLUG_TO_UUID;
+}
+
 export function getExamUuidFromSlug(slug: string): string | null {
   return EXAM_SLUG_TO_UUID[slug] || null;
 }

@@ -102,6 +102,53 @@ describe('Praxis API integration', () => {
     expect(json).toEqual({ courses: [], papers: [] });
   });
 
+  test('filters unsupported exam slugs out of search results', async () => {
+    await context.database.sql`
+      INSERT INTO exams (source_uuid, exam_name, exam_slug)
+      VALUES ('exam-oppe', 'OPPE', 'oppe')
+    `;
+
+    await context.database.sql`
+      INSERT INTO paper_variants (
+        id,
+        source_uuid,
+        exam_uuid,
+        course_uuid,
+        group_id,
+        total_score,
+        duration,
+        paper_name,
+        paper_description,
+        year,
+        is_new,
+        source_path
+      )
+      VALUES (
+        'variant-oppe',
+        'paper-oppe',
+        'exam-oppe',
+        'course-1',
+        2,
+        '0',
+        45,
+        'Computational Thinking OPPE 2025',
+        'Unsupported exam fixture paper',
+        2025,
+        0,
+        'fixtures/paper-oppe.json'
+      )
+    `;
+
+    const { response, json } = await context.getJson<{
+      courses: Array<{ examSlug: string }>;
+      papers: Array<{ examSlug: string }>;
+    }>('/api/search?q=computational');
+
+    expect(response.status).toBe(200);
+    expect(json.courses.map((course) => course.examSlug)).toEqual(['quiz1']);
+    expect(json.papers.every((paper) => paper.examSlug !== 'oppe')).toBe(true);
+  });
+
   test('lists papers ordered by most recent year and computes marks', async () => {
     const { response, json } = await context.getJson<Array<Record<string, unknown>>>(
       '/api/exams/exam-1/courses/course-1/papers',
