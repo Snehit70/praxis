@@ -15,7 +15,7 @@ export default function RootLayout() {
   const bare = pathname === "/" || pathname === "/home";
   // The exam-taking page uses a question + navigator layout that should span
   // the full viewport width rather than the narrower centered reading column.
-  const fullBleed = pathname.startsWith("/paper/");
+  const fullBleed = pathname.startsWith("/paper/") || pathname.includes("/course/");
 
   useEffect(() => {
     logger.info("RootLayout mounted");
@@ -39,7 +39,7 @@ export default function RootLayout() {
                   to="/saved"
                   className="text-sm text-muted-foreground transition-colors hover:text-foreground"
                 >
-                  Saved
+                  Saved papers
                 </Link>
                 <UserButton afterSignOutUrl="/" />
               </SignedIn>

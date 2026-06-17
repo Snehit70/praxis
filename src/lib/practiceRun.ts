@@ -2,6 +2,13 @@ import type { QuestionType, QuizQuestion } from '@/lib/dataTransforms';
 
 export type SelectedAnswers = Record<string, string | string[]>;
 
+/**
+ * The two modes a user chooses on entering a paper variant (see CONTEXT.md):
+ * a Timed Run (clock + auto-submit) or an Open Run (untimed, free review).
+ * `null` means the choice hasn't been made yet — the cover plate is showing.
+ */
+export type RunMode = 'timed' | 'open';
+
 export interface QuestionWithChildren extends QuizQuestion {
   subQuestions?: QuizQuestion[];
 }
@@ -12,6 +19,13 @@ export interface SavedPracticeRunSession {
   timerRunning: boolean;
   remainingSeconds: number | null;
   timerEndsAt: number | null;
+  /** Question uuids the user flagged to revisit. Absent in older saves. */
+  flaggedIds: string[];
+  /**
+   * Which mode the user picked on the cover plate. `null` (or absent in older
+   * saves) means the cover plate hasn't been resolved yet for this session.
+   */
+  runMode: RunMode | null;
 }
 
 export interface PracticeRunStats {
@@ -54,6 +68,8 @@ export function parseSavedPracticeRunSession(
       ? Math.max(0, parsed.remainingSeconds)
       : durationSeconds;
     const expiredWhileAway = running && remainingSeconds === 0;
+    const runMode: RunMode | null =
+      parsed.runMode === 'timed' || parsed.runMode === 'open' ? parsed.runMode : null;
 
     return {
       selectedAnswers: parsed.selectedAnswers ?? {},
@@ -61,6 +77,10 @@ export function parseSavedPracticeRunSession(
       timerRunning: running && remainingSeconds !== null && remainingSeconds > 0,
       remainingSeconds,
       timerEndsAt: running && remainingSeconds !== null && remainingSeconds > 0 ? timerEndsAt : null,
+      flaggedIds: Array.isArray(parsed.flaggedIds)
+        ? parsed.flaggedIds.filter((id): id is string => typeof id === 'string')
+        : [],
+      runMode,
     };
   } catch {
     return null;

@@ -5,6 +5,7 @@ import {
   getDisplayCourseName,
   type CourseLevel,
 } from '@/lib/courseMapping';
+import { isSupportedExamSlug } from '@/lib/examMapping';
 
 import fernImg from '@/assets/fern_image.jpeg';
 import starkImg from '@/assets/Stark-banner.jpeg';
@@ -30,7 +31,7 @@ export interface CatalogueEntry {
 }
 
 /** Preferred exam type to open first when a course offers several. */
-const EXAM_PRIORITY = ['end-term', 'quiz1', 'quiz2', 'oppe'];
+const EXAM_PRIORITY = ['end-term', 'quiz1', 'quiz2'];
 
 export function pickDefaultExamSlug(examSlugs: string[]): string | null {
   for (const slug of EXAM_PRIORITY) {
@@ -44,13 +45,16 @@ export function buildCatalogue(courses: CatalogueCourse[]): CatalogueEntry[] {
   const merged = new Map<string, CatalogueEntry & { primaryPaperCount: number }>();
 
   for (const course of courses) {
+    const supportedExamSlugs = course.examSlugs.filter(isSupportedExamSlug);
+    if (supportedExamSlugs.length === 0) continue;
+
     const key = getCanonicalCourseName(course.courseName);
     const existing = merged.get(key);
 
     if (existing) {
       existing.uuids.push(course.uuid);
       existing.paperCount += course.paperCount;
-      for (const slug of course.examSlugs) {
+      for (const slug of supportedExamSlugs) {
         if (!existing.examSlugs.includes(slug)) existing.examSlugs.push(slug);
       }
       if (course.paperCount > existing.primaryPaperCount) {
@@ -67,7 +71,7 @@ export function buildCatalogue(courses: CatalogueCourse[]): CatalogueEntry[] {
         primaryUuid: course.uuid,
         paperCount: course.paperCount,
         primaryPaperCount: course.paperCount,
-        examSlugs: [...course.examSlugs],
+        examSlugs: [...supportedExamSlugs],
       });
     }
   }

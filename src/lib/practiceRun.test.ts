@@ -143,5 +143,7 @@ test('parseSavedPracticeRunSession reveals results when a running timer expired 
     timerRunning: false,
     remainingSeconds: 0,
     timerEndsAt: null,
+    flaggedIds: [],
+    runMode: null,
   });
 });

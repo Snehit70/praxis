@@ -1,4 +1,4 @@
-import { useParams, Link, useSearchParams, useNavigate, useLocation } from 'react-router-dom';
+import { useParams, Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Search, X, FileText, Play, Layers, Clock, ListChecks, Trophy, Sparkles } from 'lucide-react';
 import { logger } from '@/lib/logger';
@@ -19,7 +19,7 @@ import { cn } from '@/lib/utils';
 import { ArcaneSigil } from '@/components/ArcaneSigil';
 import { LEVEL_META } from '@/lib/courseCatalogue';
 import pageBg from '@/assets/Sousou no Frieren - Ep. 18_ First-Class Mage Exam - 11_07.png';
-import cardBg from '@/assets/frieren-card-bg.png';
+import cardBg from '@/assets/10273905393555527.jpeg';
 
 const prefersReducedMotion = () =>
   typeof window !== 'undefined' &&
@@ -50,7 +50,6 @@ const EXAM_TABS = [
   { slug: 'quiz1', label: 'Quiz 1' },
   { slug: 'quiz2', label: 'Quiz 2' },
   { slug: 'end-term', label: 'End Term' },
-  { slug: 'oppe', label: 'OPPE' },
 ];
 
 /** Pill row to jump to the same course under a different exam type. */
@@ -72,6 +71,7 @@ function ExamTypeSwitcher({
             key={tab.slug}
             role="tab"
             aria-selected={active}
+            replace
             to={`/exam/${tab.slug}/course/${courseId}${aliasSuffix}`}
             className={
               active
@@ -160,7 +160,7 @@ function PaperVariantCard({
         href={to}
         onClick={activate}
         onPointerMove={track}
-        className="tcard relative isolate flex aspect-[3/4] flex-col overflow-hidden rounded-2xl border border-[color-mix(in_srgb,var(--lvl)_55%,transparent)] bg-gradient-to-b from-[#35302a] via-[#241f19] to-[#15120c] p-4 text-left shadow-[inset_0_0_30px_-10px_color-mix(in_srgb,var(--lvl)_55%,transparent),inset_0_0_0_1px_rgba(214,178,110,0.14)]"
+        className="tcard relative isolate flex aspect-[9/16] flex-col overflow-hidden rounded-2xl border border-[color-mix(in_srgb,var(--lvl)_55%,transparent)] bg-gradient-to-b from-[#35302a] via-[#241f19] to-[#15120c] p-4 text-left shadow-[inset_0_0_30px_-10px_color-mix(in_srgb,var(--lvl)_55%,transparent),inset_0_0_0_1px_rgba(214,178,110,0.14)]"
       >
         {/* Dimmed Frieren portrait — the bottom texture layer. Kept faint so the
             sigil/element glow read as the focal art and the per-level tint wins. */}
@@ -168,11 +168,11 @@ function PaperVariantCard({
           src={cardBg}
           alt=""
           aria-hidden="true"
-          className="pointer-events-none absolute inset-0 h-full w-full object-cover object-top opacity-[0.18] mix-blend-luminosity"
+          className="pointer-events-none absolute inset-0 h-full w-full object-cover object-center opacity-[0.55]"
         />
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute inset-0 bg-gradient-to-b from-[#15120c]/70 via-[#15120c]/55 to-[#15120c]/85"
+          className="pointer-events-none absolute inset-0 bg-gradient-to-b from-[#15120c]/85 via-[#15120c]/25 to-[#15120c]/92"
         />
         {/* Element glow + seeded arcane sigil — the card's art, no two alike. */}
         <div
@@ -180,7 +180,7 @@ function PaperVariantCard({
           className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_42%,color-mix(in_srgb,var(--lvl)_26%,transparent),transparent_62%)]"
         />
         <div aria-hidden="true" className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <ArcaneSigil seed={seed} className="opacity-40" />
+          <ArcaneSigil seed={seed} className="opacity-40 !w-[82%] !max-w-[280px]" />
         </div>
         {/* Age patina — weathers older papers; newest stays clear. */}
         <div
@@ -304,7 +304,7 @@ function BundleCard({
         </span>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-4 grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
         {bundle.papers.map((paper, i) => (
           <PaperVariantCard
             key={paper._id}
@@ -355,14 +355,18 @@ function LoadingSkeleton({ examId, examName }: { examId: string; examName: strin
 export default function CoursePage() {
   const { examId, courseId } = useParams();
   const navigate = useNavigate();
-  const location = useLocation();
   const [searchParams] = useSearchParams();
 
   // Return to wherever the user actually came from (dashboard, search, exam
   // list). Fall back to the dashboard on a fresh/deep-linked load where there
   // is no in-app history to pop.
   const goBack = () => {
-    if (location.key !== 'default') navigate(-1);
+    // Exam-tab switches use `replace`, so they never add a history entry. If a
+    // real in-app entry sits behind us (history index > 0), step back to the
+    // origin (dashboard, search, exam list); otherwise — a deep-link or fresh
+    // load — fall back to the dashboard.
+    const idx = (window.history.state as { idx?: number } | null)?.idx ?? 0;
+    if (idx > 0) navigate(-1);
     else navigate('/home');
   };
   const examUuid = examId ? getExamUuidFromSlug(examId) : null;
@@ -422,9 +426,10 @@ export default function CoursePage() {
         if (error instanceof DOMException && error.name === 'AbortError') return;
         logger.error('Failed to load bundle data', error);
         if (!active) return;
+        // Keep any previously-loaded course/bundles so the header and tabs stay
+        // mounted; the list region renders the error. Only a first-ever load
+        // (course still null) falls back to the full-page error panel.
         setLoadFailed(true);
-        setCourse(null);
-        setBundles([]);
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -496,11 +501,14 @@ export default function CoursePage() {
     );
   }
 
-  if (loading) {
+  // First-ever load (nothing cached yet) shows the full skeleton. Once we have a
+  // course, exam-type switches keep the chrome (backdrop, header, tabs) mounted
+  // and only the list region below reloads — see the list switch in the return.
+  if (loading && !course) {
     return <LoadingSkeleton examId={examId!} examName={examName} />;
   }
 
-  if (loadFailed) {
+  if (loadFailed && !course) {
     return (
       <StatePanel
         compact
@@ -527,38 +535,8 @@ export default function CoursePage() {
     );
   }
 
-  if (!course || bundles.length === 0) {
-    return (
-      <div className="space-y-6">
-        <Button variant="ghost" size="sm" asChild className="gap-1.5 -ml-2 text-muted-foreground">
-          <Link to="/home">
-            <ArrowLeft className="h-4 w-4" />
-            Dashboard
-          </Link>
-        </Button>
-        {course && (
-          <div className="space-y-3">
-            <h1 className="font-display text-4xl font-normal tracking-tight">{displayCourseName}</h1>
-            <ExamTypeSwitcher activeSlug={examId!} courseId={courseId!} aliasSuffix={aliasSuffix} />
-          </div>
-        )}
-        <StatePanel
-          compact
-          icon={(
-            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
-              <FileText className="h-7 w-7 text-muted-foreground" />
-            </div>
-          )}
-          title="No papers found"
-          description={`No papers available for this course in ${examName}. Try another exam type above.`}
-          announce
-        />
-      </div>
-    );
-  }
-
   return (
-    <div className="relative isolate mx-auto max-w-4xl space-y-8">
+    <div className="relative isolate space-y-8">
       {/* Page backdrop — the First-Class Mage Exam hall, held still behind the
           page and dimmed so the bundle list stays legible. `isolate` + `-z-10`
           keeps it above the app background but below the content. */}
@@ -634,7 +612,40 @@ export default function CoursePage() {
         </div>
       </header>
 
-      {filteredBundles.length === 0 ? (
+      {/* List region — the only part that reloads on an exam-type switch. While
+          a refetch is in flight we keep the previous cards visible but dimmed
+          (stale-while-revalidate) rather than tearing the page down. */}
+      {loadFailed ? (
+        <StatePanel
+          compact
+          tone="error"
+          icon={(
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-destructive/10">
+              <FileText className="h-7 w-7 text-destructive" />
+            </div>
+          )}
+          title="Unable to load papers"
+          description={`Could not load papers for ${examName}.`}
+          actions={(
+            <Button variant="default" onClick={() => setRetryNonce((value) => value + 1)}>
+              Retry
+            </Button>
+          )}
+          announce
+        />
+      ) : bundles.length === 0 ? (
+        <StatePanel
+          compact
+          icon={(
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
+              <FileText className="h-7 w-7 text-muted-foreground" />
+            </div>
+          )}
+          title="No papers found"
+          description={`No papers available for this course in ${examName}. Try another exam type above.`}
+          announce
+        />
+      ) : filteredBundles.length === 0 ? (
         <div className="flex flex-col items-center py-16 text-center">
           <Layers aria-hidden="true" className="h-12 w-12 text-muted-foreground mb-4" />
           <p className="text-lg font-medium">No bundles match "{searchQuery}"</p>
@@ -643,7 +654,10 @@ export default function CoursePage() {
           </button>
         </div>
       ) : (
-        <div className="space-y-12">
+        <div
+          className={cn('space-y-12 transition-opacity duration-300', loading && 'pointer-events-none opacity-40')}
+          aria-busy={loading || undefined}
+        >
           {filteredBundles.map((bundle) => (
             <BundleCard
               key={bundle.groupId}
