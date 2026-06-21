@@ -32,6 +32,10 @@ export interface PracticeRunStats {
   totalQuestions: number;
   answered: number;
   correct: number;
+  /** Gradable questions answered but graded wrong (only counted post-reveal). */
+  incorrect: number;
+  /** Gradable questions left unanswered (only counted post-reveal). */
+  skipped: number;
   gradableTotal: number;
   totalMarks: number;
   scoredMarks: number;
@@ -39,6 +43,16 @@ export interface PracticeRunStats {
 }
 
 export type PracticeRunPageState = 'none' | 'partial' | 'done';
+
+/**
+ * Per-page status used by the navigator *after submission*. Distinct from
+ * `PracticeRunPageState` (which tracks answer progress during the run):
+ *  - `correct`     — all gradable parts answered correctly
+ *  - `incorrect`   — at least one gradable part answered wrong
+ *  - `unanswered`  — a gradable part was left blank (and none wrong)
+ *  - `manual`      — only manual-eval parts (SA/OPPE); can't be auto-graded
+ */
+export type PracticeRunReviewState = 'correct' | 'incorrect' | 'unanswered' | 'manual';
 
 export const PAPER_SESSION_STORAGE_PREFIX = 'praxis.paper-session';
 
@@ -141,6 +155,35 @@ export function groupPracticeRunQuestions(questions: QuizQuestion[]): QuestionWi
   return topLevel;
 }
 
+/**
+ * Whether a gradable (MCQ/MSQ) question's selected answer is fully correct.
+ * Manual-eval types (SA/OPPE) and empty answers are never "correct" here —
+ * callers decide how to treat those. Shared by the score tally and the
+ * post-submission review states so the two can never drift.
+ */
+export function isPracticeRunQuestionCorrect(
+  question: QuizQuestion,
+  selected: string | string[] | undefined,
+): boolean {
+  if (!hasMeaningfulAnswer(selected)) return false;
+
+  const correctIndices = question.options
+    .map((option, index) => (option.isCorrect === 1 ? String(index) : null))
+    .filter((value): value is string => value !== null);
+
+  if (question.questionType === 'MCQ') {
+    return correctIndices.includes(selected as string);
+  }
+  if (question.questionType === 'MSQ') {
+    const selectedEntries = selected as string[];
+    return (
+      correctIndices.length === selectedEntries.length &&
+      correctIndices.every((value) => selectedEntries.includes(value))
+    );
+  }
+  return false;
+}
+
 export function calculatePracticeRunStats(
   groupedQuestions: QuestionWithChildren[],
   selectedAnswers: SelectedAnswers,
@@ -176,6 +219,8 @@ export function calculatePracticeRunStats(
     return hasMeaningfulAnswer(selectedAnswers[id]);
   }).length;
   let correct = 0;
+  let incorrect = 0;
+  let skipped = 0;
   let totalMarks = 0;
   let scoredMarks = 0;
 
@@ -186,28 +231,18 @@ export function calculatePracticeRunStats(
     const marks = parseFloat(question.totalMark) || 0;
     totalMarks += marks;
 
-    if (!showResults || !hasMeaningfulAnswer(selectedAnswers[question.uuid])) return;
+    if (!showResults) return;
 
-    const correctIndices = question.options
-      .map((option, index) => (option.isCorrect === 1 ? String(index) : null))
-      .filter((value): value is string => value !== null);
+    if (!hasMeaningfulAnswer(selectedAnswers[question.uuid])) {
+      skipped++;
+      return;
+    }
 
-    const selected = selectedAnswers[question.uuid];
-
-    if (question.questionType === 'MCQ') {
-      if (correctIndices.includes(selected as string)) {
-        correct++;
-        scoredMarks += marks;
-      }
-    } else if (question.questionType === 'MSQ') {
-      const selectedEntries = selected as string[];
-      const isCorrect =
-        correctIndices.length === selectedEntries.length &&
-        correctIndices.every((value) => selectedEntries.includes(value));
-      if (isCorrect) {
-        correct++;
-        scoredMarks += marks;
-      }
+    if (isPracticeRunQuestionCorrect(question, selectedAnswers[question.uuid])) {
+      correct++;
+      scoredMarks += marks;
+    } else {
+      incorrect++;
     }
   };
 
@@ -222,11 +257,47 @@ export function calculatePracticeRunStats(
     totalQuestions: allQuestionIds.size,
     answered,
     correct,
+    incorrect,
+    skipped,
     gradableTotal,
     totalMarks,
     scoredMarks,
     manualEvalCount,
   };
+}
+
+/**
+ * Review status per top-level (grouped) question, in page order — drives the
+ * navigator's colouring after submission. A comprehension page aggregates its
+ * gradable sub-questions; priority is incorrect → unanswered → correct →
+ * manual, so a page surfaces the most "actionable" status (something to review)
+ * first. Pages with only manual-eval parts read as `manual`.
+ */
+export function getPracticeRunReviewStates(
+  groupedQuestions: QuestionWithChildren[],
+  selectedAnswers: SelectedAnswers,
+): PracticeRunReviewState[] {
+  const stateFor = (question: QuizQuestion): PracticeRunReviewState => {
+    if (question.questionType === 'SA' || question.questionType === 'OPPE') return 'manual';
+    if (!hasMeaningfulAnswer(selectedAnswers[question.uuid])) return 'unanswered';
+    return isPracticeRunQuestionCorrect(question, selectedAnswers[question.uuid])
+      ? 'correct'
+      : 'incorrect';
+  };
+
+  return groupedQuestions.map((question) => {
+    const parts =
+      question.questionType === 'COMPREHENSION'
+        ? question.subQuestions ?? []
+        : [question];
+    if (parts.length === 0) return 'manual';
+
+    const states = parts.map(stateFor);
+    if (states.includes('incorrect')) return 'incorrect';
+    if (states.includes('unanswered')) return 'unanswered';
+    if (states.includes('correct')) return 'correct';
+    return 'manual';
+  });
 }
 
 export function getPracticeRunPageStates(
