@@ -179,7 +179,7 @@ function CompactTimer({
   );
 }
 
-function ResultsSummary({
+export function ResultsSummary({
   stats,
   onTryAgain,
   onReviewIncorrect,
@@ -553,7 +553,7 @@ function QuestionMedia({
   return <div className="max-w-none leading-relaxed text-foreground">{parts}</div>;
 }
 
-function OptionButton({
+export function OptionButton({
   option,
   optionIndex,
   isSelected,
@@ -1037,7 +1037,7 @@ function QuestionCard({
  * partially-answered / untouched state and lets the user jump to any question.
  * Uses the horizontal space the single-question layout frees up.
  */
-function QuestionNavigator({
+export function QuestionNavigator({
   states,
   reviewStates,
   flagged,
