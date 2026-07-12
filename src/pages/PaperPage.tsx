@@ -23,12 +23,14 @@ import {
   calculatePracticeRunStats,
   clearPracticeRunSession,
   getPracticeRunPageStates,
+  getPracticeRunReviewStates,
   getPracticeRunStorageKey,
   groupPracticeRunQuestions,
   readPracticeRunSession,
   selectPracticeRunOption,
   writePracticeRunSession,
   type PracticeRunPageState,
+  type PracticeRunReviewState,
   type QuestionWithChildren,
   type RunMode,
   type SavedPracticeRunSession,
@@ -180,16 +182,20 @@ function CompactTimer({
 function ResultsSummary({
   stats,
   onTryAgain,
+  onReviewIncorrect,
   timeExpired = false,
 }: {
   stats: {
     correct: number;
+    incorrect: number;
+    skipped: number;
     gradableTotal: number;
     scoredMarks: number;
     totalMarks: number;
     manualEvalCount: number;
   };
   onTryAgain: () => void;
+  onReviewIncorrect?: () => void;
   timeExpired?: boolean;
 }) {
   const percentage =
@@ -206,6 +212,8 @@ function ResultsSummary({
     : isOkay
     ? 'bg-yellow-500/10 border-yellow-500/20'
     : 'bg-red-500/10 border-red-500/20';
+
+  const hasBreakdown = stats.gradableTotal > 0;
 
   return (
     <div className={`exam-verdict rounded-2xl border p-5 ring-1 ring-inset ring-[rgba(214,178,110,0.16)] sm:p-6 ${bgColor}`}>
@@ -247,11 +255,47 @@ function ResultsSummary({
             )}
           </div>
         </div>
-        <Button variant="outline" onClick={onTryAgain} className="gap-2 sm:self-center">
-          <RotateCcw className="h-4 w-4" />
-          Try again
-        </Button>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:self-center">
+          {stats.incorrect > 0 && onReviewIncorrect && (
+            <Button
+              variant="outline"
+              onClick={onReviewIncorrect}
+              className="gap-2 border-red-500/40 text-red-300 hover:bg-red-500/10 hover:text-red-200"
+            >
+              <XCircle className="h-4 w-4" />
+              Review incorrect
+            </Button>
+          )}
+          <Button variant="outline" onClick={onTryAgain} className="gap-2">
+            <RotateCcw className="h-4 w-4" />
+            Try again
+          </Button>
+        </div>
       </div>
+
+      {/* Breakdown strip — the three auto-graded outcomes at a glance. */}
+      {hasBreakdown && (
+        <div className="mt-4 grid grid-cols-3 gap-2 border-t border-white/10 pt-4 text-center sm:gap-3">
+          <div className="rounded-lg bg-emerald-500/10 px-2 py-2.5">
+            <p className="inline-flex items-center justify-center gap-1.5 text-xl font-bold tabular-nums text-emerald-400">
+              <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+              {stats.correct}
+            </p>
+            <p className="mt-0.5 text-xs text-muted-foreground">Correct</p>
+          </div>
+          <div className="rounded-lg bg-red-500/10 px-2 py-2.5">
+            <p className="inline-flex items-center justify-center gap-1.5 text-xl font-bold tabular-nums text-red-400">
+              <XCircle className="h-4 w-4" aria-hidden="true" />
+              {stats.incorrect}
+            </p>
+            <p className="mt-0.5 text-xs text-muted-foreground">Incorrect</p>
+          </div>
+          <div className="rounded-lg bg-white/5 px-2 py-2.5">
+            <p className="text-xl font-bold tabular-nums text-muted-foreground">{stats.skipped}</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">Skipped</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -995,20 +1039,43 @@ function QuestionCard({
  */
 function QuestionNavigator({
   states,
+  reviewStates,
   flagged,
   flaggedCount,
+  incorrectCount = 0,
   currentIndex,
   onJump,
   onJumpNextFlagged,
+  onJumpNextIncorrect,
 }: {
   states: PracticeRunPageState[];
+  /** When set (post-submission), cells colour by correctness instead of progress. */
+  reviewStates?: PracticeRunReviewState[] | null;
   flagged: boolean[];
   flaggedCount: number;
+  incorrectCount?: number;
   currentIndex: number;
   onJump: (index: number) => void;
   onJumpNextFlagged: () => void;
+  onJumpNextIncorrect?: () => void;
 }) {
+  const reviewMode = !!reviewStates;
   const done = states.filter((state) => state === 'done').length;
+  // In review the gradable denominator excludes manual-eval pages — "X / Y correct".
+  const gradablePages = reviewStates
+    ? reviewStates.filter((state) => state !== 'manual').length
+    : 0;
+  const correctPages = reviewStates
+    ? reviewStates.filter((state) => state === 'correct').length
+    : 0;
+
+  const reviewLabel: Record<PracticeRunReviewState, string> = {
+    correct: ', correct',
+    incorrect: ', incorrect',
+    unanswered: ', skipped',
+    manual: ', needs manual review',
+  };
+
   return (
     <div className="exam-panel exam-tome sticky top-20 isolate overflow-hidden rounded-2xl p-4 backdrop-blur-sm">
       {/* Faint summoning sigil watermark — ties the rail to the deck. */}
@@ -1016,13 +1083,18 @@ function QuestionNavigator({
         <ArcaneSigil />
       </div>
       <div className="relative z-10 mb-2 flex items-center justify-between">
-        <h2 className="font-display text-base font-normal tracking-tight">Questions</h2>
-        <span className="text-xs tabular-nums text-muted-foreground">{done}/{states.length} done</span>
+        <h2 className="font-display text-base font-normal tracking-tight">
+          {reviewMode ? 'Review' : 'Questions'}
+        </h2>
+        <span className="text-xs tabular-nums text-muted-foreground">
+          {reviewMode ? `${correctPages}/${gradablePages} correct` : `${done}/${states.length} done`}
+        </span>
       </div>
       <RunicDivider className="relative z-10 mb-3" />
       <div className="relative z-10 grid grid-cols-5 gap-2">
         {states.map((state, index) => {
           const isCurrent = index === currentIndex;
+          const review = reviewStates?.[index];
           return (
             <button
               key={index}
@@ -1030,14 +1102,31 @@ function QuestionNavigator({
               onClick={() => onJump(index)}
               aria-current={isCurrent ? 'true' : undefined}
               aria-label={`Go to question ${index + 1}${
-                state === 'done' ? ', answered' : state === 'partial' ? ', partly answered' : ''
+                review
+                  ? reviewLabel[review]
+                  : state === 'done'
+                  ? ', answered'
+                  : state === 'partial'
+                  ? ', partly answered'
+                  : ''
               }${flagged[index] ? ', flagged' : ''}`}
               className={cn(
                 'relative flex h-9 w-9 items-center justify-center rounded-md border text-sm font-medium transition-colors',
-                state === 'done' &&
+                // Review mode: colour by correctness.
+                review === 'correct' && 'border-emerald-500/45 bg-emerald-500/15 text-emerald-300',
+                review === 'incorrect' && 'border-red-500/45 bg-red-500/15 text-red-300',
+                review === 'unanswered' && 'border-border bg-black/20 text-muted-foreground',
+                review === 'manual' &&
+                  'border-[rgba(214,178,110,0.4)] bg-[rgba(214,178,110,0.12)] text-[#d6b26e]',
+                // Run mode: colour by answer progress.
+                !reviewMode &&
+                  state === 'done' &&
                   'border-[color-mix(in_srgb,var(--lvl,#62aef0)_50%,transparent)] bg-[color-mix(in_srgb,var(--lvl,#62aef0)_18%,transparent)] text-[color-mix(in_srgb,var(--lvl,#62aef0)_92%,white)]',
-                state === 'partial' && 'border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400',
-                state === 'none' &&
+                !reviewMode &&
+                  state === 'partial' &&
+                  'border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400',
+                !reviewMode &&
+                  state === 'none' &&
                   'border-[rgba(214,178,110,0.16)] bg-black/20 text-muted-foreground hover:border-[color-mix(in_srgb,var(--lvl,#62aef0)_45%,transparent)] hover:text-foreground',
                 isCurrent && 'ring-2 ring-[#d6b26e] ring-offset-1 ring-offset-background',
               )}
@@ -1056,6 +1145,16 @@ function QuestionNavigator({
         })}
       </div>
 
+      {reviewMode && incorrectCount > 0 && onJumpNextIncorrect && (
+        <button
+          type="button"
+          onClick={onJumpNextIncorrect}
+          className="relative z-10 mt-3 flex w-full items-center justify-center gap-1.5 rounded-md border border-red-500/40 bg-red-500/10 px-2 py-1.5 text-xs font-medium text-red-300 transition-colors hover:bg-red-500/20"
+        >
+          <XCircle className="h-3 w-3" aria-hidden="true" />
+          Next incorrect ({incorrectCount})
+        </button>
+      )}
       {flaggedCount > 0 && (
         <button
           type="button"
@@ -1067,18 +1166,43 @@ function QuestionNavigator({
         </button>
       )}
       <div className="relative z-10 mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
-        <span className="flex items-center gap-1">
-          <span className="h-2.5 w-2.5 rounded-sm bg-[color-mix(in_srgb,var(--lvl,#62aef0)_55%,transparent)]" aria-hidden="true" />
-          Answered
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="h-2.5 w-2.5 rounded-sm bg-amber-500/40" aria-hidden="true" />
-          Partial
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="h-2.5 w-2.5 rounded-sm border border-border" aria-hidden="true" />
-          Unanswered
-        </span>
+        {reviewMode ? (
+          <>
+            <span className="flex items-center gap-1">
+              <span className="h-2.5 w-2.5 rounded-sm bg-emerald-500/45" aria-hidden="true" />
+              Correct
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="h-2.5 w-2.5 rounded-sm bg-red-500/45" aria-hidden="true" />
+              Incorrect
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="h-2.5 w-2.5 rounded-sm border border-border" aria-hidden="true" />
+              Skipped
+            </span>
+            {reviewStates?.includes('manual') && (
+              <span className="flex items-center gap-1">
+                <span className="h-2.5 w-2.5 rounded-sm bg-[rgba(214,178,110,0.4)]" aria-hidden="true" />
+                Manual
+              </span>
+            )}
+          </>
+        ) : (
+          <>
+            <span className="flex items-center gap-1">
+              <span className="h-2.5 w-2.5 rounded-sm bg-[color-mix(in_srgb,var(--lvl,#62aef0)_55%,transparent)]" aria-hidden="true" />
+              Answered
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="h-2.5 w-2.5 rounded-sm bg-amber-500/40" aria-hidden="true" />
+              Partial
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="h-2.5 w-2.5 rounded-sm border border-border" aria-hidden="true" />
+              Unanswered
+            </span>
+          </>
+        )}
         <span className="flex items-center gap-1">
           <Flag className="h-2.5 w-2.5 fill-amber-400/80 text-amber-400" aria-hidden="true" />
           Flagged
@@ -1496,6 +1620,17 @@ export default function PaperPage() {
     [groupedQuestions, selectedAnswers],
   );
 
+  // Post-submission correctness per page — only meaningful (and rendered) once
+  // results are revealed; recolours the navigator from progress to outcome.
+  const reviewStates = useMemo<PracticeRunReviewState[]>(
+    () => getPracticeRunReviewStates(groupedQuestions, selectedAnswers),
+    [groupedQuestions, selectedAnswers],
+  );
+  const incorrectCount = useMemo(
+    () => reviewStates.filter((state) => state === 'incorrect').length,
+    [reviewStates],
+  );
+
   // Flagged-for-review overlay, aligned to the navigator pages.
   const flaggedPages = useMemo(
     () => groupedQuestions.map((question) => flaggedIds.has(question.uuid)),
@@ -1532,6 +1667,18 @@ export default function PaperPage() {
       }
     }
   }, [flaggedPages, currentIndex, goTo]);
+
+  // Cycle to the next incorrect page during review (wraps around like flagged).
+  const goNextIncorrect = useCallback(() => {
+    const total = reviewStates.length;
+    for (let step = 1; step <= total; step++) {
+      const idx = (currentIndex + step) % total;
+      if (reviewStates[idx] === 'incorrect') {
+        goTo(idx);
+        return;
+      }
+    }
+  }, [reviewStates, currentIndex, goTo]);
 
   // Keyboard paging with ← / →. Inside a short-answer field the caret moves
   // first; pressing the arrow again at the field's edge pages the question, so
@@ -1937,7 +2084,14 @@ export default function PaperPage() {
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px] xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0 space-y-5">
       {/* Results summary shown above the question while reviewing */}
-      {showResults && <ResultsSummary stats={stats} onTryAgain={handleTryAgain} timeExpired={timeExpired} />}
+      {showResults && (
+        <ResultsSummary
+          stats={stats}
+          onTryAgain={handleTryAgain}
+          onReviewIncorrect={incorrectCount > 0 ? goNextIncorrect : undefined}
+          timeExpired={timeExpired}
+        />
+      )}
 
       {/* One question per page */}
       {currentQuestion && (
@@ -2025,11 +2179,14 @@ export default function PaperPage() {
         <aside className="hidden lg:block">
           <QuestionNavigator
             states={pageStates}
+            reviewStates={showResults ? reviewStates : null}
             flagged={flaggedPages}
             flaggedCount={flaggedCount}
+            incorrectCount={incorrectCount}
             currentIndex={safeIndex}
             onJump={goTo}
             onJumpNextFlagged={goNextFlagged}
+            onJumpNextIncorrect={goNextIncorrect}
           />
         </aside>
       </div>

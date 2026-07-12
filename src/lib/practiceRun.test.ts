@@ -2,7 +2,9 @@ import { expect, test } from 'bun:test';
 import {
   calculatePracticeRunStats,
   getPracticeRunPageStates,
+  getPracticeRunReviewStates,
   groupPracticeRunQuestions,
+  isPracticeRunQuestionCorrect,
   parseSavedPracticeRunSession,
   selectPracticeRunOption,
   type SelectedAnswers,
@@ -90,11 +92,28 @@ test('calculatePracticeRunStats scores MCQ and MSQ answers after reveal', () => 
     totalQuestions: 3,
     answered: 3,
     correct: 2,
+    incorrect: 0,
+    skipped: 0,
     gradableTotal: 2,
     totalMarks: 5,
     scoredMarks: 5,
     manualEvalCount: 1,
   });
+});
+
+test('calculatePracticeRunStats tallies incorrect and skipped gradable answers', () => {
+  const grouped = groupPracticeRunQuestions([
+    quizQuestion({ uuid: 'right' }),
+    quizQuestion({ uuid: 'wrong', questionNumber: 2 }),
+    quizQuestion({ uuid: 'blank', questionNumber: 3 }),
+  ]);
+
+  const stats = calculatePracticeRunStats(grouped, { right: '0', wrong: '1' }, true);
+
+  expect(stats.correct).toBe(1);
+  expect(stats.incorrect).toBe(1);
+  expect(stats.skipped).toBe(1);
+  expect(stats.gradableTotal).toBe(3);
 });
 
 test('getPracticeRunPageStates reports partial comprehension progress', () => {
@@ -114,6 +133,51 @@ test('getPracticeRunPageStates reports partial comprehension progress', () => {
     'partial',
     'done',
   ]);
+});
+
+test('isPracticeRunQuestionCorrect grades MCQ and MSQ, ignoring blanks and manual types', () => {
+  const mcq = quizQuestion({ uuid: 'mcq' });
+  expect(isPracticeRunQuestionCorrect(mcq, '0')).toBe(true);
+  expect(isPracticeRunQuestionCorrect(mcq, '1')).toBe(false);
+  expect(isPracticeRunQuestionCorrect(mcq, undefined)).toBe(false);
+
+  const msq = quizQuestion({
+    uuid: 'msq',
+    questionType: 'MSQ',
+    options: [
+      { optionText: 'A', score: '1', isCorrect: 1, optionNumber: 1 },
+      { optionText: 'B', score: '1', isCorrect: 1, optionNumber: 2 },
+      { optionText: 'C', score: '0', isCorrect: 0, optionNumber: 3 },
+    ],
+  });
+  expect(isPracticeRunQuestionCorrect(msq, ['0', '1'])).toBe(true);
+  expect(isPracticeRunQuestionCorrect(msq, ['0'])).toBe(false);
+  expect(isPracticeRunQuestionCorrect(msq, ['0', '1', '2'])).toBe(false);
+
+  const sa = quizQuestion({ uuid: 'sa', questionType: 'SA', options: [] });
+  expect(isPracticeRunQuestionCorrect(sa, '42')).toBe(false);
+});
+
+test('getPracticeRunReviewStates colours pages and aggregates comprehension subs', () => {
+  const grouped = groupPracticeRunQuestions([
+    quizQuestion({ uuid: 'right' }),
+    quizQuestion({ uuid: 'wrong', questionNumber: 2 }),
+    quizQuestion({ uuid: 'blank', questionNumber: 3 }),
+    quizQuestion({ uuid: 'sa', questionNumber: 4, questionType: 'SA', options: [] }),
+    quizQuestion({ uuid: 'passage', questionNumber: 5, questionType: 'COMPREHENSION', totalMark: '0', options: [] }),
+    quizQuestion({ uuid: 'sub-right', questionNumber: 6, parentQuestionUuid: 'passage' }),
+    quizQuestion({ uuid: 'sub-wrong', questionNumber: 7, parentQuestionUuid: 'passage' }),
+  ]);
+
+  expect(
+    getPracticeRunReviewStates(grouped, {
+      right: '0',
+      wrong: '1',
+      sa: '42',
+      'sub-right': '0',
+      'sub-wrong': '1',
+    }),
+  ).toEqual(['correct', 'incorrect', 'unanswered', 'manual', 'incorrect']);
 });
 
 test('selectPracticeRunOption toggles MSQ choices and replaces MCQ choices', () => {
