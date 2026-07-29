@@ -40,7 +40,7 @@ function corsHeaders(): Record<string, string> {
   return {
     'content-type': 'application/json',
     'access-control-allow-origin': allowedOrigin,
-    'access-control-allow-methods': 'GET,POST,DELETE,OPTIONS',
+    'access-control-allow-methods': 'GET,POST,PATCH,DELETE,OPTIONS',
     'access-control-allow-headers': 'content-type, authorization',
     // Cross-origin fetch from the Vercel app cannot read Content-Disposition
     // unless it is listed here. Without this, the client saves paper.pdf.
