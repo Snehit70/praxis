@@ -6,10 +6,12 @@ import CoursePage from './pages/CoursePage';
 import PaperPage from './pages/PaperPage';
 import SearchPage from './pages/SearchPage';
 import SavedPage from './pages/SavedPage';
+import ProfilePage from './pages/ProfilePage';
 
 import RootLayout from '@/components/layout/RootLayout';
 import RequireAuth from '@/components/RequireAuth';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { BOOKMARKS_ENABLED } from '@/lib/featureFlags';
 
 function App() {
   return (
@@ -28,7 +30,8 @@ function App() {
             <Route element={<RequireAuth />}>
               <Route path="home" element={<HomePage />} />
               <Route path="search" element={<SearchPage />} />
-              <Route path="saved" element={<SavedPage />} />
+              <Route path="profile" element={<ProfilePage />} />
+              {BOOKMARKS_ENABLED && <Route path="saved" element={<SavedPage />} />}
               <Route path="exam/:examId" element={<ExamPage />} />
               <Route path="exam/:examId/course/:courseId" element={<CoursePage />} />
               <Route path="paper/:paperId" element={<PaperPage />} />

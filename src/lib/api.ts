@@ -307,6 +307,42 @@ export function recordView(paperId: string, getToken: TokenGetter) {
   });
 }
 
+export interface ProfileActivity {
+  id: string;
+  uuid: string;
+  paperName: string;
+  examUuid: string;
+  examName: string;
+  courseUuid: string;
+  courseName: string;
+  year: number | null;
+  viewedAt: string | null;
+}
+
+export interface UserProfile {
+  displayName: string | null;
+  bio: string | null;
+  avatarKey: string | null;
+  level: string | null;
+  courseKeys: string[];
+  recentViews: ProfileActivity[];
+  viewedPaperCount: number;
+}
+
+export function getProfile(getToken: TokenGetter) {
+  return fetchAuthedJson<UserProfile>('/api/me/profile', getToken);
+}
+
+export function updateProfile(
+  payload: Partial<Pick<UserProfile, 'displayName' | 'bio' | 'avatarKey'>>,
+  getToken: TokenGetter,
+) {
+  return fetchAuthedJson<UserProfile>('/api/me/profile', getToken, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
 export interface EnrolledCourses {
   /** Program level the user selected (e.g. "Foundation"), or null if unset. */
   level: string | null;

@@ -1,10 +1,11 @@
 import { Outlet, Link, useLocation } from "react-router-dom";
-import { BookOpen } from "lucide-react";
+import { BookOpen, UserRound } from "lucide-react";
 import { SignedIn, SignedOut, UserButton } from "@clerk/clerk-react";
 import { SignInTrigger } from "@/components/auth/AuthDialog";
 import { Button } from "@/components/ui/button";
 import { logger } from "@/lib/logger";
 import { useEffect } from "react";
+import { BOOKMARKS_ENABLED } from "@/lib/featureFlags";
 
 export default function RootLayout() {
   // The landing and dashboard routes are self-contained, full-bleed heroes: each
@@ -35,13 +36,22 @@ export default function RootLayout() {
             </Link>
             <nav className="ml-auto flex items-center gap-4">
               <SignedIn>
+                {BOOKMARKS_ENABLED && (
+                  <Link
+                    to="/saved"
+                    className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    Saved papers
+                  </Link>
+                )}
                 <Link
-                  to="/saved"
-                  className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+                  to="/profile"
+                  className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
                 >
-                  Saved papers
+                  <UserRound className="h-4 w-4" />
+                  Profile
                 </Link>
-                <UserButton afterSignOutUrl="/" />
+                <UserButton afterSignOutUrl="/" userProfileMode="navigation" userProfileUrl="/profile" />
               </SignedIn>
               <SignedOut>
                 <SignInTrigger>
