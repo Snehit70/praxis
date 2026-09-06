@@ -172,8 +172,12 @@ Expected values by role:
 - `PRAXIS_API_DATABASE_URL`: container-network database URL, for example `postgres://praxis:<password>@praxis-postgres:5432/praxis`.
 - `PRAXIS_API_SERVER_NAME`: `api.praxis.snehit70.dev`.
 - `PRAXIS_API_ALLOWED_ORIGIN`: currently safe as `*` because the API is public read-only data.
+- `PRAXIS_CLERK_SECRET_KEY`: backend Clerk secret. Optional if the host `.env.api` already has `CLERK_SECRET_KEY`; the deploy merges and will not blank it.
+- `PRAXIS_CLERK_PUBLISHABLE_KEY`: same Clerk publishable key the frontend uses (`pk_...`).
 - `PRAXIS_PDF_DOWNLOADS_ENABLED`: optional. Set to `off` to kill all PDF downloads. Defaults to on.
 - `PRAXIS_PDF_RATE_LIMIT_BYPASS_USER_IDS`: optional comma-separated Clerk user ids that skip PDF rate limits.
+
+`/api/me/*` (saved courses, bookmarks, history, PDF download) returns 401 if the API container has no Clerk secret. The env write step now keeps existing host keys instead of replacing the whole file.
 
 PDF downloads are capped at 3 per 5 minutes, 8 per hour, and 24 per day per signed-in user. Chromium also refuses extra renders when 2 are already in flight.
 
