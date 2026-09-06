@@ -51,3 +51,6 @@ logs/
 
 # Wrong-ecosystem lockfile (project uses bun.lock)
 package-lock.json
+
+# Prototype / local scratch output
+tmp/
