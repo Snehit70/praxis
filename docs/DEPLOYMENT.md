@@ -127,7 +127,7 @@ VITE_API_BASE_URL=https://api.praxis.snehit70.dev bun run dev
 
 ## Production Frontend Deploy
 
-Vercel builds the static frontend.
+Vercel builds the static frontend. `vercel.json` rewrites unknown paths to `index.html` so client routes (`/home`, `/sign-in`, `/paper/...`) do not 404 on refresh or after Clerk redirects.
 
 Required Vercel production env:
 
