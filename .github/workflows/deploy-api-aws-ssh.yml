@@ -35,6 +35,8 @@ jobs:
       API_SERVER_NAME: ${{ secrets.PRAXIS_API_SERVER_NAME }}
       PDF_DOWNLOADS_ENABLED: ${{ secrets.PRAXIS_PDF_DOWNLOADS_ENABLED }}
       PDF_RATE_LIMIT_BYPASS_USER_IDS: ${{ secrets.PRAXIS_PDF_RATE_LIMIT_BYPASS_USER_IDS }}
+      CLERK_SECRET_KEY: ${{ secrets.PRAXIS_CLERK_SECRET_KEY }}
+      CLERK_PUBLISHABLE_KEY: ${{ secrets.PRAXIS_CLERK_PUBLISHABLE_KEY }}
     steps:
       - uses: actions/checkout@v4
 
@@ -89,17 +91,76 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          tmp_env="$(mktemp)"
-          trap 'rm -f "${tmp_env}"' EXIT
-          cat > "${tmp_env}" <<EOF
-          DATABASE_URL=${API_DATABASE_URL}
-          PORT=8787
-          API_ALLOWED_ORIGIN=${API_ALLOWED_ORIGIN}
-          PDF_DOWNLOADS_ENABLED=${PDF_DOWNLOADS_ENABLED:-true}
-          PDF_RATE_LIMIT_BYPASS_USER_IDS=${PDF_RATE_LIMIT_BYPASS_USER_IDS}
-          EOF
-          chmod 600 "${tmp_env}"
-          scp -i ~/.ssh/id_ed25519 -P "${AWS_SSH_PORT}" "${tmp_env}" "${AWS_SSH_USER}@${AWS_SSH_HOST}:${DEPLOY_PATH}/.env.api"
+          existing="$(mktemp)"
+          merged="$(mktemp)"
+          trap 'rm -f "${existing}" "${merged}"' EXIT
+          # Keep host keys (especially Clerk) unless this run supplies a replacement.
+          scp -i ~/.ssh/id_ed25519 -P "${AWS_SSH_PORT}" \
+            "${AWS_SSH_USER}@${AWS_SSH_HOST}:${DEPLOY_PATH}/.env.api" "${existing}" \
+            || : > "${existing}"
+          python3 - "${existing}" "${merged}" <<'PY'
+          import os
+          import sys
+
+          existing_path, merged_path = sys.argv[1], sys.argv[2]
+
+          def parse(path):
+              data = {}
+              try:
+                  text = open(path, encoding='utf-8').read()
+              except FileNotFoundError:
+                  return data
+              for raw in text.splitlines():
+                  line = raw.strip()
+                  if not line or line.startswith('#') or '=' not in line:
+                      continue
+                  key, value = line.split('=', 1)
+                  data[key] = value
+              return data
+
+          env = parse(existing_path)
+          overlay = {
+              'DATABASE_URL': os.environ.get('API_DATABASE_URL', ''),
+              'PORT': '8787',
+              'API_ALLOWED_ORIGIN': os.environ.get('API_ALLOWED_ORIGIN', ''),
+              'PDF_DOWNLOADS_ENABLED': os.environ.get('PDF_DOWNLOADS_ENABLED') or 'true',
+              'PDF_RATE_LIMIT_BYPASS_USER_IDS': os.environ.get('PDF_RATE_LIMIT_BYPASS_USER_IDS', ''),
+          }
+          clerk_secret = os.environ.get('CLERK_SECRET_KEY', '').strip()
+          clerk_publishable = os.environ.get('CLERK_PUBLISHABLE_KEY', '').strip()
+          if clerk_secret:
+              overlay['CLERK_SECRET_KEY'] = clerk_secret
+          if clerk_publishable:
+              overlay['CLERK_PUBLISHABLE_KEY'] = clerk_publishable
+              overlay['VITE_CLERK_PUBLISHABLE_KEY'] = clerk_publishable
+          env.update({key: value for key, value in overlay.items() if value is not None})
+          if not env.get('CLERK_SECRET_KEY', '').strip():
+              raise SystemExit('CLERK_SECRET_KEY missing on host and PRAXIS_CLERK_SECRET_KEY is empty')
+          order = [
+              'DATABASE_URL',
+              'PORT',
+              'API_ALLOWED_ORIGIN',
+              'PDF_DOWNLOADS_ENABLED',
+              'PDF_RATE_LIMIT_BYPASS_USER_IDS',
+              'CLERK_SECRET_KEY',
+              'CLERK_PUBLISHABLE_KEY',
+              'VITE_CLERK_PUBLISHABLE_KEY',
+          ]
+          lines = []
+          seen = set()
+          for key in order:
+              if key in env:
+                  lines.append(f'{key}={env[key]}')
+                  seen.add(key)
+          for key, value in env.items():
+              if key not in seen:
+                  lines.append(f'{key}={value}')
+          with open(merged_path, 'w', encoding='utf-8') as handle:
+              handle.write('\n'.join(lines) + '\n')
+          PY
+          chmod 600 "${merged}"
+          scp -i ~/.ssh/id_ed25519 -P "${AWS_SSH_PORT}" "${merged}" \
+            "${AWS_SSH_USER}@${AWS_SSH_HOST}:${DEPLOY_PATH}/.env.api"
 
       - name: Build and restart API on server
         shell: bash
