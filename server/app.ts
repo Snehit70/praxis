@@ -41,6 +41,9 @@ function corsHeaders(): Record<string, string> {
     'access-control-allow-origin': allowedOrigin,
     'access-control-allow-methods': 'GET,POST,DELETE,OPTIONS',
     'access-control-allow-headers': 'content-type, authorization',
+    // Cross-origin fetch from the Vercel app cannot read Content-Disposition
+    // unless it is listed here. Without this, the client saves paper.pdf.
+    'access-control-expose-headers': 'content-disposition, x-pdf-filename',
   };
 }
 
@@ -750,6 +753,7 @@ export function createApiFetchHandler(sql: DbClient, options: ApiHandlerOptions 
               ...corsHeaders(),
               'content-type': 'application/pdf',
               'content-disposition': `attachment; filename="${filename}"`,
+              'x-pdf-filename': filename,
               'cache-control': 'private, no-store',
             },
           });

@@ -325,9 +325,21 @@ export function saveEnrolledCourses(payload: EnrolledCourses, getToken: TokenGet
   });
 }
 
-function filenameFromDisposition(header: string | null, fallback: string) {
-  const match = header?.match(/filename="([^"]+)"/);
-  return match?.[1] ?? fallback;
+export function filenameFromDisposition(header: string | null, fallback: string) {
+  if (!header) return fallback;
+  const rfc5987 = header.match(/filename\*\s*=\s*(?:UTF-8''|utf-8'')([^;]+)/i);
+  if (rfc5987?.[1]) {
+    try {
+      return decodeURIComponent(rfc5987[1].trim());
+    } catch {
+      // Fall through to filename=.
+    }
+  }
+  const quoted = header.match(/filename\s*=\s*"([^"]+)"/i);
+  if (quoted?.[1]) return quoted[1];
+  const bare = header.match(/filename\s*=\s*([^;]+)/i);
+  if (bare?.[1]) return bare[1].trim().replace(/^['"]|['"]$/g, '');
+  return fallback;
 }
 
 export class PdfDownloadError extends Error {
@@ -381,8 +393,13 @@ export async function downloadPaperPdf(
     throw new PdfDownloadError(message, response.status, retryAfterSeconds);
   }
 
+  const filename =
+    filenameFromDisposition(response.headers.get('content-disposition'), '') ||
+    response.headers.get('x-pdf-filename')?.trim() ||
+    fallback;
+
   return {
     blob: await response.blob(),
-    filename: filenameFromDisposition(response.headers.get('content-disposition'), fallback),
+    filename,
   };
 }
