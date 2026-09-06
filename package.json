@@ -10,7 +10,7 @@
     "build": "tsc -b && vite build",
     "test": "bun run test:unit && bun run test:integration",
     "test:unit": "bun test --preload ./test/setup-dom.ts ./src",
-    "test:api": "bun test ./server/app.test.ts",
+    "test:api": "bun test ./server/app.test.ts ./server/paperPdf.test.ts",
     "test:integration": "bun test ./server/app.test.ts",
     "lint": "eslint src server vite.config.ts",
     "preview": "vite preview",
