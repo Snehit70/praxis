@@ -12,6 +12,7 @@ import { LEVEL_META } from '@/lib/courseCatalogue';
 import { ArcaneSigil } from '@/components/ArcaneSigil';
 import { logger } from '@/lib/logger';
 import { getQuestionImageUrl, getOptionImageUrl, imageSourceFallbacks } from '@/lib/imageUtils';
+import { splitMarkupImages } from '@/lib/markupImages';
 import {
   getPaperByUuid,
   getQuestionsByPaperUuid,
@@ -410,6 +411,21 @@ function renderInlineMarkdown(text: string) {
 }
 
 function RichText({ text, compact = false }: { text: string; compact?: boolean }) {
+  const imageParts = splitMarkupImages(text);
+  if (imageParts.some((part) => part.kind === 'image')) {
+    return (
+      <div className={compact ? 'my-0 leading-relaxed' : 'my-2 leading-relaxed'}>
+        {imageParts.map((part, index) =>
+          part.kind === 'image' ? (
+            <FlowImage key={`img-${index}`} src={part.src} alt="" />
+          ) : (
+            <InlineText key={`t-${index}`} text={part.text} />
+          ),
+        )}
+      </div>
+    );
+  }
+
   const normalized = normalizeMarkup(text);
   const nodes: React.ReactNode[] = [];
   const renderLines = (paragraph: string) =>
@@ -484,6 +500,20 @@ function splitStemBullets(text: string): { lead: string; items: string[] } | nul
 function StemText({ text }: { text: string }) {
   const trimmed = text?.trim();
   if (!trimmed) return null;
+  const imageParts = splitMarkupImages(trimmed);
+  if (imageParts.some((part) => part.kind === 'image')) {
+    return (
+      <>
+        {imageParts.map((part, index) =>
+          part.kind === 'image' ? (
+            <FlowImage key={`img-${index}`} src={part.src} alt="" />
+          ) : (
+            <InlineText key={`t-${index}`} text={part.text} />
+          ),
+        )}
+      </>
+    );
+  }
   const list = splitStemBullets(trimmed);
   if (!list) return <InlineText text={trimmed} />;
   return (
