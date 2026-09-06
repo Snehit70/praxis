@@ -106,6 +106,39 @@ describe('renderPaperHtml', () => {
       'https://pub-38cbed42a577473eb75ea45c187c8d6f.r2.dev/question_images/fjbWN1nr4w7G6oeQxoFasj0ZUUIqXMpzXIeRSGzAnt2KA66F6C.png',
     ]);
   });
+
+  test('keeps inline data-URI option images instead of missing-in-source', () => {
+    const png =
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+    const html = renderPaperHtml(
+      {
+        courseName: 'DBMS',
+        examName: 'End Term Quiz',
+        paperName: 'Database Management Systems',
+        paperDescription: 'Database Management Systems',
+        year: 2026,
+      },
+      [
+        question({
+          uuid: 'q5',
+          questionNumber: 5,
+          questionType: 'MSQ',
+          questionText1: `Consider the hash functions given below. • <img src="${png}" class="inline-image" /> Identify the hash function(s).`,
+          options: [
+            { optionText: `<img src="${png}" class="inline-image" />`, score: '1.5', isCorrect: 1 },
+            { optionText: 'DDL', score: '0', isCorrect: 0 },
+          ],
+        }),
+      ],
+      false,
+    );
+
+    expect(html).not.toContain('Option image missing in source');
+    expect(html).toContain('class="figure inline"');
+    expect(html).toContain(png);
+    expect(html).toContain('Consider the hash functions given below.');
+    expect(collectFigureSrcs(html)).toContain(png);
+  });
 });
 
 describe('localizeHtmlImages', () => {
@@ -156,6 +189,21 @@ describe('localizeHtmlImages', () => {
       expect(result.html).toContain('img-001.png');
     } finally {
       globalThis.fetch = originalFetch;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('writes inline data-URI figures to local files', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'praxis-pdf-test-'));
+    const pngB64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+    try {
+      const html = `<img class="figure inline" src="data:image/png;base64,${pngB64}" alt="inline figure">`;
+      const result = await localizeHtmlImages(html, dir);
+      expect(result).toMatchObject({ fetched: 1, failed: 0, total: 1 });
+      expect(result.html).toContain('img-001.png');
+      expect(result.html).not.toContain('data:image');
+      expect(readFileSync(path.join(dir, 'img-001.png')).byteLength).toBeGreaterThan(0);
+    } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });

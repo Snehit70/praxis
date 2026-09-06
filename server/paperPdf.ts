@@ -7,6 +7,7 @@ import {
   type QuizQuestion,
 } from '../src/lib/dataTransforms';
 import { getOptionImageUrl, getQuestionImageUrl, imageSourceFallbacks } from '../src/lib/imageUtils';
+import { splitMarkupImages } from '../src/lib/markupImages';
 import { inferTerm, parseBundleDate } from './paperCatalogue';
 
 const OPTION_LABELS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
@@ -77,11 +78,7 @@ function decodeHtmlEntities(text: string) {
   });
 }
 
-function markupToHtml(raw: string) {
-  if (/image content will be provided separately/i.test(raw)) {
-    return '<em class="missing">Option image missing in source</em>';
-  }
-
+function textToHtml(raw: string) {
   const withBreaks = raw
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/p>\s*<p>/gi, '\n\n')
@@ -94,10 +91,8 @@ function markupToHtml(raw: string) {
     .replace(/<em>(.*?)<\/em>/gis, '*$1*');
 
   const stripped = withMarkdownish.replace(/<[^>]+>/g, '');
-  const decoded = decodeHtmlEntities(stripped).trim();
-  if (!decoded) {
-    return '<em class="missing">Option image missing in source</em>';
-  }
+  const decoded = decodeHtmlEntities(stripped);
+  if (!decoded.trim()) return '';
 
   const looksLikeSql =
     /CREATE\s+TABLE/i.test(decoded) ||
@@ -112,6 +107,23 @@ function markupToHtml(raw: string) {
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/\*([^*]+)\*/g, '<em>$1</em>')
     .replaceAll('\n', '<br>');
+}
+
+function markupToHtml(raw: string) {
+  const parts = splitMarkupImages(raw);
+  const html: string[] = [];
+  for (const part of parts) {
+    if (part.kind === 'image') {
+      html.push(imageTag(part.src, 'inline figure', true));
+      continue;
+    }
+    const textHtml = textToHtml(part.text);
+    if (textHtml) html.push(textHtml);
+  }
+  if (html.length === 0) {
+    return '<em class="missing">Option image missing in source</em>';
+  }
+  return html.join('');
 }
 
 function typeLabel(type: string) {
@@ -139,12 +151,13 @@ function paperBits(paper: PaperPdfMeta) {
   return [paper.examName, termLabel, dateLabel].filter(Boolean).join(' · ');
 }
 
-function imageTag(src: string | undefined, alt: string) {
+function imageTag(src: string | undefined, alt: string, inline = false) {
   if (!src) return '';
-  return `<img class="figure" src="${escapeHtml(src)}" alt="${escapeHtml(alt)}">`;
+  const className = inline ? 'figure inline' : 'figure';
+  return `<img class="${className}" src="${escapeHtml(src)}" alt="${escapeHtml(alt)}">`;
 }
 
-const FIGURE_TAG_RE = /<img class="figure" src="([^"]*)" alt="([^"]*)">/g;
+const FIGURE_TAG_RE = /<img class="([^"]*)" src="([^"]*)" alt="([^"]*)">/g;
 const IMAGE_FETCH_TIMEOUT_MS = 15_000;
 const IMAGE_FETCH_CONCURRENCY = 6;
 const IMAGE_MAX_BYTES = 8 * 1024 * 1024;
@@ -162,8 +175,8 @@ export function collectFigureSrcs(html: string): string[] {
   const found: string[] = [];
   const seen = new Set<string>();
   for (const match of html.matchAll(new RegExp(FIGURE_TAG_RE, 'g'))) {
-    const src = unescapeHtmlAttr(match[1] ?? '');
-    if (!src || src.startsWith('data:') || src.startsWith('file:') || seen.has(src)) continue;
+    const src = unescapeHtmlAttr(match[2] ?? '');
+    if (!src || src.startsWith('file:') || seen.has(src)) continue;
     seen.add(src);
     found.push(src);
   }
@@ -203,7 +216,31 @@ async function fetchOnePdfImage(url: string): Promise<{ bytes: Uint8Array; conte
   }
 }
 
+function decodeDataUrl(url: string): { bytes: Uint8Array; contentType: string } | null {
+  if (!url.startsWith('data:')) return null;
+  const comma = url.indexOf(',');
+  if (comma < 0) return null;
+  const header = url.slice(5, comma);
+  const payload = url.slice(comma + 1);
+  const segments = header.split(';');
+  const contentType = segments[0]?.includes('/') ? segments[0] : 'application/octet-stream';
+  if (contentType && !contentType.startsWith('image/') && !contentType.includes('octet-stream')) {
+    return null;
+  }
+  const isBase64 = segments.some((segment) => segment.toLowerCase() === 'base64');
+  try {
+    const bytes = isBase64
+      ? Uint8Array.from(Buffer.from(payload, 'base64'))
+      : new TextEncoder().encode(decodeURIComponent(payload));
+    if (bytes.byteLength === 0 || bytes.byteLength > IMAGE_MAX_BYTES) return null;
+    return { bytes, contentType };
+  } catch {
+    return null;
+  }
+}
+
 async function defaultFetchPdfImage(url: string): Promise<{ bytes: Uint8Array; contentType: string } | null> {
+  if (url.startsWith('data:')) return decodeDataUrl(url);
   for (const candidate of imageSourceFallbacks(url)) {
     const image = await fetchOnePdfImage(candidate);
     if (image) return image;
@@ -249,12 +286,15 @@ export async function localizeHtmlImages(
     resolved.set(src, filename);
   });
 
-  const rewritten = html.replace(new RegExp(FIGURE_TAG_RE, 'g'), (_all, rawSrc: string, rawAlt: string) => {
-    const src = unescapeHtmlAttr(rawSrc);
-    const local = resolved.get(src);
-    if (local) return `<img class="figure" src="${escapeHtml(local)}" alt="${rawAlt}">`;
-    return `<em class="missing">Figure failed to load</em>`;
-  });
+  const rewritten = html.replace(
+    new RegExp(FIGURE_TAG_RE, 'g'),
+    (_all, rawClass: string, rawSrc: string, rawAlt: string) => {
+      const src = unescapeHtmlAttr(rawSrc);
+      const local = resolved.get(src);
+      if (local) return `<img class="${rawClass}" src="${escapeHtml(local)}" alt="${rawAlt}">`;
+      return `<em class="missing">Figure failed to load</em>`;
+    },
+  );
 
   const failed = [...resolved.values()].filter((value) => value === null).length;
   return { html: rewritten, fetched: srcs.length - failed, failed, total: srcs.length };
@@ -406,7 +446,19 @@ function documentCss() {
       object-fit: contain;
       break-inside: avoid;
     }
+    img.figure.inline {
+      display: inline-block;
+      max-height: 1.45em;
+      max-width: 100%;
+      margin: 0 0.12em;
+      vertical-align: middle;
+    }
     .opt-body img.figure { max-height: 42mm; margin: 2pt 0; }
+    .opt-body img.figure.inline {
+      display: block;
+      max-height: 14mm;
+      margin: 2pt 0;
+    }
     .options { list-style: none; margin: 6pt 0 0; padding: 0; }
     .options li {
       display: flex;

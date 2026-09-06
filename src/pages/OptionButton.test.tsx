@@ -61,6 +61,25 @@ test('after submit a chosen wrong option reads as incorrect', () => {
   expect(button).toHaveAccessibleName(/Option B, selected, incorrect/);
 });
 
+test('renders an option that is only an inline data-URI image', () => {
+  const png =
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+  render(
+    <OptionButton
+      option={{ optionText: `<img src="${png}" class="inline-image" />`, optionImage: null }}
+      optionIndex={0}
+      isSelected={false}
+      isCorrect={false}
+      showResults={false}
+      onClick={() => {}}
+    />,
+  );
+
+  const image = document.querySelector(`img[src="${png}"]`);
+  expect(image).not.toBeNull();
+  expect(screen.queryByText(/Option content unavailable/i)).toBeNull();
+});
+
 test('after submit an unchosen wrong option is muted, not flagged', () => {
   render(
     <OptionButton
