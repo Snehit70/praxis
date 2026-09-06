@@ -19,6 +19,11 @@ function App() {
           <Route path="/" element={<RootLayout />}>
             {/* Public front door + only sign-in entry point. */}
             <Route index element={<LandingPage />} />
+            {/* Clerk OAuth / hosted links land on these paths as full page
+                loads. Vercel must serve the SPA; these routes keep React from
+                rendering an empty outlet. */}
+            <Route path="sign-in/*" element={<LandingPage />} />
+            <Route path="sign-up/*" element={<LandingPage />} />
             {/* Everything else requires a signed-in user. */}
             <Route element={<RequireAuth />}>
               <Route path="home" element={<HomePage />} />
