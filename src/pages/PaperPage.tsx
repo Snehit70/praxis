@@ -11,7 +11,7 @@ import { getDisplayCourseName, getCourseLevel } from '@/lib/courseMapping';
 import { LEVEL_META } from '@/lib/courseCatalogue';
 import { ArcaneSigil } from '@/components/ArcaneSigil';
 import { logger } from '@/lib/logger';
-import { getQuestionImageUrl, getOptionImageUrl } from '@/lib/imageUtils';
+import { getQuestionImageUrl, getOptionImageUrl, imageSourceFallbacks } from '@/lib/imageUtils';
 import {
   getPaperByUuid,
   getQuestionsByPaperUuid,
@@ -507,9 +507,12 @@ function StemText({ text }: { text: string }) {
  */
 function FlowImage({ src, alt }: { src: string; alt: string }) {
   const [block, setBlock] = useState(false);
+  const [srcIndex, setSrcIndex] = useState(0);
+  const candidates = imageSourceFallbacks(src);
+  const current = candidates[Math.min(srcIndex, candidates.length - 1)] ?? src;
   return (
     <img
-      src={src}
+      src={current}
       alt={alt}
       loading="lazy"
       onLoad={(e) => {
@@ -517,6 +520,10 @@ function FlowImage({ src, alt }: { src: string; alt: string }) {
         if (img.naturalHeight > 44) setBlock(true);
       }}
       onError={(e) => {
+        if (srcIndex + 1 < candidates.length) {
+          setSrcIndex(srcIndex + 1);
+          return;
+        }
         (e.currentTarget as HTMLImageElement).style.display = 'none';
       }}
       className={

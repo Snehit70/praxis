@@ -6,7 +6,7 @@ import {
   getQuestionStats,
   type QuizQuestion,
 } from '../src/lib/dataTransforms';
-import { getOptionImageUrl, getQuestionImageUrl } from '../src/lib/imageUtils';
+import { getOptionImageUrl, getQuestionImageUrl, imageSourceFallbacks } from '../src/lib/imageUtils';
 import { inferTerm, parseBundleDate } from './paperCatalogue';
 
 const OPTION_LABELS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
@@ -186,7 +186,7 @@ export type FetchPdfImage = (
   url: string,
 ) => Promise<{ bytes: Uint8Array; contentType: string } | null>;
 
-async function defaultFetchPdfImage(url: string): Promise<{ bytes: Uint8Array; contentType: string } | null> {
+async function fetchOnePdfImage(url: string): Promise<{ bytes: Uint8Array; contentType: string } | null> {
   try {
     const response = await fetch(url, { signal: AbortSignal.timeout(IMAGE_FETCH_TIMEOUT_MS) });
     if (!response.ok) return null;
@@ -201,6 +201,14 @@ async function defaultFetchPdfImage(url: string): Promise<{ bytes: Uint8Array; c
     console.warn('pdf image fetch failed', { url, error: error instanceof Error ? error.message : error });
     return null;
   }
+}
+
+async function defaultFetchPdfImage(url: string): Promise<{ bytes: Uint8Array; contentType: string } | null> {
+  for (const candidate of imageSourceFallbacks(url)) {
+    const image = await fetchOnePdfImage(candidate);
+    if (image) return image;
+  }
+  return null;
 }
 
 async function mapPool<T, R>(items: T[], limit: number, worker: (item: T, index: number) => Promise<R>): Promise<R[]> {

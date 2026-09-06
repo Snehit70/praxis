@@ -134,6 +134,32 @@ describe('localizeHtmlImages', () => {
     }
   });
 
+  test('falls back from an R2 404 to the original Spaces CDN', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'praxis-pdf-test-'));
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('r2.dev')) {
+        return new Response('missing', { status: 404, headers: { 'content-type': 'text/plain' } });
+      }
+      if (url.includes('digitaloceanspaces.com')) {
+        return new Response(png, { status: 200, headers: { 'content-type': 'image/png' } });
+      }
+      return new Response('no', { status: 500 });
+    }) as typeof fetch;
+    try {
+      const remote =
+        'https://pub-38cbed42a577473eb75ea45c187c8d6f.r2.dev/question_images/TyjfuxEzpWecsOZD2b2ZoEOTs2z4oCeUiokwmxULiy6BISPvQ2.png';
+      const html = `<img class="figure" src="${remote}" alt="Q3 1">`;
+      const result = await localizeHtmlImages(html, dir);
+      expect(result).toMatchObject({ fetched: 1, failed: 0, total: 1 });
+      expect(result.html).toContain('img-001.png');
+    } finally {
+      globalThis.fetch = originalFetch;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test('drops a figure that cannot be fetched instead of leaving a remote src', async () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'praxis-pdf-test-'));
     try {
