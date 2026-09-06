@@ -144,6 +144,114 @@ function imageTag(src: string | undefined, alt: string) {
   return `<img class="figure" src="${escapeHtml(src)}" alt="${escapeHtml(alt)}">`;
 }
 
+const FIGURE_TAG_RE = /<img class="figure" src="([^"]*)" alt="([^"]*)">/g;
+const IMAGE_FETCH_TIMEOUT_MS = 15_000;
+const IMAGE_FETCH_CONCURRENCY = 6;
+const IMAGE_MAX_BYTES = 8 * 1024 * 1024;
+
+function unescapeHtmlAttr(value: string) {
+  return value
+    .replaceAll('&quot;', '"')
+    .replaceAll('&#39;', "'")
+    .replaceAll('&lt;', '<')
+    .replaceAll('&gt;', '>')
+    .replaceAll('&amp;', '&');
+}
+
+export function collectFigureSrcs(html: string): string[] {
+  const found: string[] = [];
+  const seen = new Set<string>();
+  for (const match of html.matchAll(new RegExp(FIGURE_TAG_RE, 'g'))) {
+    const src = unescapeHtmlAttr(match[1] ?? '');
+    if (!src || src.startsWith('data:') || src.startsWith('file:') || seen.has(src)) continue;
+    seen.add(src);
+    found.push(src);
+  }
+  return found;
+}
+
+function extensionFor(contentType: string, url: string): string {
+  const type = contentType.toLowerCase();
+  if (type.includes('png')) return '.png';
+  if (type.includes('jpeg') || type.includes('jpg')) return '.jpg';
+  if (type.includes('webp')) return '.webp';
+  if (type.includes('gif')) return '.gif';
+  if (type.includes('svg')) return '.svg';
+  const fromUrl = url.split('?')[0]?.split('.').pop()?.toLowerCase();
+  if (fromUrl && /^[a-z0-9]{2,4}$/.test(fromUrl)) return `.${fromUrl}`;
+  return '.png';
+}
+
+export type FetchPdfImage = (
+  url: string,
+) => Promise<{ bytes: Uint8Array; contentType: string } | null>;
+
+async function defaultFetchPdfImage(url: string): Promise<{ bytes: Uint8Array; contentType: string } | null> {
+  try {
+    const response = await fetch(url, { signal: AbortSignal.timeout(IMAGE_FETCH_TIMEOUT_MS) });
+    if (!response.ok) return null;
+    const contentType = response.headers.get('content-type') ?? '';
+    if (contentType && !contentType.startsWith('image/') && !contentType.includes('octet-stream')) {
+      return null;
+    }
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (bytes.byteLength === 0 || bytes.byteLength > IMAGE_MAX_BYTES) return null;
+    return { bytes, contentType };
+  } catch (error) {
+    console.warn('pdf image fetch failed', { url, error: error instanceof Error ? error.message : error });
+    return null;
+  }
+}
+
+async function mapPool<T, R>(items: T[], limit: number, worker: (item: T, index: number) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  async function run() {
+    while (true) {
+      const index = next;
+      next += 1;
+      if (index >= items.length) return;
+      results[index] = await worker(items[index]!, index);
+    }
+  }
+  const workers = Array.from({ length: Math.min(limit, items.length) || 0 }, () => run());
+  await Promise.all(workers);
+  return results;
+}
+
+export async function localizeHtmlImages(
+  html: string,
+  destDir: string,
+  fetchImage: FetchPdfImage = defaultFetchPdfImage,
+): Promise<{ html: string; fetched: number; failed: number; total: number }> {
+  const srcs = collectFigureSrcs(html);
+  if (srcs.length === 0) {
+    return { html, fetched: 0, failed: 0, total: 0 };
+  }
+
+  const resolved = new Map<string, string | null>();
+  await mapPool(srcs, IMAGE_FETCH_CONCURRENCY, async (src, index) => {
+    const image = await fetchImage(src);
+    if (!image) {
+      resolved.set(src, null);
+      return;
+    }
+    const filename = `img-${String(index + 1).padStart(3, '0')}${extensionFor(image.contentType, src)}`;
+    writeFileSync(path.join(destDir, filename), image.bytes);
+    resolved.set(src, filename);
+  });
+
+  const rewritten = html.replace(new RegExp(FIGURE_TAG_RE, 'g'), (_all, rawSrc: string, rawAlt: string) => {
+    const src = unescapeHtmlAttr(rawSrc);
+    const local = resolved.get(src);
+    if (local) return `<img class="figure" src="${escapeHtml(local)}" alt="${rawAlt}">`;
+    return `<em class="missing">Figure failed to load</em>`;
+  });
+
+  const failed = [...resolved.values()].filter((value) => value === null).length;
+  return { html: rewritten, fetched: srcs.length - failed, failed, total: srcs.length };
+}
+
 function renderMedia(question: QuizQuestion, altPrefix: string) {
   const parts: string[] = [];
   const texts = [
@@ -401,9 +509,16 @@ export async function printHtmlToPdf(html: string): Promise<Uint8Array> {
   const dir = mkdtempSync(path.join(tmpdir(), 'praxis-pdf-'));
   const htmlPath = path.join(dir, 'paper.html');
   const pdfPath = path.join(dir, 'paper.pdf');
-  writeFileSync(htmlPath, html);
 
   try {
+    const localized = await localizeHtmlImages(html, dir);
+    console.info('pdf images localized', {
+      fetched: localized.fetched,
+      failed: localized.failed,
+      total: localized.total,
+    });
+    writeFileSync(htmlPath, localized.html);
+
     const result = spawnSync(
       chromium,
       [
@@ -413,6 +528,8 @@ export async function printHtmlToPdf(html: string): Promise<Uint8Array> {
         '--disable-dev-shm-usage',
         '--hide-scrollbars',
         '--no-pdf-header-footer',
+        '--allow-file-access-from-files',
+        '--run-all-compositor-stages-before-draw',
         '--virtual-time-budget=20000',
         `--print-to-pdf=${pdfPath}`,
         `file://${htmlPath}`,

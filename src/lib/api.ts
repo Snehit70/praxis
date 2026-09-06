@@ -349,6 +349,7 @@ export async function downloadPaperPdf(
     courseUuid?: string | null;
     examUuid?: string | null;
     answers?: boolean;
+    signal?: AbortSignal;
   } = {},
 ) {
   const token = await getToken();
@@ -365,7 +366,7 @@ export async function downloadPaperPdf(
 
   const response = await fetch(
     `${API_BASE_URL}/api/papers/${encodeURIComponent(paperUuid)}/pdf${suffix}`,
-    { headers: { authorization: `Bearer ${token}` } },
+    { headers: { authorization: `Bearer ${token}` }, signal: options.signal },
   );
   if (!response.ok) {
     let message = `Could not download the PDF (${response.status})`;
