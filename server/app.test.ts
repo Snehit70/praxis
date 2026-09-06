@@ -335,6 +335,38 @@ describe('Praxis API integration', () => {
 });
 
 describe('Praxis API authenticated routes', () => {
+  test('rejects paper PDF without a verified user', async () => {
+    const response = await context.fetchHandler(
+      new Request('http://local.test/api/papers/paper-2025/pdf?courseUuid=course-1&examUuid=exam-1'),
+    );
+
+    expect(response.status).toBe(401);
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
+    expect(await response.json()).toEqual({ error: 'Unauthorized' });
+  });
+
+  test('returns a private PDF attachment for a signed-in user', async () => {
+    const payload = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34]);
+    const handler = createApiFetchHandler(context.database.sql, {
+      resolveUserId: async () => 'user_pdf_1',
+      printHtmlToPdf: async (html) => {
+        expect(html).toContain('Praxis reconstruction');
+        expect(html).toContain('Computational Thinking');
+        return payload;
+      },
+    });
+
+    const response = await handler(
+      new Request('http://local.test/api/papers/paper-2025/pdf?courseUuid=course-1&examUuid=exam-1'),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toBe('application/pdf');
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
+    expect(response.headers.get('content-disposition')).toContain('Computational-Thinking-Quiz-1.pdf');
+    expect(new Uint8Array(await response.arrayBuffer())).toEqual(payload);
+  });
+
   test('rejects /api/me requests without a verified user', async () => {
     const response = await context.fetchHandler(new Request('http://local.test/api/me/saved'));
 

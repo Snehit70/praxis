@@ -324,3 +324,43 @@ export function saveEnrolledCourses(payload: EnrolledCourses, getToken: TokenGet
     body: JSON.stringify(payload),
   });
 }
+
+function filenameFromDisposition(header: string | null, fallback: string) {
+  const match = header?.match(/filename="([^"]+)"/);
+  return match?.[1] ?? fallback;
+}
+
+export async function downloadPaperPdf(
+  paperUuid: string,
+  getToken: TokenGetter,
+  options: {
+    courseUuid?: string | null;
+    examUuid?: string | null;
+    answers?: boolean;
+  } = {},
+) {
+  const token = await getToken();
+  if (!token) {
+    throw new Error('Not authenticated');
+  }
+
+  const params = new URLSearchParams();
+  if (options.courseUuid) params.set('courseUuid', options.courseUuid);
+  if (options.examUuid) params.set('examUuid', options.examUuid);
+  if (options.answers) params.set('answers', '1');
+  const suffix = params.toString() ? `?${params.toString()}` : '';
+  const fallback = options.answers ? 'paper-answers.pdf' : 'paper.pdf';
+
+  const response = await fetch(
+    `${API_BASE_URL}/api/papers/${encodeURIComponent(paperUuid)}/pdf${suffix}`,
+    { headers: { authorization: `Bearer ${token}` } },
+  );
+  if (!response.ok) {
+    throw new Error(`API request failed (${response.status}): /api/papers/${paperUuid}/pdf`);
+  }
+
+  return {
+    blob: await response.blob(),
+    filename: filenameFromDisposition(response.headers.get('content-disposition'), fallback),
+  };
+}

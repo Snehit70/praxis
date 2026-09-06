@@ -39,6 +39,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { StatePanel } from '@/components/ui/state-panel';
 import { SaveButton } from '@/components/SaveButton';
+import { DownloadPdfButton } from '@/components/DownloadPdfButton';
 import { useAuth } from '@clerk/clerk-react';
 import pageBg from '@/assets/Sousou no Frieren - Ep. 11_ Winter in the Northern Lands - 00_22.png';
 
@@ -1252,6 +1253,9 @@ function RunCoverPlate({
   totalQuestions,
   totalMarks,
   durationMinutes,
+  paperUuid,
+  courseUuid,
+  examUuid,
   onBeginTimed,
   onBeginOpen,
   onBack,
@@ -1263,6 +1267,9 @@ function RunCoverPlate({
   totalQuestions: number;
   totalMarks: number;
   durationMinutes: number;
+  paperUuid: string;
+  courseUuid: string;
+  examUuid: string;
   onBeginTimed: () => void;
   onBeginOpen: () => void;
   onBack: () => void;
@@ -1356,7 +1363,17 @@ function RunCoverPlate({
           </button>
         </div>
 
-        <p className="mt-5 text-[11px] text-muted-foreground/70">
+        <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
+          <DownloadPdfButton paperUuid={paperUuid} courseUuid={courseUuid} examUuid={examUuid} />
+          <DownloadPdfButton
+            paperUuid={paperUuid}
+            courseUuid={courseUuid}
+            examUuid={examUuid}
+            answers
+          />
+        </div>
+
+        <p className="mt-4 text-[11px] text-muted-foreground/70">
           Your progress autosaves and survives a refresh, either way.
         </p>
 
@@ -1949,6 +1966,9 @@ export default function PaperPage() {
         totalQuestions={stats.totalQuestions}
         totalMarks={stats.totalMarks}
         durationMinutes={durationMinutes}
+        paperUuid={paper.uuid}
+        courseUuid={paper.courseUuid}
+        examUuid={paper.examUuid}
         onBeginTimed={handleBeginTimed}
         onBeginOpen={handleBeginOpen}
         onBack={goBack}
@@ -2007,7 +2027,20 @@ export default function PaperPage() {
             {stats.totalQuestions} {stats.totalQuestions === 1 ? 'question' : 'questions'}
             {stats.totalMarks > 0 && ` · ${stats.totalMarks} marks`}
           </span>
-          <div className="ml-auto shrink-0">
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            <DownloadPdfButton
+              paperUuid={paper.uuid}
+              courseUuid={paper.courseUuid}
+              examUuid={paper.examUuid}
+            />
+            {showResults && (
+              <DownloadPdfButton
+                paperUuid={paper.uuid}
+                courseUuid={paper.courseUuid}
+                examUuid={paper.examUuid}
+                answers
+              />
+            )}
             <SaveButton paperId={paper._id} />
           </div>
         </div>

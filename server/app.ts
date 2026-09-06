@@ -6,6 +6,8 @@ import {
   getSearchPattern,
 } from './paperCatalogue';
 import { SUPPORTED_EXAM_SLUGS, isSupportedExamSlug } from '../src/lib/examMapping';
+import { loadQuizQuestions } from './paperQuestions';
+import { pdfDownloadFilename, printHtmlToPdf, renderPaperHtml } from './paperPdf';
 
 const allowedOrigin = process.env.API_ALLOWED_ORIGIN?.trim() || '*';
 const cacheableApiResponse = 'public, max-age=60, s-maxage=300, stale-while-revalidate=600';
@@ -77,10 +79,13 @@ async function getUserId(request: Request): Promise<string | null> {
 export interface ApiHandlerOptions {
   /** Override session resolution (used in tests). Defaults to Clerk verification. */
   resolveUserId?: (request: Request) => Promise<string | null>;
+  /** Override Chromium print (used in tests). */
+  printHtmlToPdf?: (html: string) => Promise<Uint8Array>;
 }
 
 export function createApiFetchHandler(sql: DbClient, options: ApiHandlerOptions = {}) {
   const resolveUserId = options.resolveUserId ?? getUserId;
+  const renderPdf = options.printHtmlToPdf ?? printHtmlToPdf;
   async function resolvePaperVariantId(
     paperUuid: string,
     courseUuid: string | null,
@@ -643,6 +648,70 @@ export function createApiFetchHandler(sql: DbClient, options: ApiHandlerOptions 
         return json(buildPaperBundles(rows));
       }
 
+      const paperPdfMatch = url.pathname.match(/^\/api\/papers\/([^/]+)\/pdf$/);
+      if (paperPdfMatch) {
+        const userId = await resolveUserId(request);
+        if (!userId) {
+          return jsonPrivate({ error: 'Unauthorized' }, 401);
+        }
+
+        const paperUuid = decodeURIComponent(paperPdfMatch[1] ?? '');
+        const courseUuid = url.searchParams.get('courseUuid');
+        const examUuid = url.searchParams.get('examUuid');
+        const showAnswers =
+          url.searchParams.get('answers') === '1' || url.searchParams.get('answers') === 'true';
+
+        const [paper] = await sql<
+          Array<{
+            courseName: string;
+            examName: string;
+            paperName: string;
+            paperDescription: string;
+            year: number | null;
+          }>
+        >`
+          SELECT
+            c.course_name AS "courseName",
+            e.exam_name AS "examName",
+            p.paper_name AS "paperName",
+            p.paper_description AS "paperDescription",
+            p.year
+          FROM paper_variants p
+          JOIN exams e ON e.source_uuid = p.exam_uuid
+          JOIN courses c ON c.source_uuid = p.course_uuid
+          WHERE p.source_uuid = ${paperUuid}
+            ${courseUuid ? sql`AND p.course_uuid = ${courseUuid}` : sql``}
+            ${examUuid ? sql`AND p.exam_uuid = ${examUuid}` : sql``}
+          ORDER BY p.year DESC, p.created_at DESC NULLS LAST
+          LIMIT 1
+        `;
+
+        if (!paper) {
+          return notFound('Paper not found');
+        }
+
+        const variantId = await resolvePaperVariantId(paperUuid, courseUuid, examUuid);
+        if (!variantId) {
+          return notFound('Paper questions not found');
+        }
+
+        const questions = await loadQuizQuestions(sql, variantId);
+        const html = renderPaperHtml(paper, questions, showAnswers);
+        const pdf = await renderPdf(html);
+        const filename = pdfDownloadFilename(paper, showAnswers);
+        const bytes = pdf instanceof Uint8Array ? pdf : new Uint8Array(pdf);
+
+        return new Response(Buffer.from(bytes), {
+          status: 200,
+          headers: {
+            ...corsHeaders(),
+            'content-type': 'application/pdf',
+            'content-disposition': `attachment; filename="${filename}"`,
+            'cache-control': 'private, no-store',
+          },
+        });
+      }
+
       const paperMatch = url.pathname.match(/^\/api\/papers\/([^/]+)$/);
       if (paperMatch) {
         const paperUuid = decodeURIComponent(paperMatch[1] ?? '');
@@ -710,149 +779,7 @@ export function createApiFetchHandler(sql: DbClient, options: ApiHandlerOptions 
           return notFound('Paper questions not found');
         }
 
-        const questionRows = await sql<
-          Array<{
-            id: string;
-            uuid: string;
-            questionNumber: number;
-            questionType: string;
-            totalMark: string;
-            hash: string;
-            questionText1: string | null;
-            questionText2: string | null;
-            questionText3: string | null;
-            questionText4: string | null;
-            questionText5: string | null;
-            questionImage1: string | null;
-            questionImage2: string | null;
-            questionImage3: string | null;
-            questionImage4: string | null;
-            questionImage5: string | null;
-            questionImage6: string | null;
-            questionImage7: string | null;
-            questionImage8: string | null;
-            questionImage9: string | null;
-            questionImage10: string | null;
-            answerType: string | null;
-            responseType: string | null;
-            valueStart: string | null;
-            valueEnd: string | null;
-            parentQuestionUuid: string | null;
-            isMarkdown: number;
-            haveAnswers: number;
-            questionNumLong: number;
-          }>
-        >`
-          SELECT
-            id,
-            source_uuid AS "uuid",
-            question_number AS "questionNumber",
-            question_type AS "questionType",
-            total_mark AS "totalMark",
-            hash,
-            question_text_1 AS "questionText1",
-            question_text_2 AS "questionText2",
-            question_text_3 AS "questionText3",
-            question_text_4 AS "questionText4",
-            question_text_5 AS "questionText5",
-            question_image_1 AS "questionImage1",
-            question_image_2 AS "questionImage2",
-            question_image_3 AS "questionImage3",
-            question_image_4 AS "questionImage4",
-            question_image_5 AS "questionImage5",
-            question_image_6 AS "questionImage6",
-            question_image_7 AS "questionImage7",
-            question_image_8 AS "questionImage8",
-            question_image_9 AS "questionImage9",
-            question_image_10 AS "questionImage10",
-            answer_type AS "answerType",
-            response_type AS "responseType",
-            value_start AS "valueStart",
-            value_end AS "valueEnd",
-            parent_question_uuid AS "parentQuestionUuid",
-            is_markdown AS "isMarkdown",
-            have_answers AS "haveAnswers",
-            question_num_long AS "questionNumLong"
-          FROM questions
-          WHERE paper_variant_id = ${variantId}
-          ORDER BY question_number ASC, question_num_long ASC
-        `;
-
-        if (questionRows.length === 0) {
-          return json([]);
-        }
-
-        const optionRows = await sql<
-          Array<{
-            questionId: string;
-            optionText: string;
-            optionImage: string | null;
-            score: string;
-            isCorrect: number;
-            optionNumber: number | null;
-            optionPosition: number;
-          }>
-        >`
-          SELECT
-            question_id AS "questionId",
-            option_text AS "optionText",
-            option_image AS "optionImage",
-            score,
-            is_correct AS "isCorrect",
-            option_number AS "optionNumber",
-            option_position AS "optionPosition"
-          FROM options
-          WHERE question_id IN ${sql(questionRows.map((question) => question.id))}
-          ORDER BY option_number ASC NULLS LAST, option_position ASC
-        `;
-
-        const optionsByQuestionId = new Map<string, Array<(typeof optionRows)[number]>>();
-        for (const optionRow of optionRows) {
-          const current = optionsByQuestionId.get(optionRow.questionId) ?? [];
-          current.push(optionRow);
-          optionsByQuestionId.set(optionRow.questionId, current);
-        }
-
-        return json(
-          questionRows.map((question) => ({
-            uuid: question.uuid,
-            questionNumber: question.questionNumber,
-            questionType: question.questionType,
-            totalMark: question.totalMark,
-            hash: question.hash,
-            questionText1: question.questionText1 ?? undefined,
-            questionText2: question.questionText2 ?? undefined,
-            questionText3: question.questionText3 ?? undefined,
-            questionText4: question.questionText4 ?? undefined,
-            questionText5: question.questionText5 ?? undefined,
-            questionImage1: question.questionImage1 ?? undefined,
-            questionImage2: question.questionImage2 ?? undefined,
-            questionImage3: question.questionImage3 ?? undefined,
-            questionImage4: question.questionImage4 ?? undefined,
-            questionImage5: question.questionImage5 ?? undefined,
-            questionImage6: question.questionImage6 ?? undefined,
-            questionImage7: question.questionImage7 ?? undefined,
-            questionImage8: question.questionImage8 ?? undefined,
-            questionImage9: question.questionImage9 ?? undefined,
-            questionImage10: question.questionImage10 ?? undefined,
-            answerType: question.answerType ?? undefined,
-            responseType: question.responseType ?? undefined,
-            valueStart: question.valueStart ?? undefined,
-            valueEnd: question.valueEnd ?? undefined,
-            parentQuestionUuid: question.parentQuestionUuid ?? undefined,
-            isMarkdown: question.isMarkdown,
-            haveAnswers: question.haveAnswers,
-            questionNumLong: Number(question.questionNumLong),
-            options: (optionsByQuestionId.get(question.id) ?? []).map((option) => ({
-              optionText: option.optionText,
-              optionImage: option.optionImage ?? undefined,
-              score: option.score,
-              isCorrect: option.isCorrect,
-              optionNumber:
-                option.optionNumber === null ? undefined : Number(option.optionNumber),
-            })),
-          })),
-        );
+        return json(await loadQuizQuestions(sql, variantId));
       }
 
       return notFound('Route not found');
