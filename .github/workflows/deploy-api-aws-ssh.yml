@@ -33,6 +33,8 @@ jobs:
       API_DATABASE_URL: ${{ secrets.PRAXIS_API_DATABASE_URL }}
       API_ALLOWED_ORIGIN: ${{ secrets.PRAXIS_API_ALLOWED_ORIGIN }}
       API_SERVER_NAME: ${{ secrets.PRAXIS_API_SERVER_NAME }}
+      PDF_DOWNLOADS_ENABLED: ${{ secrets.PRAXIS_PDF_DOWNLOADS_ENABLED }}
+      PDF_RATE_LIMIT_BYPASS_USER_IDS: ${{ secrets.PRAXIS_PDF_RATE_LIMIT_BYPASS_USER_IDS }}
     steps:
       - uses: actions/checkout@v4
 
@@ -93,6 +95,8 @@ jobs:
           DATABASE_URL=${API_DATABASE_URL}
           PORT=8787
           API_ALLOWED_ORIGIN=${API_ALLOWED_ORIGIN}
+          PDF_DOWNLOADS_ENABLED=${PDF_DOWNLOADS_ENABLED:-true}
+          PDF_RATE_LIMIT_BYPASS_USER_IDS=${PDF_RATE_LIMIT_BYPASS_USER_IDS}
           EOF
           chmod 600 "${tmp_env}"
           scp -i ~/.ssh/id_ed25519 -P "${AWS_SSH_PORT}" "${tmp_env}" "${AWS_SSH_USER}@${AWS_SSH_HOST}:${DEPLOY_PATH}/.env.api"

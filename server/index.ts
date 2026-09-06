@@ -1,9 +1,11 @@
 import { createApiFetchHandler } from './app';
 import { createDbClient, type DbClient } from './db';
+import { ensureSchema } from './schema';
 
 const PORT = Number(process.env.PORT ?? 8787);
 
-export function startApiServer(port = PORT, sql: DbClient = createDbClient()) {
+export async function startApiServer(port = PORT, sql: DbClient = createDbClient()) {
+  await ensureSchema(sql);
   const server = Bun.serve({
     port,
     fetch: createApiFetchHandler(sql),
@@ -14,5 +16,5 @@ export function startApiServer(port = PORT, sql: DbClient = createDbClient()) {
 }
 
 if (import.meta.main) {
-  startApiServer();
+  await startApiServer();
 }
