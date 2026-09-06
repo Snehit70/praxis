@@ -6,6 +6,18 @@
  */
 
 const R2_PUBLIC_URL = 'https://pub-38cbed42a577473eb75ea45c187c8d6f.r2.dev';
+/** Original scrape CDN. R2 is a partial copy; newer papers 404 there. */
+const SOURCE_CDN_URL = 'https://saram.blr1.cdn.digitaloceanspaces.com';
+
+export function imageSourceFallbacks(url: string): string[] {
+  if (url.startsWith(R2_PUBLIC_URL)) {
+    return [url, `${SOURCE_CDN_URL}${url.slice(R2_PUBLIC_URL.length)}`];
+  }
+  if (url.startsWith(SOURCE_CDN_URL)) {
+    return [url, `${R2_PUBLIC_URL}${url.slice(SOURCE_CDN_URL.length)}`];
+  }
+  return [url];
+}
 
 /**
  * Get full CDN URL for a question image
