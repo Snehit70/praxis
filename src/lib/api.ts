@@ -330,6 +330,18 @@ function filenameFromDisposition(header: string | null, fallback: string) {
   return match?.[1] ?? fallback;
 }
 
+export class PdfDownloadError extends Error {
+  status: number;
+  retryAfterSeconds?: number;
+
+  constructor(message: string, status: number, retryAfterSeconds?: number) {
+    super(message);
+    this.name = 'PdfDownloadError';
+    this.status = status;
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+}
+
 export async function downloadPaperPdf(
   paperUuid: string,
   getToken: TokenGetter,
@@ -356,7 +368,16 @@ export async function downloadPaperPdf(
     { headers: { authorization: `Bearer ${token}` } },
   );
   if (!response.ok) {
-    throw new Error(`API request failed (${response.status}): /api/papers/${paperUuid}/pdf`);
+    let message = `Could not download the PDF (${response.status})`;
+    let retryAfterSeconds: number | undefined;
+    try {
+      const body = (await response.json()) as { error?: string; retryAfterSeconds?: number };
+      if (body.error) message = body.error;
+      if (typeof body.retryAfterSeconds === 'number') retryAfterSeconds = body.retryAfterSeconds;
+    } catch {
+      // Keep the status fallback when the body is not JSON.
+    }
+    throw new PdfDownloadError(message, response.status, retryAfterSeconds);
   }
 
   return {

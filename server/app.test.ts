@@ -367,6 +367,87 @@ describe('Praxis API authenticated routes', () => {
     expect(new Uint8Array(await response.arrayBuffer())).toEqual(payload);
   });
 
+  test('rate-limits PDF downloads and lets bypass users through', async () => {
+    const payload = new Uint8Array([0x25, 0x50, 0x44, 0x46]);
+    const tightGuard = {
+      downloadsEnabled: true,
+      bypassUserIds: new Set(['user_pdf_bypass']),
+      burstLimit: 2,
+      burstWindowSeconds: 300,
+      hourlyLimit: 20,
+      dailyLimit: 40,
+      maxConcurrent: 4,
+    };
+    const limited = createApiFetchHandler(context.database.sql, {
+      resolveUserId: async () => 'user_pdf_limited',
+      printHtmlToPdf: async () => payload,
+      pdfGuard: tightGuard,
+    });
+    const bypassed = createApiFetchHandler(context.database.sql, {
+      resolveUserId: async () => 'user_pdf_bypass',
+      printHtmlToPdf: async () => payload,
+      pdfGuard: tightGuard,
+    });
+    const url = 'http://local.test/api/papers/paper-2025/pdf?courseUuid=course-1&examUuid=exam-1';
+
+    expect((await limited(new Request(url))).status).toBe(200);
+    expect((await limited(new Request(url))).status).toBe(200);
+    const blocked = await limited(new Request(url));
+    expect(blocked.status).toBe(429);
+    expect(blocked.headers.get('retry-after')).toBeTruthy();
+    expect(await blocked.json()).toMatchObject({
+      error: 'Too many PDF downloads. Try again in a few minutes.',
+      window: 'burst',
+    });
+
+    expect((await bypassed(new Request(url))).status).toBe(200);
+    expect((await bypassed(new Request(url))).status).toBe(200);
+    expect((await bypassed(new Request(url))).status).toBe(200);
+  });
+
+  test('honours the PDF kill switch and the database bypass flag', async () => {
+    const payload = new Uint8Array([0x25, 0x50, 0x44, 0x46]);
+    const url = 'http://local.test/api/papers/paper-2025/pdf?courseUuid=course-1&examUuid=exam-1';
+    const disabled = createApiFetchHandler(context.database.sql, {
+      resolveUserId: async () => 'user_pdf_killed',
+      printHtmlToPdf: async () => payload,
+      pdfGuard: {
+        downloadsEnabled: false,
+        bypassUserIds: new Set(),
+        burstLimit: 2,
+        burstWindowSeconds: 300,
+        hourlyLimit: 20,
+        dailyLimit: 40,
+        maxConcurrent: 4,
+      },
+    });
+
+    const off = await disabled(new Request(url));
+    expect(off.status).toBe(503);
+    expect(await off.json()).toEqual({ error: 'PDF downloads are temporarily disabled' });
+
+    await context.database.sql`
+      INSERT INTO users (clerk_user_id, pdf_rate_limit_bypass)
+      VALUES ('user_pdf_db_bypass', true)
+      ON CONFLICT (clerk_user_id) DO UPDATE SET pdf_rate_limit_bypass = true
+    `;
+    const flagged = createApiFetchHandler(context.database.sql, {
+      resolveUserId: async () => 'user_pdf_db_bypass',
+      printHtmlToPdf: async () => payload,
+      pdfGuard: {
+        downloadsEnabled: true,
+        bypassUserIds: new Set(),
+        burstLimit: 1,
+        burstWindowSeconds: 300,
+        hourlyLimit: 1,
+        dailyLimit: 1,
+        maxConcurrent: 4,
+      },
+    });
+    expect((await flagged(new Request(url))).status).toBe(200);
+    expect((await flagged(new Request(url))).status).toBe(200);
+  });
+
   test('rejects /api/me requests without a verified user', async () => {
     const response = await context.fetchHandler(new Request('http://local.test/api/me/saved'));
 

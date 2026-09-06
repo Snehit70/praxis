@@ -8,6 +8,13 @@ import {
 import { SUPPORTED_EXAM_SLUGS, isSupportedExamSlug } from '../src/lib/examMapping';
 import { loadQuizQuestions } from './paperQuestions';
 import { pdfDownloadFilename, printHtmlToPdf, renderPaperHtml } from './paperPdf';
+import {
+  consumePdfDownloadSlot,
+  readPdfGuardConfig,
+  releasePdfRenderSlot,
+  tryAcquirePdfRenderSlot,
+  type PdfGuardConfig,
+} from './pdfGuard';
 
 const allowedOrigin = process.env.API_ALLOWED_ORIGIN?.trim() || '*';
 const cacheableApiResponse = 'public, max-age=60, s-maxage=300, stale-while-revalidate=600';
@@ -47,10 +54,14 @@ function json(data: unknown, status = 200) {
 }
 
 // Per-user responses must never land in a shared/CDN cache.
-function jsonPrivate(data: unknown, status = 200) {
+function jsonPrivate(
+  data: unknown,
+  status = 200,
+  extraHeaders: Record<string, string> = {},
+) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { ...corsHeaders(), 'cache-control': 'private, no-store' },
+    headers: { ...corsHeaders(), 'cache-control': 'private, no-store', ...extraHeaders },
   });
 }
 
@@ -81,11 +92,14 @@ export interface ApiHandlerOptions {
   resolveUserId?: (request: Request) => Promise<string | null>;
   /** Override Chromium print (used in tests). */
   printHtmlToPdf?: (html: string) => Promise<Uint8Array>;
+  /** Override PDF kill switch / rate limits (used in tests). */
+  pdfGuard?: PdfGuardConfig;
 }
 
 export function createApiFetchHandler(sql: DbClient, options: ApiHandlerOptions = {}) {
   const resolveUserId = options.resolveUserId ?? getUserId;
   const renderPdf = options.printHtmlToPdf ?? printHtmlToPdf;
+  const pdfGuard = options.pdfGuard ?? readPdfGuardConfig();
   async function resolvePaperVariantId(
     paperUuid: string,
     courseUuid: string | null,
@@ -695,21 +709,53 @@ export function createApiFetchHandler(sql: DbClient, options: ApiHandlerOptions 
           return notFound('Paper questions not found');
         }
 
-        const questions = await loadQuizQuestions(sql, variantId);
-        const html = renderPaperHtml(paper, questions, showAnswers);
-        const pdf = await renderPdf(html);
-        const filename = pdfDownloadFilename(paper, showAnswers);
-        const bytes = pdf instanceof Uint8Array ? pdf : new Uint8Array(pdf);
+        if (!tryAcquirePdfRenderSlot(pdfGuard.maxConcurrent)) {
+          console.warn('pdf download rejected: concurrent cap', {
+            userId,
+            paperUuid,
+            maxConcurrent: pdfGuard.maxConcurrent,
+          });
+          return jsonPrivate(
+            {
+              error: 'The PDF renderer is busy. Try again in a moment.',
+              retryAfterSeconds: 20,
+              window: 'concurrent',
+            },
+            429,
+            { 'retry-after': '20' },
+          );
+        }
 
-        return new Response(Buffer.from(bytes), {
-          status: 200,
-          headers: {
-            ...corsHeaders(),
-            'content-type': 'application/pdf',
-            'content-disposition': `attachment; filename="${filename}"`,
-            'cache-control': 'private, no-store',
-          },
-        });
+        try {
+          const slot = await consumePdfDownloadSlot(sql, userId, paperUuid, showAnswers, pdfGuard);
+          if (!slot.ok) {
+            return jsonPrivate(
+              { error: slot.error, retryAfterSeconds: slot.retryAfterSeconds, window: slot.window },
+              slot.status,
+              slot.retryAfterSeconds
+                ? { 'retry-after': String(slot.retryAfterSeconds) }
+                : {},
+            );
+          }
+
+          const questions = await loadQuizQuestions(sql, variantId);
+          const html = renderPaperHtml(paper, questions, showAnswers);
+          const pdf = await renderPdf(html);
+          const filename = pdfDownloadFilename(paper, showAnswers);
+          const bytes = pdf instanceof Uint8Array ? pdf : new Uint8Array(pdf);
+
+          return new Response(Buffer.from(bytes), {
+            status: 200,
+            headers: {
+              ...corsHeaders(),
+              'content-type': 'application/pdf',
+              'content-disposition': `attachment; filename="${filename}"`,
+              'cache-control': 'private, no-store',
+            },
+          });
+        } finally {
+          releasePdfRenderSlot();
+        }
       }
 
       const paperMatch = url.pathname.match(/^\/api\/papers\/([^/]+)$/);

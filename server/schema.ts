@@ -179,6 +179,29 @@ export async function ensureSchema(sql: DbClient) {
 
     CREATE INDEX IF NOT EXISTS idx_paper_views_user_recent
       ON paper_views (clerk_user_id, viewed_at DESC);
+
+    ALTER TABLE users
+      ADD COLUMN IF NOT EXISTS pdf_rate_limit_bypass BOOLEAN NOT NULL DEFAULT false;
+
+    CREATE TABLE IF NOT EXISTS pdf_rate_buckets (
+      clerk_user_id TEXT NOT NULL,
+      bucket TEXT NOT NULL,
+      window_start TIMESTAMPTZ NOT NULL,
+      count INTEGER NOT NULL,
+      PRIMARY KEY (clerk_user_id, bucket, window_start)
+    );
+
+    CREATE TABLE IF NOT EXISTS pdf_download_events (
+      id BIGSERIAL PRIMARY KEY,
+      clerk_user_id TEXT NOT NULL,
+      paper_uuid TEXT NOT NULL,
+      answers INTEGER NOT NULL DEFAULT 0,
+      bypassed INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_pdf_download_events_user_time
+      ON pdf_download_events (clerk_user_id, created_at DESC);
   `);
 }
 

@@ -172,6 +172,20 @@ Expected values by role:
 - `PRAXIS_API_DATABASE_URL`: container-network database URL, for example `postgres://praxis:<password>@praxis-postgres:5432/praxis`.
 - `PRAXIS_API_SERVER_NAME`: `api.praxis.snehit70.dev`.
 - `PRAXIS_API_ALLOWED_ORIGIN`: currently safe as `*` because the API is public read-only data.
+- `PRAXIS_PDF_DOWNLOADS_ENABLED`: optional. Set to `off` to kill all PDF downloads. Defaults to on.
+- `PRAXIS_PDF_RATE_LIMIT_BYPASS_USER_IDS`: optional comma-separated Clerk user ids that skip PDF rate limits.
+
+PDF downloads are capped at 3 per 5 minutes, 8 per hour, and 24 per day per signed-in user. Chromium also refuses extra renders when 2 are already in flight.
+
+To let one person through without a deploy:
+
+```sql
+UPDATE users
+SET pdf_rate_limit_bypass = true
+WHERE clerk_user_id = 'user_xxx';
+```
+
+To shut PDFs off immediately on the host, set `PDF_DOWNLOADS_ENABLED=off` in `.env.api` and restart `praxis-api`.
 
 The workflow:
 
