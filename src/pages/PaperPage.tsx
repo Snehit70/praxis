@@ -41,6 +41,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { StatePanel } from '@/components/ui/state-panel';
 import { SaveButton } from '@/components/SaveButton';
 import { DownloadPdfButton } from '@/components/DownloadPdfButton';
+import { BOOKMARKS_ENABLED } from '@/lib/featureFlags';
 import { useAuth } from '@clerk/clerk-react';
 import pageBg from '@/assets/Sousou no Frieren - Ep. 11_ Winter in the Northern Lands - 00_22.png';
 
@@ -2078,7 +2079,7 @@ export default function PaperPage() {
                 answers
               />
             )}
-            <SaveButton paperId={paper._id} />
+            {BOOKMARKS_ENABLED && <SaveButton paperId={paper._id} />}
           </div>
         </div>
 

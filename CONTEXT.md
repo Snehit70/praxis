@@ -31,3 +31,17 @@ _Avoid_: attempt, timed test, mock
 **Open Run**:
 A Practice Run taken without a clock, for free reading and review. The other mode a user chooses when entering a paper variant.
 _Avoid_: untimed attempt, browse mode, practice mode
+
+**User**:
+The Clerk-backed authenticated person/account using Praxis.
+
+**User Profile**:
+The user's editable Praxis identity and study preferences. Authentication,
+email, and account security remain part of the User's identity provider.
+
+**Paper View**:
+A record that a User opened a Paper Variant. A Paper View is not a Practice Run
+and does not imply completion, mastery, or a score.
+
+**Recently Viewed**:
+The profile presentation of a user's most recent Paper View records.

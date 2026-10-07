@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth, useUser, UserButton } from '@clerk/clerk-react';
-import { ArrowRight, BookMarked, BookOpen, Clock, Pencil, Plus, Search, X } from 'lucide-react';
+import { ArrowRight, BookMarked, BookOpen, Clock, Pencil, Plus, Search, UserRound, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -18,6 +18,7 @@ import { getDisplayCourseName, LEVEL_ORDER, type CourseLevel } from '@/lib/cours
 import { getExamSlugFromUuid } from '@/lib/examMapping';
 import { cn } from '@/lib/utils';
 import { logger } from '@/lib/logger';
+import { BOOKMARKS_ENABLED } from '@/lib/featureFlags';
 
 /**
  * Frieren's voice, keyed to the local clock — the measured, slightly dry-warm
@@ -306,13 +307,15 @@ export default function HomePage() {
             <span className="text-base font-semibold tracking-tight">Praxis</span>
           </Link>
           <div className="ml-auto flex items-center gap-2">
-            <Link
-              to="/saved"
-              className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-            >
-              <BookMarked className="h-4 w-4" />
-              <span className="hidden sm:inline">Bookmarks</span>
-            </Link>
+            {BOOKMARKS_ENABLED && (
+              <Link
+                to="/saved"
+                className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+              >
+                <BookMarked className="h-4 w-4" />
+                <span className="hidden sm:inline">Bookmarks</span>
+              </Link>
+            )}
             <button
               type="button"
               onClick={() => setSelectorOpen(true)}
@@ -321,7 +324,11 @@ export default function HomePage() {
               <Pencil className="h-4 w-4" />
               <span className="hidden sm:inline">Companions</span>
             </button>
-            <UserButton afterSignOutUrl="/" />
+            <Link to="/profile" className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground">
+              <UserRound className="h-4 w-4" />
+              <span className="hidden sm:inline">Profile</span>
+            </Link>
+            <UserButton afterSignOutUrl="/" userProfileMode="navigation" userProfileUrl="/profile" />
           </div>
         </div>
       </div>
@@ -373,15 +380,21 @@ export default function HomePage() {
                 <span className="text-lg font-semibold tracking-tight">Praxis</span>
               </Link>
               <div className="flex items-center gap-2">
-                <Link to="/saved" className={glassControl}>
-                  <BookMarked className="h-4 w-4" />
-                  <span className="hidden sm:inline">Bookmarks</span>
-                </Link>
+                {BOOKMARKS_ENABLED && (
+                  <Link to="/saved" className={glassControl}>
+                    <BookMarked className="h-4 w-4" />
+                    <span className="hidden sm:inline">Bookmarks</span>
+                  </Link>
+                )}
                 <button type="button" onClick={() => setSelectorOpen(true)} className={glassControl}>
                   <Pencil className="h-4 w-4" />
                   <span className="hidden sm:inline">Companions</span>
                 </button>
-                <UserButton afterSignOutUrl="/" />
+                <Link to="/profile" className={glassControl}>
+                  <UserRound className="h-4 w-4" />
+                  <span className="hidden sm:inline">Profile</span>
+                </Link>
+                <UserButton afterSignOutUrl="/" userProfileMode="navigation" userProfileUrl="/profile" />
               </div>
             </div>
 

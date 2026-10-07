@@ -510,6 +510,46 @@ describe('Praxis API authenticated routes', () => {
     expect(historyJson[0]).toMatchObject({ id: 'variant-2024', uuid: 'paper-2024' });
   });
 
+  test('reads and updates the user profile with recent paper views', async () => {
+    const handler = authedHandler('user_profile_1');
+    const base = 'http://local.test/api/me/profile';
+
+    const empty = await handler(new Request(base));
+    expect(empty.status).toBe(200);
+    expect(await empty.json()).toMatchObject({
+      displayName: null,
+      bio: null,
+      avatarKey: null,
+      level: null,
+      courseKeys: [],
+      recentViews: [],
+      viewedPaperCount: 0,
+    });
+
+    const updated = await handler(new Request(base, {
+      method: 'PATCH',
+      body: JSON.stringify({ displayName: 'Frieren', bio: 'Walking the road.', avatarKey: 'lawine' }),
+    }));
+    expect(updated.status).toBe(200);
+    expect(await updated.json()).toMatchObject({ displayName: 'Frieren', bio: 'Walking the road.', avatarKey: 'lawine' });
+
+    const invalid = await handler(new Request(base, {
+      method: 'PATCH',
+      body: JSON.stringify({ avatarKey: 'unknown' }),
+    }));
+    expect(invalid.status).toBe(400);
+
+    await handler(new Request('http://local.test/api/me/history', {
+      method: 'POST',
+      body: JSON.stringify({ paperId: 'variant-2025' }),
+    }));
+    const withActivity = await handler(new Request(base));
+    expect(await withActivity.json()).toMatchObject({
+      viewedPaperCount: 1,
+      recentViews: [{ id: 'variant-2025', uuid: 'paper-2025' }],
+    });
+  });
+
   test('saves and lists the user course selection with level', async () => {
     const handler = authedHandler('user_test_courses');
     const base = 'http://local.test/api/me/courses';

@@ -171,11 +171,33 @@ export function collectImportRows(dataDir = DATA_DIR) {
       );
 
       for (const courseDirectory of courseDirectories) {
-        const indexPath = path.join(examDir, courseDirectory.name, 'index.json');
-        const paperIndex = readJsonFile<Array<{ uuid: string } & Record<string, unknown>>>(indexPath);
+        const courseDirPath = path.join(examDir, courseDirectory.name);
+        const indexPath = path.join(courseDirPath, 'index.json');
+        // Prefer index.json, but also pick up paper JSON files that were scraped
+        // without an index refresh (orphans). Import must not silently drop them.
+        const paperUuids = new Set<string>();
+        if (existsSync(indexPath)) {
+          const paperIndex = readJsonFile<Array<{ uuid: string } & Record<string, unknown>>>(indexPath);
+          for (const paperSummary of paperIndex) {
+            if (paperSummary.uuid && paperSummary.uuid !== 'metadata') {
+              paperUuids.add(paperSummary.uuid);
+            }
+          }
+        }
+        for (const entry of readdirSync(courseDirPath, { withFileTypes: true })) {
+          if (
+            !entry.isFile()
+            || !entry.name.endsWith('.json')
+            || entry.name === 'index.json'
+            || entry.name === 'metadata.json'
+          ) {
+            continue;
+          }
+          paperUuids.add(entry.name.replace(/\.json$/i, ''));
+        }
 
-        for (const paperSummary of paperIndex) {
-          const paperPath = path.join(examDir, courseDirectory.name, `${paperSummary.uuid}.json`);
+        for (const paperUuid of paperUuids) {
+          const paperPath = path.join(courseDirPath, `${paperUuid}.json`);
           let paper: RawPaperFile;
 
           try {
@@ -187,6 +209,12 @@ export function collectImportRows(dataDir = DATA_DIR) {
             }
 
             throw error;
+          }
+
+          // Incomplete scrape artifacts (index-only / truncated) have no questions[].
+          if (!Array.isArray(paper.questions)) {
+            skippedPaperPaths.push(path.relative(process.cwd(), paperPath));
+            continue;
           }
 
           const fallbackCourseUuid = metadataCourseUuidByName.get(
@@ -226,7 +254,8 @@ export function collectImportRows(dataDir = DATA_DIR) {
             course_uuid: courseUuid,
             group_id: paper.group_id,
             total_score: paper.total_score,
-            duration: paper.duration,
+            // Some generated/practice papers omit duration; keep NOT NULL satisfied.
+            duration: typeof paper.duration === 'number' ? paper.duration : 0,
             paper_name: paper.question_paper_name,
             paper_description: paper.question_paper_description,
             year: typeof paper.year === 'number' ? paper.year : null,
@@ -241,6 +270,30 @@ export function collectImportRows(dataDir = DATA_DIR) {
               continue;
             }
 
+            const hasText = Boolean(
+              rawQuestion.question_text_1
+              || rawQuestion.question_text_2
+              || rawQuestion.question_text_3
+              || rawQuestion.question_text_4
+              || rawQuestion.question_text_5,
+            );
+            const hasImage = Boolean(
+              rawQuestion.question_image_1
+              || rawQuestion.question_image_2
+              || rawQuestion.question_image_3
+              || rawQuestion.question_image_4
+              || rawQuestion.question_image_5
+              || rawQuestion.question_image_6
+              || rawQuestion.question_image_7
+              || rawQuestion.question_image_8
+              || rawQuestion.question_image_9
+              || rawQuestion.question_image_10,
+            );
+            // Empty AI/practice stubs land with null hash and no body — skip them.
+            if (!rawQuestion.hash && !hasText && !hasImage) {
+              continue;
+            }
+
             const rowQuestionId = questionId(variantId, rawQuestion.uuid);
 
             questions.push({
@@ -249,9 +302,9 @@ export function collectImportRows(dataDir = DATA_DIR) {
               paper_variant_id: variantId,
               question_number: rawQuestion.question_number,
               question_type: rawQuestion.question_type,
-              total_mark: rawQuestion.total_mark,
+              total_mark: rawQuestion.total_mark ?? '0',
               total_mark_value: Number.parseFloat(rawQuestion.total_mark) || 0,
-              hash: rawQuestion.hash,
+              hash: rawQuestion.hash ?? '',
               question_text_1: rawQuestion.question_text_1 ?? null,
               question_text_2: rawQuestion.question_text_2 ?? null,
               question_text_3: rawQuestion.question_text_3 ?? null,
@@ -272,9 +325,9 @@ export function collectImportRows(dataDir = DATA_DIR) {
               value_start: rawQuestion.value_start ?? null,
               value_end: rawQuestion.value_end ?? null,
               parent_question_uuid: rawQuestion.parent_question?.uuid ?? null,
-              is_markdown: rawQuestion.is_markdown,
-              have_answers: rawQuestion.have_answers,
-              question_num_long: rawQuestion.question_num_long,
+              is_markdown: rawQuestion.is_markdown ?? 0,
+              have_answers: rawQuestion.have_answers ?? 0,
+              question_num_long: rawQuestion.question_num_long ?? rawQuestion.question_number ?? 0,
               created_at: rawQuestion.created_at ?? null,
               updated_at: rawQuestion.updated_at ?? null,
             });
@@ -283,10 +336,10 @@ export function collectImportRows(dataDir = DATA_DIR) {
               options.push({
                 id: optionId(rowQuestionId, optionIndex),
                 question_id: rowQuestionId,
-                option_text: option.option_text,
+                option_text: option.option_text ?? '',
                 option_image: option.option_image || null,
-                score: option.score,
-                is_correct: option.is_correct,
+                score: option.score ?? '0',
+                is_correct: option.is_correct ?? 0,
                 option_number: option.option_number ?? null,
                 option_position: optionIndex,
                 created_at: option.created_at ?? null,

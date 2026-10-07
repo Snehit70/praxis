@@ -147,6 +147,11 @@ export async function ensureSchema(sql: DbClient) {
     ALTER TABLE users
       ADD COLUMN IF NOT EXISTS level TEXT;
 
+    ALTER TABLE users
+      ADD COLUMN IF NOT EXISTS display_name TEXT,
+      ADD COLUMN IF NOT EXISTS bio TEXT,
+      ADD COLUMN IF NOT EXISTS avatar_key TEXT;
+
     -- Courses a user is taking this term. The key is the canonical course name
     -- (the stable identity used for dedup/display), not a source_uuid, because a
     -- single canonical course can map to several source rows across programs.

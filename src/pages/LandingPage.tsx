@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
-import { ArrowRight, BookOpen } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { SignedIn, SignedOut, UserButton, useAuth } from "@clerk/clerk-react";
 import { SignInTrigger } from "@/components/auth/AuthDialog";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { PraxisBrand } from "@/components/PraxisBrand";
 
 /**
  * Cinematic, layered-parallax hero.
@@ -227,8 +228,7 @@ export default function LandingPage() {
           to="/"
           className="flex items-center gap-2.5 transition-opacity hover:opacity-80"
         >
-          <BookOpen className="size-5" />
-          <span className="text-lg font-semibold tracking-tight">Praxis</span>
+          <PraxisBrand markClassName="size-9" nameClassName="text-lg text-white" />
         </Link>
         <nav className="flex items-center gap-6 text-sm [text-shadow:0_1px_10px_rgba(0,0,0,0.85)]">
           {/* Signed-in users are redirected to the dashboard, so this header is

@@ -34,12 +34,13 @@ const clerk = clerkSecretKey
   : null;
 const authorizedParties = allowedOrigin === '*' ? undefined : [allowedOrigin];
 const [quiz1Slug, quiz2Slug, endTermSlug] = SUPPORTED_EXAM_SLUGS;
+const PROFILE_AVATAR_KEYS = new Set(['lawine', 'ubel', 'sein', 'serie', 'flamme', 'himmel']);
 
 function corsHeaders(): Record<string, string> {
   return {
     'content-type': 'application/json',
     'access-control-allow-origin': allowedOrigin,
-    'access-control-allow-methods': 'GET,POST,DELETE,OPTIONS',
+    'access-control-allow-methods': 'GET,POST,PATCH,DELETE,OPTIONS',
     'access-control-allow-headers': 'content-type, authorization',
     // Cross-origin fetch from the Vercel app cannot read Content-Disposition
     // unless it is listed here. Without this, the client saves paper.pdf.
@@ -146,6 +147,96 @@ export function createApiFetchHandler(sql: DbClient, options: ApiHandlerOptions 
           INSERT INTO users (clerk_user_id) VALUES (${userId})
           ON CONFLICT (clerk_user_id) DO NOTHING
         `;
+
+        if (url.pathname === '/api/me/profile') {
+          if (request.method === 'PATCH') {
+            const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+            const allowed = new Set(['displayName', 'bio', 'avatarKey']);
+            const unknown = Object.keys(body ?? {}).find((key) => !allowed.has(key));
+            if (unknown) return jsonPrivate({ error: `Unknown profile field: ${unknown}` }, 400);
+
+            if (body && Object.prototype.hasOwnProperty.call(body, 'displayName')) {
+              if (body.displayName !== null && typeof body.displayName !== 'string') {
+                return jsonPrivate({ error: 'displayName must be a string or null' }, 400);
+              }
+              const value = typeof body.displayName === 'string' ? body.displayName.trim() : '';
+              if (value.length > 80) return jsonPrivate({ error: 'displayName is too long' }, 400);
+              await sql`UPDATE users SET display_name = ${value || null} WHERE clerk_user_id = ${userId}`;
+            }
+
+            if (body && Object.prototype.hasOwnProperty.call(body, 'bio')) {
+              if (body.bio !== null && typeof body.bio !== 'string') {
+                return jsonPrivate({ error: 'bio must be a string or null' }, 400);
+              }
+              const value = typeof body.bio === 'string' ? body.bio.trim() : '';
+              if (value.length > 160) return jsonPrivate({ error: 'bio is too long' }, 400);
+              await sql`UPDATE users SET bio = ${value || null} WHERE clerk_user_id = ${userId}`;
+            }
+
+            if (body && Object.prototype.hasOwnProperty.call(body, 'avatarKey')) {
+              if (body.avatarKey !== null && typeof body.avatarKey !== 'string') {
+                return jsonPrivate({ error: 'avatarKey must be a string or null' }, 400);
+              }
+              const value = typeof body.avatarKey === 'string' ? body.avatarKey.trim().toLowerCase() : '';
+              if (value && !PROFILE_AVATAR_KEYS.has(value)) {
+                return jsonPrivate({ error: 'Unsupported avatarKey' }, 400);
+              }
+              await sql`UPDATE users SET avatar_key = ${value || null} WHERE clerk_user_id = ${userId}`;
+            }
+          } else if (request.method !== 'GET') {
+            return jsonPrivate({ error: 'Method not allowed' }, 405);
+          }
+
+          const [profile] = await sql<Array<{
+            displayName: string | null;
+            bio: string | null;
+            avatarKey: string | null;
+            level: string | null;
+          }>>`
+            SELECT display_name AS "displayName", bio, avatar_key AS "avatarKey", level
+            FROM users WHERE clerk_user_id = ${userId} LIMIT 1
+          `;
+          const activity = await sql<Array<{
+            id: string;
+            uuid: string;
+            paperName: string;
+            examUuid: string;
+            examName: string;
+            courseUuid: string;
+            courseName: string;
+            year: number | null;
+            viewedAt: string | null;
+          }>>`
+            SELECT DISTINCT ON (v.paper_id)
+              p.id AS "id", p.source_uuid AS "uuid", p.paper_name AS "paperName",
+              p.exam_uuid AS "examUuid", e.exam_name AS "examName",
+              p.course_uuid AS "courseUuid", c.course_name AS "courseName",
+              p.year, v.viewed_at::text AS "viewedAt"
+            FROM paper_views v
+            JOIN paper_variants p ON p.id = v.paper_id
+            JOIN exams e ON e.source_uuid = p.exam_uuid
+            JOIN courses c ON c.source_uuid = p.course_uuid
+            WHERE v.clerk_user_id = ${userId}
+            ORDER BY v.paper_id, v.viewed_at DESC
+          `;
+          activity.sort((a, b) => (b.viewedAt ?? '').localeCompare(a.viewedAt ?? ''));
+          const [count] = await sql<Array<{ count: number }>>`
+            SELECT COUNT(DISTINCT paper_id)::int AS count FROM paper_views WHERE clerk_user_id = ${userId}
+          `;
+          const courses = await sql<Array<{ courseKey: string }>>`
+            SELECT course_key AS "courseKey" FROM user_courses
+            WHERE clerk_user_id = ${userId} ORDER BY created_at ASC, course_key ASC
+          `;
+          return jsonPrivate({
+            displayName: profile?.displayName ?? null,
+            bio: profile?.bio ?? null,
+            avatarKey: profile?.avatarKey ?? null,
+            level: profile?.level ?? null,
+            courseKeys: courses.map((row) => row.courseKey),
+            recentViews: activity.slice(0, 5),
+            viewedPaperCount: count?.count ?? 0,
+          });
+        }
 
         if (url.pathname === '/api/me/saved') {
           if (request.method === 'GET') {
