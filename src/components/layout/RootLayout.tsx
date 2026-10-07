@@ -1,11 +1,12 @@
 import { Outlet, Link, useLocation } from "react-router-dom";
-import { BookOpen, UserRound } from "lucide-react";
+import { UserRound } from "lucide-react";
 import { SignedIn, SignedOut, UserButton } from "@clerk/clerk-react";
 import { SignInTrigger } from "@/components/auth/AuthDialog";
 import { Button } from "@/components/ui/button";
 import { logger } from "@/lib/logger";
 import { useEffect } from "react";
 import { BOOKMARKS_ENABLED } from "@/lib/featureFlags";
+import { PraxisBrand } from "@/components/PraxisBrand";
 
 export default function RootLayout() {
   // The landing and dashboard routes are self-contained, full-bleed heroes: each
@@ -31,8 +32,7 @@ export default function RootLayout() {
         <header className="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur-sm">
           <div className="container mx-auto flex h-14 items-center px-4 md:px-8">
             <Link to="/" className="flex items-center gap-2.5 transition-opacity hover:opacity-80">
-              <BookOpen className="h-5 w-5 text-primary" />
-              <span className="font-semibold text-foreground">Praxis</span>
+              <PraxisBrand nameClassName="text-foreground" />
             </Link>
             <nav className="ml-auto flex items-center gap-4">
               <SignedIn>
