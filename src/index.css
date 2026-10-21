@@ -304,15 +304,14 @@
 .wish-reel-back,
 .deck-flip-back {
   border-radius: 16px;
-  border: 1px solid rgba(214, 178, 110, 0.55);
+  border: 1px solid rgba(241, 234, 217, 0.5);
   background:
-    radial-gradient(circle at 50% 38%, color-mix(in srgb, var(--lvl, #62aef0) 26%, transparent), transparent 62%),
-    repeating-linear-gradient(135deg, rgba(214, 178, 110, 0.05) 0 8px, transparent 8px 18px),
-    linear-gradient(160deg, #2c2823, #131009);
+    radial-gradient(circle at 50% 46%, color-mix(in srgb, var(--lvl, #7aa7e6) 30%, transparent), transparent 64%),
+    linear-gradient(165deg, #1b2750, #0b1128);
   box-shadow:
-    inset 0 0 0 1px rgba(214, 178, 110, 0.18),
-    inset 0 0 0 4px color-mix(in srgb, var(--lvl, #62aef0) 16%, transparent),
-    inset 0 0 38px -8px color-mix(in srgb, var(--lvl, #62aef0) 55%, transparent),
+    inset 0 0 0 7px #0b1128,
+    inset 0 0 0 8px rgba(214, 178, 110, 0.35),
+    inset 0 0 44px -10px color-mix(in srgb, var(--lvl, #7aa7e6) 50%, transparent),
     0 16px 38px -12px rgba(0, 0, 0, 0.75);
   display: flex;
   align-items: center;

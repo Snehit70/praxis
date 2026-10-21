@@ -195,8 +195,8 @@ export function CourseSelector({
     >
       {/* Calmed meadow backdrop (blur + deep scrim) so the glass reads clean. */}
       <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10">
-        <img src={cardBg} alt="" className="h-full w-full scale-110 object-cover object-center blur-[3px]" />
-        <div className="absolute inset-0 bg-gradient-to-b from-background/72 via-background/82 to-background/92" />
+        <img src={cardBg} alt="" className="h-full w-full scale-110 object-cover object-[50%_35%] blur-[2px]" />
+        <div className="absolute inset-0 bg-gradient-to-b from-[#0E1530]/55 via-[#0E1530]/70 to-[#0E1530]/90" />
       </div>
 
       {/* Compact header */}
@@ -278,7 +278,7 @@ export function CourseSelector({
                 className="absolute left-0 z-20"
               />
               <div className="relative flex items-center justify-center">
-                {!opening && <PeekCard entry={deck[clampedIndex - 1]} onClick={() => go(-1)} />}
+                {!opening && <PeekCard side="prev" entry={deck[clampedIndex - 1]} onClick={() => go(-1)} />}
                 <DeckSlot
                   key={current.key}
                   mode={opening ? 'reveal' : navDir > 0 ? 'next' : 'prev'}
@@ -291,7 +291,7 @@ export function CourseSelector({
                     onToggle={toggle}
                   />
                 </DeckSlot>
-                {!opening && <PeekCard entry={deck[clampedIndex + 1]} onClick={() => go(1)} />}
+                {!opening && <PeekCard side="next" entry={deck[clampedIndex + 1]} onClick={() => go(1)} />}
               </div>
               <DeckArrow
                 dir="next"
@@ -537,7 +537,7 @@ function DeckSlot({
       >
         <div className="deck-flip">
           <span className="deck-flip-face deck-flip-back">
-            <ArcaneSigil />
+            <ArcaneSigil mark />
           </span>
           <div className="deck-flip-face deck-flip-front">{children}</div>
         </div>
@@ -568,7 +568,7 @@ function WishReveal({ color }: { color: string }) {
         <div className="wish-reel-row">
           {Array.from({ length: 13 }).map((_, i) => (
             <span key={i} className="wish-reel-back">
-              <ArcaneSigil />
+              <ArcaneSigil mark />
             </span>
           ))}
         </div>
@@ -605,7 +605,7 @@ function DeckArrow({
 }
 
 /** Faint neighbour preview tucked behind the hero card — clickable to flip. */
-function PeekCard({ entry, onClick }: { entry?: CatalogueEntry; onClick: () => void }) {
+function PeekCard({ entry, side, onClick }: { entry?: CatalogueEntry; side: 'prev' | 'next'; onClick: () => void }) {
   if (!entry) return null;
   const meta = LEVEL_META[entry.level];
   return (
@@ -614,7 +614,7 @@ function PeekCard({ entry, onClick }: { entry?: CatalogueEntry; onClick: () => v
       onClick={onClick}
       aria-hidden="true"
       tabIndex={-1}
-      className="hidden shrink-0 sm:block"
+      className={cn('absolute top-1/2 hidden -translate-y-1/2 sm:block', side === 'prev' ? 'right-full -mr-6' : 'left-full -ml-6')}
     >
       <div className="relative h-[clamp(260px,40vh,340px)] w-[clamp(140px,32vw,180px)] scale-95 overflow-hidden rounded-2xl border border-white/10 opacity-35 blur-[1.5px] saturate-50">
         <img

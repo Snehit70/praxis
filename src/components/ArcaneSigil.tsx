@@ -8,7 +8,16 @@
  * scale and runic dash offset so no two sigils look identical while keeping the
  * same family. Omit it for the canonical card-back look.
  */
-export function ArcaneSigil({ seed, className }: { seed?: number; className?: string }) {
+export function ArcaneSigil({
+  seed,
+  className,
+  mark = false,
+}: {
+  seed?: number;
+  className?: string;
+  /** Put the Praxis nemophila in the centre instead of the plain sparkle. */
+  mark?: boolean;
+}) {
   // Deterministic per-seed variation. Kept subtle so the family stays coherent.
   const rot = seed === undefined ? 0 : seed % 360;
   const scale = seed === undefined ? 1 : 0.9 + ((seed >> 3) % 18) / 100; // 0.90–1.07
@@ -56,11 +65,15 @@ export function ArcaneSigil({ seed, className }: { seed?: number; className?: st
 
       {/* Inner ring + central sparkle */}
       <circle cx="100" cy="100" r="34" stroke="#d6b26e" strokeOpacity="0.6" strokeWidth="1" />
-      <path
-        d="M100 76 C102 94 106 98 124 100 C106 102 102 106 100 124 C98 106 94 102 76 100 C94 98 98 94 100 76 Z"
-        fill="#d6b26e"
-        fillOpacity="0.88"
-      />
+      {mark ? (
+        <image href="/praxis-mark.png" x="68" y="68" width="64" height="64" preserveAspectRatio="xMidYMid meet" />
+      ) : (
+        <path
+          d="M100 76 C102 94 106 98 124 100 C106 102 102 106 100 124 C98 106 94 102 76 100 C94 98 98 94 100 76 Z"
+          fill="#d6b26e"
+          fillOpacity="0.88"
+        />
+      )}
     </svg>
   );
 }
