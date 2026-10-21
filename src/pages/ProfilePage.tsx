@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth, useUser } from '@clerk/clerk-react';
-import { ArrowRight, Check, Edit3, Loader2, UserRound } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, Edit3, Loader2, UserRound } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogClose } from '@/components/ui/dialog';
 import { CourseSelector } from '@/components/CourseSelector';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Skeleton, SkeletonRegion } from '@/components/ui/skeleton';
 import { StatePanel } from '@/components/ui/state-panel';
 import { useEnrolledCourses } from '@/hooks/useEnrolledCourses';
 import { buildCatalogue, courseHref, LEVEL_META } from '@/lib/courseCatalogue';
@@ -125,19 +125,57 @@ export default function ProfilePage() {
     return <div className="container mx-auto px-4 py-10 md:px-8"><StatePanel tone="error" title="Couldn’t load your profile" description="Please try again in a moment." actions={<Button onClick={() => window.location.reload()}>Reload</Button>} announce /></div>;
   }
 
+  const card = 'squircle overflow-hidden rounded-3xl border border-white/10 bg-[#0d1220]/75 p-6 shadow-2xl shadow-black/25 backdrop-blur-xl md:p-7';
+
   if (!profile || !catalogue) {
+    // Same header geometry and card frames as the loaded page, so the scene
+    // stays put and only the blanks fill in.
     return (
-      <div role="status" aria-label="Loading your profile">
-        <Skeleton className="h-[200px] w-full rounded-none sm:h-[clamp(260px,38vh,380px)]" />
-        <div className="mx-auto grid max-w-6xl gap-6 px-4 py-8 md:px-8 lg:grid-cols-2">
-          <Skeleton className="h-72 rounded-3xl" />
-          <Skeleton className="h-72 rounded-3xl" />
+      <SkeletonRegion label="Loading your profile" tone="glass" className="relative isolate pb-16">
+        <section className="relative isolate overflow-hidden">
+          <div className="h-[72px] w-full sm:h-[clamp(200px,28vh,280px)]" />
+          <div className="relative -mt-10 sm:absolute sm:inset-x-0 sm:bottom-0 sm:mt-0">
+            <div className="mx-auto flex max-w-6xl flex-col gap-5 px-4 sm:flex-row sm:items-end sm:justify-between sm:pb-6 md:px-8">
+              <div className="flex items-end gap-4 md:gap-5">
+                <Skeleton className="squircle size-20 shrink-0 rounded-[1.75rem] md:size-24" />
+                <div className="space-y-2.5 pb-0.5">
+                  <Skeleton className="h-10 w-56 rounded-lg md:h-12 md:w-72" />
+                  <Skeleton className="h-4 w-64 rounded-full md:w-80" />
+                  <Skeleton className="h-3 w-48 rounded-full" />
+                </div>
+              </div>
+              <Skeleton className="squircle h-9 w-32 shrink-0 rounded-2xl" />
+            </div>
+          </div>
+        </section>
+        <div className="mx-auto grid max-w-6xl items-start gap-6 px-4 pt-4 md:px-8 lg:grid-cols-2">
+          {[0, 1].map((panel) => (
+            <section key={panel} className={card}>
+              <div className="flex items-end justify-between gap-4">
+                <div className="space-y-2">
+                  <Skeleton className="h-3 w-20 rounded-full" />
+                  <Skeleton className="h-7 w-44 rounded-md" />
+                </div>
+                <Skeleton className="h-8 w-24 rounded-xl" />
+              </div>
+              <div className="mt-4 space-y-1 border-t border-white/10 pt-2">
+                {[0, 1, 2].map((row) => (
+                  <div key={row} className="flex items-center gap-4 py-3">
+                    <Skeleton className="squircle size-11 shrink-0 rounded-xl" />
+                    <div className="flex-1 space-y-2">
+                      <Skeleton className="h-4 w-3/4 rounded-full" />
+                      <Skeleton className="h-3 w-1/3 rounded-full" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ))}
         </div>
-      </div>
+      </SkeletonRegion>
     );
   }
 
-  const card = 'squircle overflow-hidden rounded-3xl border border-white/10 bg-[#0d1220]/75 p-6 shadow-2xl shadow-black/25 backdrop-blur-xl md:p-7';
   const kicker = 'text-[11px] font-semibold uppercase tracking-[0.2em] text-white/50';
   const rowLink = 'squircle group -mx-3 flex items-center gap-4 rounded-2xl px-3 py-3 transition-colors hover:bg-white/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50';
 
@@ -150,6 +188,14 @@ export default function ProfilePage() {
 
         <div className="relative -mt-10 sm:absolute sm:inset-x-0 sm:bottom-0 sm:mt-0">
           <div className="mx-auto flex max-w-6xl flex-col gap-5 px-4 sm:pb-6 sm:flex-row sm:items-end sm:justify-between md:px-8">
+            <div className="min-w-0">
+            <Link
+              to="/"
+              className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-white/90 transition-colors [text-shadow:0_1px_10px_rgba(0,0,0,0.5)] hover:text-white"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Back to courses
+            </Link>
             <div className="flex items-end gap-4 md:gap-5">
               <div className="squircle flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-[1.75rem] border-2 border-white/40 bg-primary/80 text-2xl font-semibold text-primary-foreground shadow-xl md:size-24">
                 {avatar ? <img src={avatar.src} alt={avatar.label} className="h-full w-full object-cover" /> : avatarInitials}
@@ -169,6 +215,7 @@ export default function ProfilePage() {
                   <span>{profile.viewedPaperCount} {profile.viewedPaperCount === 1 ? 'paper' : 'papers'} viewed</span>
                 </p>
               </div>
+            </div>
             </div>
             <Button
               variant="outline"
