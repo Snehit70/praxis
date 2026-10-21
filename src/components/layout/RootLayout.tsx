@@ -83,14 +83,14 @@ export default function RootLayout() {
               to="/"
               className="flex items-center gap-2.5 transition-opacity hover:opacity-80"
             >
-              <PraxisBrand nameClassName="text-foreground" />
+              <PraxisBrand className="text-[#f1ead9]" />
             </Link>
             <nav className="ml-auto flex items-center gap-4">
               <SignedIn>
                 {BOOKMARKS_ENABLED && (
                   <Link
                     to="/saved"
-                    className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+                    className="text-sm font-medium text-white/90 transition-colors hover:text-white"
                   >
                     Saved papers
                   </Link>
@@ -99,7 +99,7 @@ export default function RootLayout() {
                 {pathname !== "/profile" && (
                   <Link
                     to="/profile"
-                    className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+                    className="inline-flex items-center gap-1.5 text-sm font-medium text-white/90 transition-colors hover:text-white"
                   >
                     <UserRound className="h-4 w-4" />
                     Profile
