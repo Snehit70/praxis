@@ -214,21 +214,6 @@
   background: linear-gradient(to bottom, rgba(255, 255, 255, 0.16), transparent 28%);
 }
 
-.tcard-glare {
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  pointer-events: none;
-  z-index: 30;
-  opacity: 0;
-  mix-blend-mode: screen;
-  background: radial-gradient(
-    circle at var(--gx, 50%) var(--gy, 50%),
-    rgba(255, 255, 255, 0.3),
-    transparent 45%
-  );
-}
-
 .tcard[data-charged='true'] {
   border-color: color-mix(in srgb, var(--lvl, #62aef0) 70%, transparent);
   box-shadow: 0 0 34px -6px color-mix(in srgb, var(--lvl, #62aef0) 62%, transparent);
@@ -237,9 +222,6 @@
 @media (prefers-reduced-motion: no-preference) {
   .tcard {
     transition: transform 0.25s ease-out, box-shadow 0.3s ease-out, border-color 0.3s ease-out;
-  }
-  .tcard-wrap:hover .tcard-glare {
-    opacity: 0.9;
   }
 }
 
@@ -552,10 +534,6 @@
   );
   background-size: 220% 220%;
   background-position: var(--gx, 50%) var(--gy, 50%);
-}
-
-.tcard-wrap:hover .tcard-foil {
-  opacity: 0.12;
 }
 
 .tcard[data-charged='true'] .tcard-foil {

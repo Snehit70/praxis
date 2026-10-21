@@ -210,7 +210,6 @@ function PaperVariantCard({
           style={{ opacity: patina }}
         />
         <div className="tcard-foil" aria-hidden="true" />
-        <div className="tcard-glare" aria-hidden="true" />
 
         {/* Top row: set + year chips. */}
         <div className="relative z-10 flex items-start justify-between gap-2 p-4">

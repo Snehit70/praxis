@@ -548,8 +548,7 @@ function CourseCardFace({
         <i aria-hidden="true" className="tcard-corner tcard-corner-bl" />
         <i aria-hidden="true" className="tcard-corner tcard-corner-br" />
 
-        {/* Glass glare + summon sequence overlays. */}
-        <span aria-hidden="true" className="tcard-glare" />
+        {/* Summon sequence overlays. */}
         <span aria-hidden="true" className="charge-ring" />
         <span aria-hidden="true" className="charge-flare" />
         <span aria-hidden="true" className="summon-burst" />
