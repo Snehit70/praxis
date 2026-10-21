@@ -1,6 +1,6 @@
 import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { BookOpen, ArrowRight, ArrowLeft, Search, X, FileText } from 'lucide-react';
+import { BookOpen, ArrowRight, ArrowLeft, Search, FileText } from 'lucide-react';
 import { logger } from '@/lib/logger';
 import { getExamUuidFromSlug, getExamNameFromSlug } from '@/lib/examMapping';
 import { useEffect, useState, useMemo } from 'react';
@@ -15,6 +15,7 @@ import {
 import { getExamCourses, type CourseSummary } from '@/lib/api';
 import { Skeleton, SkeletonRegion } from '@/components/ui/skeleton';
 import { StatePanel } from '@/components/ui/state-panel';
+import { SearchField } from '@/components/ui/search-field';
 
 const LEVEL_INFO: Record<CourseLevel, { label: string; accent: string }> = {
   'Foundation': { label: 'Foundation Level', accent: 'border-l-blue-500' },
@@ -296,31 +297,14 @@ export default function ExamPage() {
           </div>
 
           {/* Search */}
-          <div className="relative w-full md:w-72">
-            <label htmlFor="exam-course-search" className="sr-only">
-              Filter courses
-            </label>
-            <Search aria-hidden="true" className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <input
-              id="exam-course-search"
-              type="text"
-              placeholder="Search courses..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              autoComplete="off"
-              className="w-full rounded-lg border border-border bg-card py-2.5 pl-10 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery('')}
-                aria-label="Clear course search"
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-              >
-                <X aria-hidden="true" className="h-4 w-4" />
-              </button>
-            )}
-          </div>
+          <SearchField
+            id="exam-course-search"
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder="Search courses..."
+            label="Filter courses"
+            className="md:w-72"
+          />
         </div>
       </header>
 

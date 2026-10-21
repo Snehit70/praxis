@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth, useUser, UserButton } from '@clerk/clerk-react';
-import { ArrowRight, BookMarked, Clock, Pencil, Plus, Search, UserRound, X } from 'lucide-react';
+import { ArrowRight, BookMarked, Clock, Pencil, Plus, Search, UserRound } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Skeleton, SkeletonRegion } from '@/components/ui/skeleton';
 import { StatePanel } from '@/components/ui/state-panel';
+import { SearchField } from '@/components/ui/search-field';
+import { SEGMENTED_LIST, SEGMENTED_TRIGGER } from '@/components/ui/segmented';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { CourseCard, CourseCardSkeleton } from '@/components/CourseCard';
 import { PraxisBrand } from '@/components/PraxisBrand';
@@ -306,10 +308,10 @@ export default function HomePage() {
         {/* ── Content below the hero ── */}
         <div className={cn(column, 'py-6 md:py-8')}>
           <div className="mb-6 flex items-center justify-between gap-4">
-          <TabsList className="squircle inline-flex gap-1 rounded-2xl border border-white/10 bg-white/[0.04] p-1">
+          <TabsList className={SEGMENTED_LIST}>
             <TabsTrigger
               value="mine"
-              className="squircle h-9 rounded-xl px-4 text-sm text-white/80 transition-colors hover:text-white data-[state=active]:bg-white data-[state=active]:text-[#141414]"
+              className={SEGMENTED_TRIGGER}
             >
               Companions
               {!booting && enrolledCourses.length > 0 && (
@@ -323,7 +325,7 @@ export default function HomePage() {
             </TabsTrigger>
             <TabsTrigger
               value="archive"
-              className="squircle h-9 rounded-xl px-4 text-sm text-white/80 transition-colors hover:text-white data-[state=active]:bg-white data-[state=active]:text-[#141414]"
+              className={SEGMENTED_TRIGGER}
             >
               The World
             </TabsTrigger>
@@ -380,28 +382,13 @@ export default function HomePage() {
           <p className="text-sm text-muted-foreground">
             Every course in the archive — roads you haven&apos;t walked yet.
           </p>
-          <div className="relative max-w-md">
-            <Search aria-hidden="true" className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <input
-              type="text"
-              value={archiveQuery}
-              onChange={(event) => setArchiveQuery(event.target.value)}
-              placeholder="Search all courses..."
-              autoComplete="off"
-              aria-label="Search all courses"
-              className="squircle h-11 w-full rounded-xl border border-border bg-card pl-10 pr-9 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-            />
-            {archiveQuery && (
-              <button
-                type="button"
-                onClick={() => setArchiveQuery('')}
-                aria-label="Clear search"
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            )}
-          </div>
+          <SearchField
+            value={archiveQuery}
+            onChange={setArchiveQuery}
+            placeholder="Search all courses..."
+            label="Search all courses"
+            className="max-w-md"
+          />
 
           {booting ? (
             <CourseGridSkeleton label="Loading the archive" count={6} />

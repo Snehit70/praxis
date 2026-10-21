@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, Search, Star, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Star } from 'lucide-react';
 import { Dialog, DialogClose } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { SearchField } from '@/components/ui/search-field';
 import { cn } from '@/lib/utils';
 import { LEVEL_ORDER, type CourseLevel } from '@/lib/courseMapping';
 import {
@@ -236,28 +237,12 @@ export function CourseSelector({
           )}
         </div>
 
-        <div className="relative">
-          <Search aria-hidden="true" className="absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-white/60" />
-          <input
-            type="text"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search every road…"
-            autoComplete="off"
-            aria-label="Search courses"
-            className="w-full rounded-lg border border-white/10 bg-white/[0.04] py-2 pl-10 pr-9 text-sm text-foreground backdrop-blur-md placeholder:text-muted-foreground focus:border-primary/60 focus:bg-white/[0.07] focus:outline-none focus:ring-2 focus:ring-primary/25"
-          />
-          {query && (
-            <button
-              type="button"
-              onClick={() => setQuery('')}
-              aria-label="Clear search"
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          )}
-        </div>
+        <SearchField
+          value={query}
+          onChange={setQuery}
+          placeholder="Search every road…"
+          label="Search courses"
+        />
       </div>
 
       {/* The deck — one card at a time, arrows either side. */}

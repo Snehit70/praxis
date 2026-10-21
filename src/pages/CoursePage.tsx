@@ -1,6 +1,6 @@
 import { useParams, Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Search, X, FileText, Play, Layers, Clock, ListChecks, Trophy, Sparkles } from 'lucide-react';
+import { ArrowLeft, FileText, Play, Layers, Clock, ListChecks, Trophy, Sparkles } from 'lucide-react';
 import { logger } from '@/lib/logger';
 import { getExamUuidFromSlug, getExamNameFromSlug, getExamDurationMinutes } from '@/lib/examMapping';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -15,6 +15,8 @@ import {
 } from '@/lib/api';
 import { Skeleton, SkeletonRegion } from '@/components/ui/skeleton';
 import { StatePanel } from '@/components/ui/state-panel';
+import { SearchField } from '@/components/ui/search-field';
+import { SEGMENTED_LIST, segmentedItem } from '@/components/ui/segmented';
 import { cn } from '@/lib/utils';
 import { ArcaneSigil } from '@/components/ArcaneSigil';
 import { LEVEL_META } from '@/lib/courseCatalogue';
@@ -72,13 +74,16 @@ function ExamTypeSwitcher({
   activeSlug,
   courseId,
   aliasSuffix,
+  counts,
 }: {
   activeSlug: string;
   courseId: string;
   aliasSuffix: string;
+  /** Papers per exam-type slug; a tab shows its badge once its count is known. */
+  counts: Record<string, number>;
 }) {
   return (
-    <div role="tablist" aria-label="Exam type" className="squircle inline-flex flex-wrap gap-1 rounded-xl border border-white/10 bg-black/35 p-1 backdrop-blur-md">
+    <div role="tablist" aria-label="Exam type" className={SEGMENTED_LIST}>
       {EXAM_TABS.map((tab) => {
         const active = tab.slug === activeSlug;
         return (
@@ -88,13 +93,17 @@ function ExamTypeSwitcher({
             aria-selected={active}
             replace
             to={`/exam/${tab.slug}/course/${courseId}${aliasSuffix}`}
-            className={
-              active
-                ? 'rounded-lg bg-white/15 px-3.5 py-1.5 text-sm font-medium text-white shadow-sm'
-                : 'rounded-lg px-3.5 py-1.5 text-sm font-medium text-white/65 transition-colors hover:bg-white/5 hover:text-white'
-            }
+            className={segmentedItem(active)}
           >
             {tab.label}
+            {counts[tab.slug] !== undefined && (
+              <span
+                aria-label={`${counts[tab.slug]} papers`}
+                className="ml-2 inline-flex min-w-5 items-center justify-center rounded-md bg-current/15 px-1.5 text-xs font-semibold tabular-nums"
+              >
+                {counts[tab.slug]}
+              </span>
+            )}
           </Link>
         );
       })}
@@ -509,6 +518,28 @@ export default function CoursePage() {
     };
   }, [courseId, courseUuids, examUuid, retryNonce]);
 
+  // Paper count behind each exam-type tab. The open tab reuses what is loaded;
+  // the others are fetched quietly so the badges fill in a moment later.
+  const [otherCounts, setOtherCounts] = useState<Record<string, number>>({});
+  useEffect(() => {
+    if (!courseId) return;
+    const controller = new AbortController();
+    setOtherCounts({});
+    EXAM_TABS.filter((tab) => tab.slug !== examId).forEach((tab) => {
+      const uuid = getExamUuidFromSlug(tab.slug);
+      if (!uuid) return;
+      getPaperBundlesByExamAndCourseUuids(uuid, courseUuids, { signal: controller.signal })
+        .then((data) => {
+          const total = data.reduce((sum, bundle) => sum + bundle.papers.length, 0);
+          setOtherCounts((prev) => ({ ...prev, [tab.slug]: total }));
+        })
+        .catch(() => {
+          /* The badge just stays hidden. */
+        });
+    });
+    return () => controller.abort();
+  }, [courseId, courseUuids, examId]);
+
   const filteredBundles = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     if (!query) return bundles;
@@ -534,6 +565,10 @@ export default function CoursePage() {
   const totalPapers = useMemo(
     () => bundles.reduce((sum, bundle) => sum + bundle.papers.length, 0),
     [bundles],
+  );
+  const tabCounts = useMemo(
+    () => ({ ...otherCounts, ...(loading && bundles.length === 0 ? {} : { [examId ?? '']: totalPapers }) }),
+    [otherCounts, examId, totalPapers, loading, bundles.length],
   );
 
   const displayCourseName = useMemo(() => {
@@ -645,34 +680,17 @@ export default function CoursePage() {
                 </p>
               </div>
             </div>
-            <ExamTypeSwitcher activeSlug={examId!} courseId={courseId!} aliasSuffix={aliasSuffix} />
+            <ExamTypeSwitcher activeSlug={examId!} courseId={courseId!} aliasSuffix={aliasSuffix} counts={tabCounts} />
           </div>
 
-          <div className="relative w-full md:w-72">
-            <label htmlFor="bundle-search-input" className="sr-only">
-              Filter bundles and papers
-            </label>
-            <Search aria-hidden="true" className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/60" />
-            <input
-              id="bundle-search-input"
-              type="text"
-              placeholder="Search bundles or papers..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              autoComplete="off"
-              className="squircle w-full rounded-xl border border-white/10 bg-black/35 py-2.5 pl-10 pr-10 text-sm text-white backdrop-blur-md placeholder:text-white/55 transition-all focus:border-white/30 focus:bg-black/50 focus:outline-none focus:ring-2 focus:ring-white/20"
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery('')}
-                aria-label="Clear bundle search"
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-              >
-                <X aria-hidden="true" className="h-4 w-4" />
-              </button>
-            )}
-          </div>
+          <SearchField
+            id="bundle-search-input"
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder="Search bundles or papers..."
+            label="Filter bundles and papers"
+            className="md:w-72"
+          />
         </div>
       </header>
 
