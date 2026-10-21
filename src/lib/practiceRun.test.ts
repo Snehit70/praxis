@@ -3,7 +3,9 @@ import {
   calculatePracticeRunStats,
   getPracticeRunPageStates,
   getPracticeRunReviewStates,
+  gradePracticeRun,
   groupPracticeRunQuestions,
+  isManualEvalQuestion,
   isPracticeRunQuestionCorrect,
   parseSavedPracticeRunSession,
   selectPracticeRunOption,
@@ -156,6 +158,55 @@ test('isPracticeRunQuestionCorrect grades MCQ and MSQ, ignoring blanks and manua
 
   const sa = quizQuestion({ uuid: 'sa', questionType: 'SA', options: [] });
   expect(isPracticeRunQuestionCorrect(sa, '42')).toBe(false);
+});
+
+test('short answers grade against the paper key: Equal, Range and Set', () => {
+  const sa = (overrides: Partial<QuizQuestion>) =>
+    quizQuestion({ uuid: 'sa', questionType: 'SA', options: [], responseType: 'Numeric', ...overrides });
+
+  const equal = sa({ answerType: 'Equal', valueStart: '0.5' });
+  expect(isPracticeRunQuestionCorrect(equal, '0.50')).toBe(true);
+  expect(isPracticeRunQuestionCorrect(equal, ' .5 ')).toBe(true);
+  expect(isPracticeRunQuestionCorrect(equal, '0.51')).toBe(false);
+
+  const range = sa({ answerType: 'Range', valueStart: '0.54', valueEnd: '0.64' });
+  expect(isPracticeRunQuestionCorrect(range, '0.54')).toBe(true);
+  expect(isPracticeRunQuestionCorrect(range, '0.6')).toBe(true);
+  expect(isPracticeRunQuestionCorrect(range, '0.65')).toBe(false);
+  expect(isPracticeRunQuestionCorrect(range, 'abc')).toBe(false);
+
+  const anyOf = sa({ answerType: 'Set', valueStart: '["8", "8000"]' });
+  expect(isPracticeRunQuestionCorrect(anyOf, '8000')).toBe(true);
+  expect(isPracticeRunQuestionCorrect(anyOf, '80')).toBe(false);
+
+  const exactList = sa({ answerType: 'Set', valueStart: '36,28,30', responseType: 'Alphanumeric' });
+  expect(isPracticeRunQuestionCorrect(exactList, '36, 28, 30')).toBe(true);
+  expect(isPracticeRunQuestionCorrect(exactList, '36,30,28')).toBe(false);
+
+  const word = sa({ answerType: 'Equal', valueStart: 'Thick', responseType: 'Alphanumeric' });
+  expect(isPracticeRunQuestionCorrect(word, 'thick')).toBe(true);
+
+  // Essays ("Yes") and unkeyed SA stay manual.
+  expect(isManualEvalQuestion(sa({ answerType: 'Yes', valueStart: 'Number of Rows : ' }))).toBe(true);
+  expect(isManualEvalQuestion(sa({}))).toBe(true);
+  expect(isManualEvalQuestion(equal)).toBe(false);
+});
+
+test('gradePracticeRun returns one row per answerable question in paper order', () => {
+  const grouped = groupPracticeRunQuestions([
+    quizQuestion({ uuid: 'right', totalMark: '2' }),
+    quizQuestion({ uuid: 'passage', questionNumber: 2, questionType: 'COMPREHENSION', totalMark: '0', options: [] }),
+    quizQuestion({ uuid: 'sub-wrong', questionNumber: 3, parentQuestionUuid: 'passage' }),
+    quizQuestion({ uuid: 'essay', questionNumber: 4, questionType: 'SA', options: [], totalMark: '5' }),
+    quizQuestion({ uuid: 'blank', questionNumber: 5 }),
+  ]);
+
+  expect(gradePracticeRun(grouped, { right: '0', 'sub-wrong': '1', essay: 'words' })).toEqual([
+    { questionUuid: 'right', questionType: 'MCQ', outcome: 'correct', marksAwarded: 2, maxMarks: 2 },
+    { questionUuid: 'sub-wrong', questionType: 'MCQ', outcome: 'incorrect', marksAwarded: 0, maxMarks: 1 },
+    { questionUuid: 'essay', questionType: 'SA', outcome: 'manual', marksAwarded: 0, maxMarks: 0 },
+    { questionUuid: 'blank', questionType: 'MCQ', outcome: 'unanswered', marksAwarded: 0, maxMarks: 1 },
+  ]);
 });
 
 test('getPracticeRunReviewStates colours pages and aggregates comprehension subs', () => {

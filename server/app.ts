@@ -7,6 +7,11 @@ import {
 } from './paperCatalogue';
 import { SUPPORTED_EXAM_SLUGS, isSupportedExamSlug } from '../src/lib/examMapping';
 import { loadQuizQuestions } from './paperQuestions';
+import {
+  gradePracticeRun,
+  groupPracticeRunQuestions,
+  type SelectedAnswers,
+} from '../src/lib/practiceRun';
 import { pdfDownloadFilename, printHtmlToPdf, renderPaperHtml } from './paperPdf';
 import {
   consumePdfDownloadSlot,
@@ -35,6 +40,74 @@ const clerk = clerkSecretKey
 const authorizedParties = allowedOrigin === '*' ? undefined : [allowedOrigin];
 const [quiz1Slug, quiz2Slug, endTermSlug] = SUPPORTED_EXAM_SLUGS;
 const PROFILE_AVATAR_KEYS = new Set(['lawine', 'ubel', 'sein', 'serie', 'flamme', 'himmel']);
+
+const ATTEMPT_SUMMARY_COLUMNS = `
+  id::text AS "id",
+  paper_id AS "paperId",
+  run_mode AS "runMode",
+  time_used_seconds AS "timeUsedSeconds",
+  time_expired AS "timeExpired",
+  score,
+  max_score AS "maxScore",
+  correct,
+  incorrect,
+  unanswered,
+  manual,
+  submitted_at::text AS "submittedAt"
+`;
+
+interface AttemptSummaryRow {
+  id: string;
+  paperId: string;
+  runMode: string;
+  timeUsedSeconds: number | null;
+  timeExpired: boolean;
+  score: number;
+  maxScore: number;
+  correct: number;
+  incorrect: number;
+  unanswered: number;
+  manual: number;
+  submittedAt: string;
+}
+
+/** `number` is the attempt's 1-based position in the user's history for that paper. */
+function toAttemptSummary(row: AttemptSummaryRow, index: number) {
+  return { ...row, number: index + 1 };
+}
+
+const MAX_SUBMITTED_ANSWERS = 500;
+const MAX_ANSWER_LENGTH = 2000;
+
+/** Validate a submitted answer map: question id -> string, or string[] for MSQ. */
+function parseSubmittedAnswers(value: unknown): SelectedAnswers | null {
+  if (value === undefined || value === null) return {};
+  if (typeof value !== 'object' || Array.isArray(value)) return null;
+  const entries = Object.entries(value as Record<string, unknown>);
+  if (entries.length > MAX_SUBMITTED_ANSWERS) return null;
+  const answers: SelectedAnswers = {};
+  for (const [id, answer] of entries) {
+    if (typeof answer === 'string') {
+      if (answer.length > MAX_ANSWER_LENGTH) return null;
+      answers[id] = answer;
+    } else if (Array.isArray(answer) && answer.length <= 26 && answer.every((item) => typeof item === 'string' && item.length <= 8)) {
+      answers[id] = answer as string[];
+    } else {
+      return null;
+    }
+  }
+  return answers;
+}
+
+function parseStoredResponse(value: string | null): string | string[] | null {
+  if (value === null) return null;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return typeof parsed === 'string' || Array.isArray(parsed) ? (parsed as string | string[]) : null;
+  } catch {
+    return null;
+  }
+}
 
 function corsHeaders(): Record<string, string> {
   return {
@@ -422,6 +495,142 @@ export function createApiFetchHandler(sql: DbClient, options: ApiHandlerOptions 
           }
 
           return jsonPrivate({ error: 'Method not allowed' }, 405);
+        }
+
+        // Paper attempts: graded and stored on hand-in, listed for comparison.
+        if (url.pathname === '/api/me/attempts') {
+          if (request.method === 'GET') {
+            const paperId = url.searchParams.get('paperId')?.trim();
+            if (!paperId) return jsonPrivate({ error: 'paperId is required' }, 400);
+            const rows = await sql<AttemptSummaryRow[]>`
+              SELECT ${sql.unsafe(ATTEMPT_SUMMARY_COLUMNS)}
+              FROM attempts
+              WHERE clerk_user_id = ${userId} AND paper_id = ${paperId}
+              ORDER BY submitted_at ASC, id ASC
+            `;
+            return jsonPrivate(rows.map(toAttemptSummary));
+          }
+
+          if (request.method === 'POST') {
+            const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+            const paperId = typeof body?.paperId === 'string' ? body.paperId.trim() : '';
+            if (!paperId) return jsonPrivate({ error: 'paperId is required' }, 400);
+            const runMode = body?.runMode === 'timed' ? 'timed' : body?.runMode === 'open' ? 'open' : null;
+            if (!runMode) return jsonPrivate({ error: 'runMode must be timed or open' }, 400);
+            const answers = parseSubmittedAnswers(body?.answers);
+            if (!answers) return jsonPrivate({ error: 'answers must map question ids to strings' }, 400);
+            const flagged = new Set(
+              Array.isArray(body?.flaggedIds)
+                ? body.flaggedIds.filter((id): id is string => typeof id === 'string')
+                : [],
+            );
+            const timeUsed =
+              typeof body?.timeUsedSeconds === 'number' && Number.isFinite(body.timeUsedSeconds)
+                ? Math.max(0, Math.round(body.timeUsedSeconds))
+                : null;
+
+            const [paper] = await sql<Array<{ id: string }>>`
+              SELECT id FROM paper_variants WHERE id = ${paperId} LIMIT 1
+            `;
+            if (!paper) return jsonPrivate({ error: 'Paper not found' }, 404);
+
+            // Grade from the stored key, never from anything the client claims.
+            const graded = gradePracticeRun(
+              groupPracticeRunQuestions(await loadQuizQuestions(sql, paperId)),
+              answers,
+            );
+            const count = (outcome: string) => graded.filter((row) => row.outcome === outcome).length;
+            const score = graded.reduce((sum, row) => sum + row.marksAwarded, 0);
+            const maxScore = graded.reduce((sum, row) => sum + row.maxMarks, 0);
+
+            const attempt = await sql.begin(async (tx) => {
+              const [row] = await tx<AttemptSummaryRow[]>`
+                INSERT INTO attempts (
+                  clerk_user_id, paper_id, run_mode, time_used_seconds, time_expired,
+                  score, max_score, correct, incorrect, unanswered, manual
+                ) VALUES (
+                  ${userId}, ${paperId}, ${runMode}, ${timeUsed}, ${body?.timeExpired === true},
+                  ${score}, ${maxScore}, ${count('correct')}, ${count('incorrect')},
+                  ${count('unanswered')}, ${count('manual')}
+                )
+                RETURNING ${tx.unsafe(ATTEMPT_SUMMARY_COLUMNS)}
+              `;
+              if (graded.length > 0) {
+                await tx`
+                  INSERT INTO attempt_answers ${tx(
+                    graded.map((item) => ({
+                      attempt_id: row!.id,
+                      question_uuid: item.questionUuid,
+                      response: answers[item.questionUuid] === undefined
+                        ? null
+                        : JSON.stringify(answers[item.questionUuid]),
+                      outcome: item.outcome,
+                      marks_awarded: item.marksAwarded,
+                      max_marks: item.maxMarks,
+                      flagged: flagged.has(item.questionUuid),
+                    })),
+                    'attempt_id', 'question_uuid', 'response', 'outcome', 'marks_awarded', 'max_marks', 'flagged',
+                  )}
+                `;
+              }
+              return row!;
+            });
+
+            const [{ number } = { number: 1 }] = await sql<Array<{ number: number }>>`
+              SELECT COUNT(*)::int AS number FROM attempts
+              WHERE clerk_user_id = ${userId} AND paper_id = ${paperId} AND id <= ${attempt.id}
+            `;
+            console.info('attempt submitted', { userId, paperId, attemptId: attempt.id, score, maxScore });
+            return jsonPrivate(
+              { ...toAttemptSummary(attempt, number - 1), answers: graded.map((item) => ({
+                ...item,
+                response: answers[item.questionUuid] ?? null,
+                flagged: flagged.has(item.questionUuid),
+              })) },
+              201,
+            );
+          }
+
+          return jsonPrivate({ error: 'Method not allowed' }, 405);
+        }
+
+        const attemptMatch = url.pathname.match(/^\/api\/me\/attempts\/(\d+)$/);
+        if (attemptMatch && request.method === 'GET') {
+          const attemptId = attemptMatch[1]!;
+          const [row] = await sql<AttemptSummaryRow[]>`
+            SELECT ${sql.unsafe(ATTEMPT_SUMMARY_COLUMNS)}
+            FROM attempts
+            WHERE id = ${attemptId} AND clerk_user_id = ${userId}
+          `;
+          if (!row) return jsonPrivate({ error: 'Attempt not found' }, 404);
+          const [{ number } = { number: 1 }] = await sql<Array<{ number: number }>>`
+            SELECT COUNT(*)::int AS number FROM attempts
+            WHERE clerk_user_id = ${userId} AND paper_id = ${row.paperId} AND id <= ${row.id}
+          `;
+          const answers = await sql<
+            Array<{
+              questionUuid: string;
+              response: string | null;
+              outcome: string;
+              marksAwarded: number;
+              maxMarks: number;
+              flagged: boolean;
+            }>
+          >`
+            SELECT
+              question_uuid AS "questionUuid",
+              response,
+              outcome,
+              marks_awarded AS "marksAwarded",
+              max_marks AS "maxMarks",
+              flagged
+            FROM attempt_answers
+            WHERE attempt_id = ${row.id}
+          `;
+          return jsonPrivate({
+            ...toAttemptSummary(row, number - 1),
+            answers: answers.map((answer) => ({ ...answer, response: parseStoredResponse(answer.response) })),
+          });
         }
 
         return jsonPrivate({ error: 'Route not found' }, 404);
