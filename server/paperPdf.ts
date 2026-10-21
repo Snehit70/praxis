@@ -647,7 +647,7 @@ function runChromium(chromium: string, args: string[], timeoutMs: number) {
   });
 }
 
-async function renderHtmlToPdf(html: string): Promise<Uint8Array> {
+async function renderHtmlToPdf(html: string): Promise<{ bytes: Uint8Array; complete: boolean }> {
   const chromium = resolveChromiumPath();
   if (!chromium) {
     throw new Error('Chromium is not installed; cannot render paper PDFs');
@@ -692,7 +692,7 @@ async function renderHtmlToPdf(html: string): Promise<Uint8Array> {
       throw new Error(`Chromium PDF print failed (${result.status}): ${result.output || 'no output'}`);
     }
 
-    return readFileSync(pdfPath);
+    return { bytes: readFileSync(pdfPath), complete: localized.failed === 0 };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -718,7 +718,9 @@ export async function printHtmlToPdf(html: string): Promise<Uint8Array> {
   if (running) return running;
 
   const job = renderHtmlToPdf(html)
-    .then((bytes) => {
+    .then(({ bytes, complete }) => {
+      // A PDF missing figures must not be served again from cache.
+      if (!complete) return bytes;
       try {
         mkdirSync(PDF_CACHE_DIR, { recursive: true });
         const tmp = `${cachePath}.${process.pid}.tmp`;
