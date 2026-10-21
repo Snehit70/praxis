@@ -461,7 +461,6 @@ function documentCss(courseName: string, examName: string) {
     .stats { display: flex; gap: 22pt; margin: 12pt 0 0; }
     .stat { font: 7.5pt/1 ui-sans-serif, system-ui, sans-serif; letter-spacing: 0.1em; text-transform: uppercase; color: #6a7590; }
     .stat strong { display: block; margin-bottom: 3pt; font: 400 17pt/1 "Instrument Serif", Georgia, serif; letter-spacing: 0; color: #0e1530; }
-    .disclaimer { margin: 11pt 0 0; font: 7.5pt/1.35 ui-sans-serif, system-ui, sans-serif; color: #8a93a6; }
     .q { margin: 0 0 11pt; padding: 0 0 10pt; border-bottom: 0.4pt solid #e3e7f0; }
     .q:not(.passage) { break-inside: avoid; }
     .q-head { display: flex; gap: 7pt; align-items: center; margin-bottom: 5pt; break-after: avoid; }
@@ -497,7 +496,6 @@ function documentCss(courseName: string, examName: string) {
       vertical-align: middle;
     }
     .opt-body img.figure { max-height: 42mm; margin: 2pt 0; }
-    .opt-body img.figure.inline { display: block; max-height: 14mm; margin: 2pt 0; }
     .options { list-style: none; margin: 6pt 0 0; padding: 0; }
     .options li {
       display: flex;
@@ -577,7 +575,6 @@ export function renderPaperHtml(
         <span class="stat"><strong>${stats.answerableCount}</strong>questions</span>
         <span class="stat"><strong>${stats.totalMarks}</strong>marks</span>
       </div>
-      <p class="disclaimer">Reconstructed from Praxis data. Not an official IIT Madras question paper. Source name: ${escapeHtml(paper.paperName)}.</p>
     </header>
     ${grouped.map((question) => renderQuestion(question, showAnswers)).join('\n')}
   </div>

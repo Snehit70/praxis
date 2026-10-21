@@ -1187,3 +1187,13 @@
   scrollbar-width: thin;
   scrollbar-color: rgba(214, 178, 110, 0.28) transparent;
 }
+
+/* Indeterminate bar for the PDF dialog: the build reports no real progress. */
+@keyframes pdf-sweep {
+  from { left: -40%; }
+  to { left: 100%; }
+}
+.pdf-sweep { animation: pdf-sweep 1.3s cubic-bezier(0.4, 0, 0.2, 1) infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .pdf-sweep { animation: none; left: 30%; }
+}

@@ -5,7 +5,6 @@ import { Button } from '@/components/ui/button';
 import { downloadPaperPdf, PdfDownloadError } from '@/lib/api';
 import { logger } from '@/lib/logger';
 import { PdfDownloadDialog, type PdfDownloadPhase } from '@/components/PdfDownloadDialog';
-import { remainingEtaSeconds, workingProgress } from '@/lib/pdfDownloadProgress';
 
 function triggerDownload(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
@@ -41,9 +40,6 @@ export function DownloadPdfButton({
   const [busy, setBusy] = useState(false);
   const startedAtRef = useRef<number | null>(null);
   const runningRef = useRef(false);
-
-  const progress = phase === 'success' ? 100 : workingProgress(elapsedMs);
-  const etaSeconds = phase === 'working' ? remainingEtaSeconds(elapsedMs) : null;
 
   useEffect(() => {
     if (!open || phase !== 'working') return;
@@ -135,8 +131,6 @@ export function DownloadPdfButton({
         answers={answers}
         phase={phase}
         elapsedMs={elapsedMs}
-        progress={progress}
-        etaSeconds={etaSeconds}
         filename={filename}
         error={error}
         retryAfterSeconds={retryAfterSeconds}
