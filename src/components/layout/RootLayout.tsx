@@ -158,7 +158,12 @@ export default function RootLayout() {
               />
             </>
           )}
-          <div className="container mx-auto px-4 pb-6 pt-36 md:px-8 md:pt-48">
+          <div
+            className={cn(
+              "container mx-auto px-4 pb-6 md:px-8",
+              glass ? "pt-8" : "pt-36 md:pt-48",
+            )}
+          >
             <p className="text-sm text-white/80 [text-shadow:0_1px_8px_rgba(0,0,0,0.6)]">
               Praxis · IITM BS exam paper archive
             </p>
