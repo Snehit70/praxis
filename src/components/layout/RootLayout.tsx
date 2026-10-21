@@ -1,6 +1,7 @@
 import { Outlet, Link, useLocation } from "react-router-dom";
 import { UserRound } from "lucide-react";
-import { SignedIn, SignedOut, UserButton } from "@clerk/clerk-react";
+import { SignedIn, SignedOut } from "@clerk/clerk-react";
+import { AccountButton } from "@/components/auth/AccountButton";
 import { SignInTrigger } from "@/components/auth/AuthDialog";
 import { Button } from "@/components/ui/button";
 import { logger } from "@/lib/logger";
@@ -105,11 +106,7 @@ export default function RootLayout() {
                     Profile
                   </Link>
                 )}
-                <UserButton
-                  afterSignOutUrl="/"
-                  userProfileMode="navigation"
-                  userProfileUrl="/profile"
-                />
+                <AccountButton />
               </SignedIn>
               <SignedOut>
                 <SignInTrigger>

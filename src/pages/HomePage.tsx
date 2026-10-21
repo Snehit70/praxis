@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useAuth, useUser, UserButton } from '@clerk/clerk-react';
+import { useAuth, useUser } from '@clerk/clerk-react';
 import { ArrowRight, BookMarked, Clock, Pencil, Plus, Search, UserRound } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -8,6 +8,7 @@ import { Skeleton, SkeletonRegion } from '@/components/ui/skeleton';
 import { StatePanel } from '@/components/ui/state-panel';
 import { SearchField } from '@/components/ui/search-field';
 import { SEGMENTED_LIST, SEGMENTED_TRIGGER } from '@/components/ui/segmented';
+import { AccountButton } from '@/components/auth/AccountButton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { CourseCard, CourseCardSkeleton } from '@/components/CourseCard';
 import { PraxisBrand } from '@/components/PraxisBrand';
@@ -263,7 +264,7 @@ export default function HomePage() {
               <UserRound className="h-4 w-4" />
               <span className="hidden sm:inline">Profile</span>
             </Link>
-            <UserButton afterSignOutUrl="/" userProfileMode="navigation" userProfileUrl="/profile" />
+            <AccountButton />
           </nav>
         </div>
       </header>
