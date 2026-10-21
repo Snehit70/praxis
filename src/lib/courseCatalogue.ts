@@ -30,8 +30,8 @@ export interface CatalogueEntry {
   examSlugs: string[];
 }
 
-/** Preferred exam type to open first when a course offers several. */
-const EXAM_PRIORITY = ['end-term', 'quiz1', 'quiz2'];
+/** Preferred exam type to open first when a course offers several: quizzes before the end term. */
+const EXAM_PRIORITY = ['quiz1', 'quiz2', 'end-term'];
 
 export function pickDefaultExamSlug(examSlugs: string[]): string | null {
   for (const slug of EXAM_PRIORITY) {

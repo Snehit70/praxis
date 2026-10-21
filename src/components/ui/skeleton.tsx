@@ -1,77 +1,54 @@
+import { createContext, useContext } from "react";
 import { cn } from "@/lib/utils";
+
+/**
+ * `muted` sits on the plain app surface; `glass` sits on the illustrated
+ * scenes (dashboard, course hall, profile, paper cover) where a grey block
+ * would read as a hole punched in the picture.
+ */
+type SkeletonTone = "muted" | "glass";
+
+const ToneContext = createContext<SkeletonTone>("muted");
 
 interface SkeletonProps {
   className?: string;
+  style?: React.CSSProperties;
+  tone?: SkeletonTone;
 }
 
-export function Skeleton({ className }: SkeletonProps) {
+/**
+ * One placeholder block. Every block runs the same sweep on the same clock
+ * (see `.skeleton` in index.css), so a page's skeleton shimmers in unison
+ * instead of each bar pulsing on its own beat.
+ */
+export function Skeleton({ className, style, tone }: SkeletonProps) {
+  const inherited = useContext(ToneContext);
   return (
     <div
-      className={cn(
-        "animate-pulse rounded-lg bg-muted",
-        className
-      )}
+      aria-hidden="true"
+      data-tone={tone ?? inherited}
+      style={style}
+      className={cn("skeleton rounded-lg", className)}
     />
   );
 }
 
-export function CardSkeleton() {
+interface SkeletonRegionProps {
+  /** Announced to screen readers while the region is loading. */
+  label: string;
+  tone?: SkeletonTone;
+  className?: string;
+  children: React.ReactNode;
+}
+
+/** Live status wrapper for a loading region; sets the tone for its blocks. */
+export function SkeletonRegion({ label, tone = "muted", className, children }: SkeletonRegionProps) {
   return (
-    <div className="rounded-lg border border-border bg-card p-4">
-      <div className="flex items-center gap-3">
-        <Skeleton className="h-9 w-9 rounded-lg" />
-        <div className="flex-1 space-y-2">
-          <Skeleton className="h-4 w-3/4" />
-          <Skeleton className="h-3 w-1/2" />
-        </div>
+    <ToneContext.Provider value={tone}>
+      <div role="status" aria-live="polite" aria-busy="true" className={className}>
+        <span className="sr-only">{label}</span>
+        {children}
       </div>
-    </div>
-  );
-}
-
-export function CourseGridSkeleton() {
-  return (
-    <div className="space-y-4">
-      {[1, 2, 3, 4].map((level) => (
-        <div key={level}>
-          <Skeleton className="h-12 w-full rounded-lg mb-2" />
-          <div className="grid gap-2 pl-4 md:grid-cols-2 lg:grid-cols-3">
-            {[1, 2, 3].map((i) => (
-              <CardSkeleton key={i} />
-            ))}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-export function PaperGridSkeleton() {
-  return (
-    <div className="space-y-6">
-      {[1, 2].map((year) => (
-        <div key={year} className="space-y-3">
-          <Skeleton className="h-5 w-24" />
-          <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
-            {[1, 2, 3, 4, 5, 6].map((i) => (
-              <div key={i} className="rounded-lg border border-border bg-card p-4">
-                <div className="flex items-start gap-2">
-                  <Skeleton className="h-4 w-4 mt-0.5" />
-                  <div className="flex-1 space-y-2">
-                    <Skeleton className="h-4 w-full" />
-                    <Skeleton className="h-3 w-2/3" />
-                    <div className="flex gap-3 mt-2">
-                      <Skeleton className="h-3 w-8" />
-                      <Skeleton className="h-3 w-8" />
-                      <Skeleton className="h-3 w-12" />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      ))}
-    </div>
+    </ToneContext.Provider>
   );
 }

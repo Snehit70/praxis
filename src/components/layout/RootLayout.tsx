@@ -1,6 +1,7 @@
 import { Outlet, Link, useLocation } from "react-router-dom";
 import { UserRound } from "lucide-react";
-import { SignedIn, SignedOut, UserButton } from "@clerk/clerk-react";
+import { SignedIn, SignedOut } from "@clerk/clerk-react";
+import { AccountButton } from "@/components/auth/AccountButton";
 import { SignInTrigger } from "@/components/auth/AuthDialog";
 import { Button } from "@/components/ui/button";
 import { logger } from "@/lib/logger";
@@ -83,14 +84,14 @@ export default function RootLayout() {
               to="/"
               className="flex items-center gap-2.5 transition-opacity hover:opacity-80"
             >
-              <PraxisBrand nameClassName="text-foreground" />
+              <PraxisBrand className="text-[#f1ead9]" />
             </Link>
             <nav className="ml-auto flex items-center gap-4">
               <SignedIn>
                 {BOOKMARKS_ENABLED && (
                   <Link
                     to="/saved"
-                    className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+                    className="text-sm font-medium text-white/90 transition-colors hover:text-white"
                   >
                     Saved papers
                   </Link>
@@ -99,17 +100,13 @@ export default function RootLayout() {
                 {pathname !== "/profile" && (
                   <Link
                     to="/profile"
-                    className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+                    className="inline-flex items-center gap-1.5 text-sm font-medium text-white/90 transition-colors hover:text-white"
                   >
                     <UserRound className="h-4 w-4" />
                     Profile
                   </Link>
                 )}
-                <UserButton
-                  afterSignOutUrl="/"
-                  userProfileMode="navigation"
-                  userProfileUrl="/profile"
-                />
+                <AccountButton />
               </SignedIn>
               <SignedOut>
                 <SignInTrigger>
@@ -158,7 +155,12 @@ export default function RootLayout() {
               />
             </>
           )}
-          <div className="container mx-auto px-4 pb-6 pt-36 md:px-8 md:pt-48">
+          <div
+            className={cn(
+              "container mx-auto px-4 pb-6 md:px-8",
+              glass ? "pt-8" : "pt-36 md:pt-48",
+            )}
+          >
             <p className="text-sm text-white/80 [text-shadow:0_1px_8px_rgba(0,0,0,0.6)]">
               Praxis · IITM BS exam paper archive
             </p>

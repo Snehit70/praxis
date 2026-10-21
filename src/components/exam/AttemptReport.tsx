@@ -19,6 +19,7 @@ import {
   TrendingUp,
   XCircle,
 } from 'lucide-react';
+import { Skeleton, SkeletonRegion } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { SignInTrigger } from '@/components/auth/AuthDialog';
 import { cn } from '@/lib/utils';
@@ -687,10 +688,14 @@ export function AttemptReport({
               action={<SignInTrigger><Button size="sm" variant="outline">Sign in</Button></SignInTrigger>}
             />
           ) : attempts === null ? (
-            <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
-              Loading your attempts…
-            </div>
+            <SkeletonRegion label="Loading your attempts" className="flex h-40 flex-col gap-3">
+              <Skeleton className="w-full flex-1 rounded-xl" />
+              <div className="flex gap-2">
+                {[0, 1, 2, 3].map((i) => (
+                  <Skeleton key={i} className="h-3 w-12 rounded-full" />
+                ))}
+              </div>
+            </SkeletonRegion>
           ) : attempts.length < 2 ? (
             <EmptyNote
               Icon={TrendingUp}

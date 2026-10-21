@@ -28,7 +28,7 @@ const asset = (name: string): string => {
 
 const IMG = {
   // Full hero scene (1672x941).
-  hero: asset("hero-landing-v2.png"),
+  hero: asset("hero-landing-v2.webp"),
   // Stage portraits.
   frieren: asset("Frieren.jpeg"),
   fern: asset("Fern.jpeg"),
@@ -168,7 +168,7 @@ export default function LandingPage() {
           to="/"
           className="flex items-center gap-2.5 rounded-lg transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
         >
-          <PraxisBrand markClassName="size-9" nameClassName="text-lg text-white" />
+          <PraxisBrand className="h-12 text-[#f1ead9]" />
         </Link>
       </header>
 

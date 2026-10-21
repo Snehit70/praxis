@@ -1,6 +1,6 @@
 import { useParams, Link, useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, CheckCircle2, XCircle, RotateCcw, Trophy, Timer, Play, Pause, ChevronLeft, ChevronRight, Flag, BookOpen, FileText, ListChecks, LayoutGrid, Keyboard, ShieldCheck, Maximize2, Undo2, Calculator, Eraser, Eye, EyeOff, AArrowDown, AArrowUp } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, XCircle, RotateCcw, Trophy, Timer, Play, Pause, ChevronLeft, ChevronRight, Flag, BookOpen, LayoutGrid, Maximize2, Undo2, Calculator, Eraser, Eye, EyeOff, AArrowDown, AArrowUp } from 'lucide-react';
 import type React from 'react';
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { Dialog } from '@/components/ui/dialog';
@@ -45,7 +45,7 @@ import {
   type SavedPracticeRunSession,
   type SelectedAnswers,
 } from '@/lib/practiceRun';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Skeleton, SkeletonRegion } from '@/components/ui/skeleton';
 import { StatePanel } from '@/components/ui/state-panel';
 import { SaveButton } from '@/components/SaveButton';
 import { DownloadPdfButton } from '@/components/DownloadPdfButton';
@@ -53,6 +53,7 @@ import { BOOKMARKS_ENABLED } from '@/lib/featureFlags';
 import { useAuth } from '@clerk/clerk-react';
 import examHall from '@/assets/exam-hall.webp';
 import handInHall from '@/assets/hand-in-hall.webp';
+import coverArt from '@/assets/paper-cover.webp';
 import { ImageZoomProvider, useImageZoom } from '@/components/exam/ImageLightbox';
 import { ExamCalculator } from '@/components/exam/ExamCalculator';
 import {
@@ -100,34 +101,54 @@ function formatRemainingTime(totalSeconds: number | null) {
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
-function LoadingSkeleton() {
+/**
+ * Stand-in for the cover briefing (the page a paper opens on): the same hall,
+ * the same two-page tome, with the briefing and the run choice still blank.
+ */
+function LoadingSkeleton({ onBack }: { onBack: () => void }) {
   return (
-    <div className="max-w-3xl mx-auto space-y-6 px-4 sm:px-0" role="status" aria-live="polite" aria-label="Loading paper">
-      <Skeleton className="h-4 w-24" />
-      <div>
-        <Skeleton className="h-8 w-64 mb-2" />
-        <Skeleton className="h-4 w-48" />
-      </div>
-      <Skeleton className="h-2 w-full rounded-full" />
-      <div className="space-y-4">
-        {[1, 2, 3].map((i) => (
-          <div key={i} className="rounded-xl border border-border bg-card p-5 sm:p-6">
-            <div className="flex gap-3 sm:gap-4">
-              <Skeleton className="h-8 w-8 rounded-lg flex-shrink-0" />
-              <div className="flex-1 space-y-3">
-                <Skeleton className="h-5 w-full" />
-                <Skeleton className="h-4 w-3/4" />
-                <div className="space-y-2 pt-2">
-                  {[1, 2, 3, 4].map((j) => (
-                    <Skeleton key={j} className="h-12 w-full rounded-lg" />
-                  ))}
+    <SkeletonRegion label="Loading paper" tone="glass" className="relative isolate flex min-h-[calc(100vh-14rem)] w-full flex-col">
+      <HallBackdrop />
+      <button
+        type="button"
+        onClick={onBack}
+        className="inline-flex w-fit items-center gap-1.5 rounded-md px-2 py-1 text-sm text-white/75 transition-colors [text-shadow:0_1px_8px_rgba(0,0,0,0.6)] hover:bg-white/10 hover:text-white"
+      >
+        <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+        Back to papers
+      </button>
+      <div className="flex flex-1 items-center justify-center py-6">
+        <div className="exam-tome relative isolate grid w-full max-w-4xl overflow-hidden rounded-2xl border border-[rgba(214,178,110,0.24)] backdrop-blur-sm lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+          <div aria-hidden="true" className="hidden min-h-[26rem] bg-black/25 lg:block" />
+          <div className="relative z-10 flex flex-col px-6 py-8 sm:px-10 sm:py-10">
+            <Skeleton className="h-3 w-40 rounded-full" />
+            <Skeleton className="mt-2.5 h-3.5 w-28 rounded-full" />
+            <Skeleton className="mt-3 h-10 w-4/5 rounded-lg sm:h-12" />
+            <div className="mt-7 flex gap-8">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="space-y-2">
+                  <Skeleton className="h-8 w-10 rounded-md" />
+                  <Skeleton className="h-3 w-16 rounded-full" />
                 </div>
-              </div>
+              ))}
+            </div>
+            <div className="mt-8 space-y-3">
+              <Skeleton className="h-[74px] w-full rounded-xl" />
+              <Skeleton className="h-[74px] w-full rounded-xl" />
+            </div>
+            <div className="mt-5 flex gap-2">
+              <Skeleton className="h-9 w-28 rounded-lg" />
+              <Skeleton className="h-9 w-36 rounded-lg" />
             </div>
           </div>
-        ))}
+          <div className="tcard-frame" aria-hidden="true" />
+          <span className="tcard-corner tcard-corner-tl" aria-hidden="true" />
+          <span className="tcard-corner tcard-corner-tr" aria-hidden="true" />
+          <span className="tcard-corner tcard-corner-bl" aria-hidden="true" />
+          <span className="tcard-corner tcard-corner-br" aria-hidden="true" />
+        </div>
       </div>
-    </div>
+    </SkeletonRegion>
   );
 }
 
@@ -1444,35 +1465,20 @@ function RunicDivider({ className, label }: { className?: string; label?: string
   );
 }
 
-/** A single stat on the cover briefing (questions / marks / duration). */
-function CoverStat({ icon, value, label }: { icon: React.ReactNode; value: string; label: string }) {
+/** A single stat on the cover (questions / marks / duration). */
+function CoverStat({ value, label }: { value: string; label: string }) {
   return (
-    <div className="flex flex-col gap-1 px-4 first:pl-0">
-      <span className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">
-        <span className="text-muted-foreground/70" aria-hidden="true">{icon}</span>
-        {label}
-      </span>
-      <span className="font-display text-2xl font-normal tabular-nums leading-none">{value}</span>
+    <div className="flex flex-col gap-1.5 px-5 first:pl-0">
+      <span className="font-display text-3xl font-normal tabular-nums leading-none">{value}</span>
+      <span className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">{label}</span>
     </div>
   );
 }
 
-/** One line of the "how it works" briefing. */
-function CoverRule({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
-  return (
-    <li className="flex gap-3">
-      <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-[rgba(214,178,110,0.2)] bg-black/20 text-[#d6b26e]" aria-hidden="true">
-        {icon}
-      </span>
-      <span className="text-sm leading-relaxed text-muted-foreground">{children}</span>
-    </li>
-  );
-}
-
 /**
- * Cover briefing: the threshold shown on entering a paper variant. The left
- * page says what the paper is and how a sitting works; the right page is the
- * choice to *sit* it (Timed Run) or simply *read* it (Open Run).
+ * Cover: the threshold shown on entering a paper variant. Art on one side; on
+ * the other, what the paper is and the choice to *sit* it (Timed Run) or simply
+ * *read* it (Open Run).
  */
 function RunCoverPlate({
   examName,
@@ -1482,7 +1488,6 @@ function RunCoverPlate({
   totalQuestions,
   totalMarks,
   durationMinutes,
-  typeCounts,
   paperUuid,
   courseUuid,
   examUuid,
@@ -1497,8 +1502,6 @@ function RunCoverPlate({
   totalQuestions: number;
   totalMarks: number;
   durationMinutes: number;
-  /** Answerable questions per type, in display order. */
-  typeCounts: Array<{ type: string; count: number }>;
   paperUuid: string;
   courseUuid: string;
   examUuid: string;
@@ -1506,13 +1509,6 @@ function RunCoverPlate({
   onBeginOpen: () => void;
   onBack: () => void;
 }) {
-  // Deterministic per-paper sigil variation, same family across the deck.
-  const seed = useMemo(() => {
-    let hash = 0;
-    for (let i = 0; i < paperName.length; i++) hash = (hash * 31 + paperName.charCodeAt(i)) >>> 0;
-    return hash;
-  }, [paperName]);
-
   return (
     <div
       className="relative isolate flex min-h-[calc(100vh-14rem)] w-full flex-col"
@@ -1530,71 +1526,36 @@ function RunCoverPlate({
       </button>
 
       <div className="flex flex-1 items-center justify-center py-6">
-        <div className="exam-tome exam-cover exam-q-enter relative isolate grid w-full max-w-5xl overflow-hidden rounded-2xl border border-[rgba(214,178,110,0.24)] backdrop-blur-sm lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
-          {/* Left page — the briefing. */}
-          <div className="relative z-10 px-6 py-7 sm:px-9 sm:py-9">
+        <div className="exam-tome exam-cover exam-q-enter relative isolate grid w-full max-w-4xl overflow-hidden rounded-2xl border border-[rgba(214,178,110,0.24)] backdrop-blur-sm lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+          {/* Art panel: fades into the card on the reading side. */}
+          <div aria-hidden="true" className="relative hidden min-h-[26rem] lg:block">
+            <img
+              src={coverArt}
+              alt=""
+              className="absolute inset-0 h-full w-full object-cover object-[50%_40%]"
+            />
+            <div className="absolute inset-y-0 right-0 w-1/2 bg-gradient-to-l from-[#0E1530]/90 to-transparent" />
+            <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-[#0E1530]/70 to-transparent" />
+          </div>
+
+          <div className="relative z-10 flex flex-col px-6 py-8 sm:px-10 sm:py-10">
             {courseName && (
               <p className="text-xs font-medium uppercase tracking-[0.18em]" style={{ color: levelColor ?? undefined }}>
                 {courseName}
               </p>
             )}
             <p className="mt-1 text-sm text-muted-foreground">{examName}</p>
-            <h1 className="mt-1.5 font-display text-3xl font-normal leading-tight tracking-tight sm:text-4xl">
+            <h1 className="mt-1.5 font-display text-4xl font-normal leading-tight tracking-tight sm:text-5xl">
               {paperName}
             </h1>
 
-            <div className="mt-6 flex items-stretch divide-x divide-[rgba(214,178,110,0.18)]">
-              <CoverStat icon={<ListChecks className="h-3.5 w-3.5" />} value={String(totalQuestions)} label={totalQuestions === 1 ? 'question' : 'questions'} />
-              {totalMarks > 0 && (
-                <CoverStat icon={<FileText className="h-3.5 w-3.5" />} value={String(totalMarks)} label="marks" />
-              )}
-              <CoverStat icon={<Timer className="h-3.5 w-3.5" />} value={`${durationMinutes}m`} label="duration" />
+            <div className="mt-7 flex items-stretch divide-x divide-[rgba(214,178,110,0.18)]">
+              <CoverStat value={String(totalQuestions)} label={totalQuestions === 1 ? 'question' : 'questions'} />
+              {totalMarks > 0 && <CoverStat value={String(totalMarks)} label="marks" />}
+              <CoverStat value={`${durationMinutes}m`} label="duration" />
             </div>
 
-            {typeCounts.length > 0 && (
-              <div className="mt-6">
-                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  What's inside
-                </p>
-                <ul className="flex flex-wrap gap-2">
-                  {typeCounts.map(({ type, count }) => (
-                    <li key={type} className="inline-flex items-center gap-2 rounded-md border border-[rgba(214,178,110,0.16)] bg-black/20 py-1 pl-1 pr-2.5 text-sm">
-                      <QuestionTypeBadge type={type} />
-                      <span className="tabular-nums text-muted-foreground">× {count}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            <div className="mt-6">
-              <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                How it works
-              </p>
-              <ul className="space-y-2.5">
-                <CoverRule icon={<ShieldCheck className="h-3.5 w-3.5" />}>
-                  Answers and the clock save as you go, so a refresh or a closed tab won't lose anything.
-                </CoverRule>
-                <CoverRule icon={<Keyboard className="h-3.5 w-3.5" />}>
-                  Move with <kbd className="rounded border border-border px-1 font-sans text-[11px]">←</kbd>{' '}
-                  <kbd className="rounded border border-border px-1 font-sans text-[11px]">→</kbd> and flag a question to revisit with{' '}
-                  <kbd className="rounded border border-border px-1 font-sans text-[11px]">F</kbd>.
-                </CoverRule>
-                <CoverRule icon={<CheckCircle2 className="h-3.5 w-3.5" />}>
-                  Submit whenever you're ready. You'll get your score and a question-by-question review with the correct answers.
-                </CoverRule>
-              </ul>
-            </div>
-          </div>
-
-          {/* Right page — the choice. */}
-          <div className="relative z-10 flex flex-col border-t border-[rgba(214,178,110,0.16)] bg-black/25 px-6 py-7 sm:px-9 sm:py-9 lg:border-l lg:border-t-0">
-            <div aria-hidden="true" className="pointer-events-none absolute -right-10 -top-10 h-48 w-48 opacity-[0.07]">
-              <ArcaneSigil seed={seed} />
-            </div>
-            <p className="relative font-display text-xl font-normal tracking-tight">Choose your run</p>
-
-            <div className="relative mt-5 space-y-3">
+            <div className="mt-8 space-y-3">
               <button
                 type="button"
                 onClick={onBeginTimed}
@@ -1604,7 +1565,7 @@ function RunCoverPlate({
                   <Timer className="h-5 w-5 shrink-0 text-[#e6c88a]" aria-hidden="true" />
                   <span>
                     <span className="block font-medium text-amber-50">Timed run</span>
-                    <span className="block text-xs text-muted-foreground">{durationMinutes}-minute clock · auto-submits at 0:00</span>
+                    <span className="block text-xs text-muted-foreground">{durationMinutes} minutes</span>
                   </span>
                 </span>
                 <ChevronRight className="h-4 w-4 shrink-0 text-[#e6c88a] transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
@@ -1619,21 +1580,16 @@ function RunCoverPlate({
                   <BookOpen className="h-5 w-5 shrink-0 text-muted-foreground" aria-hidden="true" />
                   <span>
                     <span className="block font-medium">Open run</span>
-                    <span className="block text-xs text-muted-foreground">No clock · go at your own pace</span>
+                    <span className="block text-xs text-muted-foreground">No clock</span>
                   </span>
                 </span>
                 <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
               </button>
             </div>
 
-            <div className="relative mt-auto pt-7">
-              <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                Prefer paper?
-              </p>
-              <div className="flex flex-wrap items-center gap-2">
-                <DownloadPdfButton paperUuid={paperUuid} courseUuid={courseUuid} examUuid={examUuid} />
-                <DownloadPdfButton paperUuid={paperUuid} courseUuid={courseUuid} examUuid={examUuid} answers />
-              </div>
+            <div className="mt-5 flex flex-wrap items-center gap-2">
+              <DownloadPdfButton paperUuid={paperUuid} courseUuid={courseUuid} examUuid={examUuid} />
+              <DownloadPdfButton paperUuid={paperUuid} courseUuid={courseUuid} examUuid={examUuid} answers />
             </div>
           </div>
 
@@ -2021,28 +1977,6 @@ export default function PaperPage() {
   const pageQuestions = useMemo(() => pages.map((page) => page.question), [pages]);
 
   const pageCount = pages.length;
-
-  // Answerable questions per type for the cover briefing (passages count by
-  // their sub-questions, matching the "N questions" total).
-  const typeCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-    const bump = (type: string) => counts.set(type, (counts.get(type) ?? 0) + 1);
-    for (const question of groupedQuestions) {
-      if (question.questionType === 'COMPREHENSION') {
-        question.subQuestions?.forEach((sub) => bump(sub.questionType));
-      } else {
-        bump(question.questionType);
-      }
-    }
-    const passages = groupedQuestions.filter((q) => q.questionType === 'COMPREHENSION').length;
-    const order = ['MCQ', 'MSQ', 'SA', 'OPPE'];
-    const rank = (type: string) => (order.includes(type) ? order.indexOf(type) : order.length);
-    const rows = [...counts]
-      .sort(([a], [b]) => rank(a) - rank(b))
-      .map(([type, count]) => ({ type, count }));
-    if (passages > 0) rows.push({ type: 'COMPREHENSION', count: passages });
-    return rows;
-  }, [groupedQuestions]);
 
   const goTo = useCallback(
     (index: number) => {
@@ -2474,7 +2408,7 @@ export default function PaperPage() {
   }
 
   if (loading) {
-    return <LoadingSkeleton />;
+    return <LoadingSkeleton onBack={goBack} />;
   }
 
   if (loadFailed || !paper) {
@@ -2527,7 +2461,6 @@ export default function PaperPage() {
         totalQuestions={stats.totalQuestions}
         totalMarks={stats.totalMarks}
         durationMinutes={durationMinutes}
-        typeCounts={typeCounts}
         paperUuid={paper.uuid}
         courseUuid={paper.courseUuid}
         examUuid={paper.examUuid}

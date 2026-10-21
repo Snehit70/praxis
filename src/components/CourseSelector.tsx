@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, Search, Star, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Star } from 'lucide-react';
 import { Dialog, DialogClose } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { SearchField } from '@/components/ui/search-field';
 import { cn } from '@/lib/utils';
 import { LEVEL_ORDER, type CourseLevel } from '@/lib/courseMapping';
 import {
@@ -77,8 +78,6 @@ export function CourseSelector({
   const [selected, setSelected] = useState<Set<string>>(new Set(initialCourseKeys));
   const [query, setQuery] = useState('');
   const [index, setIndex] = useState(0);
-  // Direction of the last flip — drives which way the new card slides in.
-  const [navDir, setNavDir] = useState<1 | -1>(1);
   // Opening sequence: a quick deck-shuffle that settles on the first card.
   // Skipped under reduced motion.
   const [opening, setOpening] = useState(() => !prefersReducedMotion());
@@ -127,7 +126,6 @@ export function CourseSelector({
   const current = deck[clampedIndex] ?? null;
 
   const go = (delta: number) => {
-    setNavDir(delta >= 0 ? 1 : -1);
     setIndex((i) => Math.min(deck.length - 1, Math.max(0, i + delta)));
   };
 
@@ -195,8 +193,8 @@ export function CourseSelector({
     >
       {/* Calmed meadow backdrop (blur + deep scrim) so the glass reads clean. */}
       <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10">
-        <img src={cardBg} alt="" className="h-full w-full scale-110 object-cover object-center blur-[3px]" />
-        <div className="absolute inset-0 bg-gradient-to-b from-background/72 via-background/82 to-background/92" />
+        <img src={cardBg} alt="" className="h-full w-full scale-110 object-cover object-[50%_35%] blur-[2px]" />
+        <div className="absolute inset-0 bg-gradient-to-b from-[#0E1530]/55 via-[#0E1530]/70 to-[#0E1530]/90" />
       </div>
 
       {/* Compact header */}
@@ -208,14 +206,11 @@ export function CourseSelector({
         >
           Set your road this term
         </h2>
-        <p className="mt-0.5 text-sm text-muted-foreground">
-          Choose the paths you&apos;ll walk — they&apos;ll wait for you on the road.
-        </p>
       </div>
 
       {/* Filter chips + search */}
       <div className="shrink-0 space-y-3 border-b border-white/10 px-4 pb-3 sm:px-5">
-        <div className="flex gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="flex flex-wrap gap-1.5">
           <FilterChip active={filter === 'All'} onClick={() => setFilter('All')}>
             All
           </FilterChip>
@@ -242,32 +237,16 @@ export function CourseSelector({
           )}
         </div>
 
-        <div className="relative">
-          <Search aria-hidden="true" className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <input
-            type="text"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search every road…"
-            autoComplete="off"
-            aria-label="Search courses"
-            className="w-full rounded-lg border border-white/10 bg-white/[0.04] py-2 pl-10 pr-9 text-sm text-foreground backdrop-blur-md placeholder:text-muted-foreground focus:border-primary/60 focus:bg-white/[0.07] focus:outline-none focus:ring-2 focus:ring-primary/25"
-          />
-          {query && (
-            <button
-              type="button"
-              onClick={() => setQuery('')}
-              aria-label="Clear search"
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          )}
-        </div>
+        <SearchField
+          value={query}
+          onChange={setQuery}
+          placeholder="Search every road…"
+          label="Search courses"
+        />
       </div>
 
       {/* The deck — one card at a time, arrows either side. */}
-      <div className="relative flex min-h-0 flex-1 flex-col items-center justify-center gap-3 overflow-hidden px-4 py-5 sm:px-5">
+      <div className="relative flex min-h-[clamp(440px,62vh,540px)] min-w-0 flex-1 flex-col items-center justify-center gap-3 overflow-hidden px-4 py-5 sm:px-5">
         {current ? (
           <>
             <div className="relative flex w-full items-center justify-center">
@@ -277,21 +256,45 @@ export function CourseSelector({
                 onClick={() => go(-1)}
                 className="absolute left-0 z-20"
               />
-              <div className="relative flex items-center justify-center">
-                {!opening && <PeekCard entry={deck[clampedIndex - 1]} onClick={() => go(-1)} />}
-                <DeckSlot
-                  key={current.key}
-                  mode={opening ? 'reveal' : navDir > 0 ? 'next' : 'prev'}
-                  color={LEVEL_META[current.level].color}
-                >
-                  <CourseCardFace
-                    entry={current}
-                    charged={selected.has(current.key)}
-                    charging={chargingKey === current.key}
-                    onToggle={toggle}
-                  />
-                </DeckSlot>
-                {!opening && <PeekCard entry={deck[clampedIndex + 1]} onClick={() => go(1)} />}
+              {/* One track: every card keeps its identity and only its offset from
+                  the centre changes, so a flip is a single glide where the hero
+                  steps back as a neighbour and the neighbour steps up. */}
+              <div className="deck-track relative">
+                {deck.map((entry, i) => {
+                  const d = i - clampedIndex;
+                  if (Math.abs(d) > 2) return null;
+                  const hero = d === 0;
+                  return (
+                    <div
+                      key={entry.key}
+                      data-d={d}
+                      aria-hidden={hero ? undefined : true}
+                      style={{ '--d': d, '--lvl': LEVEL_META[entry.level].color } as React.CSSProperties}
+                      onClick={hero ? undefined : () => go(d)}
+                      className={cn('deck-item', opening && 'deck-item-hidden', !hero && 'cursor-pointer')}
+                    >
+                      <div className={cn(!hero && 'pointer-events-none')}>
+                        <CourseCardFace
+                          entry={entry}
+                          charged={selected.has(entry.key)}
+                          charging={chargingKey === entry.key}
+                          onToggle={toggle}
+                        />
+                      </div>
+                      <span aria-hidden="true" className="deck-item-dim" />
+                    </div>
+                  );
+                })}
+                {opening && current && (
+                  <DeckSlot color={LEVEL_META[current.level].color}>
+                    <CourseCardFace
+                      entry={current}
+                      charged={selected.has(current.key)}
+                      charging={chargingKey === current.key}
+                      onToggle={toggle}
+                    />
+                  </DeckSlot>
+                )}
               </div>
               <DeckArrow
                 dir="next"
@@ -308,13 +311,22 @@ export function CourseSelector({
             </p>
           </>
         ) : (
-          <div className="flex flex-col items-center py-8 text-center">
-            <div className="relative h-28 w-44 overflow-hidden rounded-xl border border-border">
-              <img src={emptySearchArt} alt="" aria-hidden="true" className="h-full w-full object-cover object-center" />
-              <div className="absolute inset-0 bg-gradient-to-t from-card/80 to-transparent" />
+          <div className="relative flex h-[clamp(348px,54vh,452px)] w-[clamp(256px,68vw,308px)] flex-col items-center justify-end overflow-hidden rounded-2xl border border-dashed border-white/25 p-6 text-center">
+            <img src={emptySearchArt} alt="" aria-hidden="true" className="absolute inset-0 h-full w-full object-cover object-center opacity-60" />
+            <div className="absolute inset-0 bg-gradient-to-t from-[#0E1530] via-[#0E1530]/60 to-[#0E1530]/10" />
+            <div className="relative">
+              <p className="font-display text-2xl text-foreground">No road by that name</p>
+              <p className="mt-1 text-sm text-white/70">Try a broader name or clear the search.</p>
+              {query && (
+                <button
+                  type="button"
+                  onClick={() => setQuery('')}
+                  className="mt-4 rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-white/20"
+                >
+                  Clear search
+                </button>
+              )}
             </div>
-            <p className="mt-4 text-sm font-medium text-foreground">No road by that name</p>
-            <p className="mt-1 text-sm text-muted-foreground">Try a broader name or code.</p>
           </div>
         )}
 
@@ -325,13 +337,31 @@ export function CourseSelector({
 
       {/* Footer */}
       <div className="flex shrink-0 items-center justify-between gap-3 border-t border-white/10 bg-background/55 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-md sm:px-5">
-        <p className="text-sm text-muted-foreground">{selected.size} chosen</p>
-        <div className="flex items-center gap-2">
-          {!mandatory && (
-            <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={saving}>
-              Not yet
-            </Button>
+        <div className="flex min-w-0 items-center gap-2.5" aria-live="polite">
+          {chosen.length > 0 && (
+            <div aria-hidden="true" className="flex -space-x-2">
+              {chosen.slice(0, 4).map((entry) => (
+                <img
+                  key={entry.key}
+                  src={LEVEL_META[entry.level].image}
+                  alt=""
+                  title={entry.displayName}
+                  className="size-7 rounded-full border-2 border-[#0E1530] object-cover object-[50%_18%]"
+                />
+              ))}
+              {chosen.length > 4 && (
+                <span className="flex size-7 items-center justify-center rounded-full border-2 border-[#0E1530] bg-white/15 text-[11px] font-semibold tabular-nums text-white">
+                  +{chosen.length - 4}
+                </span>
+              )}
+            </div>
           )}
+          <p className="truncate text-sm text-muted-foreground">
+            <span className="font-display text-xl leading-none tabular-nums text-foreground">{chosen.length}</span>{' '}
+            {chosen.length === 1 ? 'course' : 'courses'} chosen
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
           <Button onClick={handleSave} disabled={saving || !dirty}>
             {saving ? 'Setting out…' : 'Set out'}
           </Button>
@@ -504,8 +534,7 @@ function CourseCardFace({
         <i aria-hidden="true" className="tcard-corner tcard-corner-bl" />
         <i aria-hidden="true" className="tcard-corner tcard-corner-br" />
 
-        {/* Glass glare + summon sequence overlays. */}
-        <span aria-hidden="true" className="tcard-glare" />
+        {/* Summon sequence overlays. */}
         <span aria-hidden="true" className="charge-ring" />
         <span aria-hidden="true" className="charge-flare" />
         <span aria-hidden="true" className="summon-burst" />
@@ -518,36 +547,18 @@ function CourseCardFace({
  *  replay it. On open ('reveal') the card is the reverse face of a 3D flip whose
  *  front is an ornate back — it sits showing the back behind the reel, then
  *  rotates 180° to reveal the real card. Navigation just slides. */
-function DeckSlot({
-  mode,
-  color,
-  children,
-}: {
-  mode: 'reveal' | 'next' | 'prev';
-  color: string;
-  children: React.ReactNode;
-}) {
-  const [frozen] = useState(mode);
-
-  if (frozen === 'reveal') {
-    return (
-      <div
-        className="deck-reveal-appear relative z-10 -mx-7 sm:-mx-9"
-        style={{ '--lvl': color } as React.CSSProperties}
-      >
-        <div className="deck-flip">
-          <span className="deck-flip-face deck-flip-back">
-            <ArcaneSigil />
-          </span>
-          <div className="deck-flip-face deck-flip-front">{children}</div>
-        </div>
-      </div>
-    );
-  }
-
+function DeckSlot({ color, children }: { color: string; children: React.ReactNode }) {
   return (
-    <div className={cn('relative z-10 -mx-7 sm:-mx-9', frozen === 'next' ? 'deck-mode-next' : 'deck-mode-prev')}>
-      {children}
+    <div
+      className="deck-reveal-appear absolute inset-0 z-20 flex items-center justify-center"
+      style={{ '--lvl': color } as React.CSSProperties}
+    >
+      <div className="deck-flip">
+        <span className="deck-flip-face deck-flip-back">
+          <ArcaneSigil mark />
+        </span>
+        <div className="deck-flip-face deck-flip-front">{children}</div>
+      </div>
     </div>
   );
 }
@@ -568,7 +579,7 @@ function WishReveal({ color }: { color: string }) {
         <div className="wish-reel-row">
           {Array.from({ length: 13 }).map((_, i) => (
             <span key={i} className="wish-reel-back">
-              <ArcaneSigil />
+              <ArcaneSigil mark />
             </span>
           ))}
         </div>
@@ -595,38 +606,11 @@ function DeckArrow({
       disabled={disabled}
       aria-label={dir === 'prev' ? 'Previous road' : 'Next road'}
       className={cn(
-        'flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/15 bg-white/[0.05] text-foreground backdrop-blur-md transition-colors hover:bg-white/[0.12] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50 disabled:pointer-events-none disabled:opacity-25',
+        'flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/15 bg-white/[0.05] text-foreground backdrop-blur-md transition-[background-color,transform] hover:bg-white/[0.12] motion-safe:active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50 disabled:pointer-events-none disabled:opacity-25',
         className,
       )}
     >
       {dir === 'prev' ? <ChevronLeft className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
-    </button>
-  );
-}
-
-/** Faint neighbour preview tucked behind the hero card — clickable to flip. */
-function PeekCard({ entry, onClick }: { entry?: CatalogueEntry; onClick: () => void }) {
-  if (!entry) return null;
-  const meta = LEVEL_META[entry.level];
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-hidden="true"
-      tabIndex={-1}
-      className="hidden shrink-0 sm:block"
-    >
-      <div className="relative h-[clamp(260px,40vh,340px)] w-[clamp(140px,32vw,180px)] scale-95 overflow-hidden rounded-2xl border border-white/10 opacity-35 blur-[1.5px] saturate-50">
-        <img
-          src={meta.image}
-          alt=""
-          aria-hidden="true"
-          loading="lazy"
-          style={{ objectPosition: ART_POSITION }}
-          className="h-full w-full object-cover"
-        />
-        <div className="absolute inset-0 bg-background/40" />
-      </div>
     </button>
   );
 }

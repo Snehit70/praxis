@@ -1,7 +1,8 @@
 import { useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, Check, FileText, Plus } from 'lucide-react';
+import { ArrowRight, Check, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Skeleton } from '@/components/ui/skeleton';
 import { courseHref, LEVEL_META, type CatalogueEntry } from '@/lib/courseCatalogue';
 
 interface CourseCardProps {
@@ -19,18 +20,8 @@ const prefersReducedMotion = () =>
   typeof window !== 'undefined' &&
   window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
-/**
- * Deterministic art framing from the course key so same-level tiles (which share
- * one character portrait) don't look pixel-identical — each frames the character
- * a little differently. Biased toward the upper portion to keep faces in view.
- */
-function cropFor(key: string): string {
-  let h = 0;
-  for (let i = 0; i < key.length; i += 1) h = (h * 31 + key.charCodeAt(i)) >>> 0;
-  const x = 28 + (h % 45); // 28%..72%
-  const y = 8 + ((h >> 8) % 26); // 8%..33%
-  return `${x}% ${y}%`;
-}
+/** One framing for every tile so a character's face sits at the same height across a row. */
+const ART_POSITION = '50% 18%';
 
 export function CourseCard({ course, enrolled = false, onToggleEnroll, revealIndex = 0 }: CourseCardProps) {
   const meta = LEVEL_META[course.level];
@@ -61,7 +52,6 @@ export function CourseCard({ course, enrolled = false, onToggleEnroll, revealInd
     el.style.setProperty('--my', '0px');
   };
 
-  const showCode = course.courseCode && course.courseCode !== course.displayName;
   // Drop the redundant "Diploma · " prefix in the kicker — context already implies it.
   const shortLabel = meta.label.replace(/^Diploma · /, '');
 
@@ -75,7 +65,7 @@ export function CourseCard({ course, enrolled = false, onToggleEnroll, revealInd
     >
       <div
         className={cn(
-          'squircle relative flex flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0d1220]/85 backdrop-blur-xl',
+          'squircle relative flex h-full flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0d1220]/85 backdrop-blur-xl',
           'transition-[transform,box-shadow,border-color] duration-150 ease-out will-change-transform',
           '[transform:rotateX(var(--rx,0deg))_rotateY(var(--ry,0deg))]',
           'group-hover:border-white/25 group-hover:shadow-2xl group-hover:shadow-black/50',
@@ -93,7 +83,7 @@ export function CourseCard({ course, enrolled = false, onToggleEnroll, revealInd
               alt=""
               aria-hidden="true"
               loading="lazy"
-              style={{ objectPosition: cropFor(course.key) }}
+              style={{ objectPosition: ART_POSITION }}
               className="h-full w-full scale-110 object-cover transition-transform duration-300 ease-out motion-safe:group-hover:scale-[1.18]"
             />
           </div>
@@ -116,20 +106,19 @@ export function CourseCard({ course, enrolled = false, onToggleEnroll, revealInd
           <p className={cn('flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.12em]', meta.text)}>
             <span aria-hidden="true" className="size-1.5 rounded-full bg-current" />
             {shortLabel}
-            {showCode ? <span className="text-white/45">· {course.courseCode}</span> : null}
           </p>
           <h3 className="mt-1.5 line-clamp-2 font-display text-[1.35rem] font-normal leading-tight tracking-tight text-white">
             {course.displayName}
           </h3>
           <div className="mt-auto flex items-center justify-between pt-3 text-sm">
-            <span className="flex items-center gap-1.5 text-white/65">
-              <FileText className="h-3.5 w-3.5" aria-hidden="true" />
-              {course.paperCount} {course.paperCount === 1 ? 'paper' : 'papers'}
+            <span className="flex items-baseline gap-1.5 text-white/60">
+              <span className="font-display text-2xl leading-none tabular-nums text-white">{course.paperCount}</span>
+              {course.paperCount === 1 ? 'paper' : 'papers'}
             </span>
-            <span className="flex items-center gap-1 font-medium text-white/80 transition-colors group-hover:text-white">
-              Open
-              <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
-            </span>
+            <ArrowRight
+              className="h-4 w-4 text-white/70 transition-[transform,color] group-hover:translate-x-0.5 group-hover:text-white"
+              aria-hidden="true"
+            />
           </div>
         </div>
 
@@ -155,6 +144,23 @@ export function CourseCard({ course, enrolled = false, onToggleEnroll, revealInd
             {enrolled ? <Check className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
           </button>
         )}
+      </div>
+    </div>
+  );
+}
+
+/** Loading stand-in with the same frame, art band and reading panel as a tile. */
+export function CourseCardSkeleton() {
+  return (
+    <div className="squircle flex flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0d1220]/85 backdrop-blur-xl">
+      <Skeleton tone="glass" className="aspect-[16/7] w-full rounded-none shadow-none" />
+      <div className="flex flex-col px-4 pb-4 pt-3">
+        <Skeleton tone="glass" className="h-3 w-28 rounded-full" />
+        <Skeleton tone="glass" className="mt-2.5 h-6 w-4/5 rounded-md" />
+        <div className="mt-3 flex items-center justify-between pt-1">
+          <Skeleton tone="glass" className="h-4 w-20 rounded-full" />
+          <Skeleton tone="glass" className="h-4 w-12 rounded-full" />
+        </div>
       </div>
     </div>
   );

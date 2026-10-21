@@ -1,7 +1,8 @@
-import { mkdtempSync, rmSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync, existsSync, readFileSync, readdirSync, statSync, renameSync } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
   getQuestionStats,
   type QuizQuestion,
@@ -355,7 +356,13 @@ function renderOptions(question: QuizQuestion, showAnswers: boolean) {
   });
 
   const hint = question.questionType === 'MSQ' ? '<p class="hint">Select all that apply.</p>' : '';
-  return `${hint}<ol class="options">${items.join('')}</ol>`;
+  // Short text-only options sit two to a row so a simple MCQ is not half a page.
+  const compact =
+    question.options.length >= 4 &&
+    question.options.every(
+      (option) => !option.optionImage && (option.optionText ?? '').replace(/<[^>]+>/g, '').trim().length <= 34,
+    );
+  return `${hint}<ol class="options${compact ? ' compact' : ''}">${items.join('')}</ol>`;
 }
 
 function renderQuestion(question: PrintQuestion, showAnswers: boolean): string {
@@ -375,7 +382,7 @@ function renderQuestion(question: PrintQuestion, showAnswers: boolean): string {
 <article class="q ${isPassage ? 'passage' : ''}">
   <header class="q-head">
     <span class="q-num">${heading}</span>
-    <span class="q-type">${typeLabel(question.questionType)}</span>
+    ${isPassage ? '' : `<span class="q-type">${typeLabel(question.questionType)}</span>`}
     ${markLabel ? `<span class="q-marks">${markLabel}</span>` : ''}
   </header>
   ${renderMedia(question, heading)}
@@ -384,59 +391,94 @@ function renderQuestion(question: PrintQuestion, showAnswers: boolean): string {
 </article>`;
 }
 
-function documentCss() {
+function documentCss(courseName: string, examName: string) {
+  // Lands inside a CSS string, so keep only plain characters.
+  const footerLabel = `${courseName} · ${examName}`.replace(/[^\p{L}\p{N} ·&()./+-]/gu, '');
   return `
-    @page { size: A4; margin: 14mm 14mm 16mm 14mm; }
+    @page {
+      size: A4;
+      margin: 15mm 15mm 18mm 15mm;
+      @bottom-left {
+        content: "praxis · ${footerLabel}";
+        font: 7.5pt ui-sans-serif, system-ui, sans-serif;
+        color: #8a93a6;
+        vertical-align: top;
+        padding-top: 4mm;
+      }
+      @bottom-right {
+        content: counter(page) " / " counter(pages);
+        font: 7.5pt ui-sans-serif, system-ui, sans-serif;
+        color: #8a93a6;
+        vertical-align: top;
+        padding-top: 4mm;
+      }
+    }
+    @page :first { @bottom-left { content: ""; } @bottom-right { content: ""; } }
     * { box-sizing: border-box; }
     html, body {
       margin: 0;
       padding: 0;
-      color: #111;
+      color: #151a2b;
       background: #fff;
-      font: 11pt/1.45 "Source Serif 4", "Iowan Old Style", Palatino, Georgia, serif;
+      font: 10.5pt/1.5 "Source Serif 4", "Iowan Old Style", Palatino, Georgia, serif;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
     }
-    .sheet { max-width: 180mm; }
     .mast {
-      border-bottom: 1.5pt solid #111;
-      padding-bottom: 8pt;
-      margin-bottom: 14pt;
+      margin: 0 0 16pt;
+      padding: 0 0 12pt;
+      border-bottom: 0.6pt solid #cfd5e3;
     }
-    .kicker {
-      margin: 0 0 2pt;
-      font: 8pt/1.2 ui-sans-serif, system-ui, sans-serif;
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
-      color: #444;
-    }
-    h1 { margin: 0; font-size: 18pt; font-weight: 650; letter-spacing: -0.02em; }
-    .meta, .counts { margin: 2pt 0 0; font: 10pt/1.3 ui-sans-serif, system-ui, sans-serif; color: #222; }
-    .disclaimer {
-      margin: 8pt 0 0;
-      font: 8.5pt/1.3 ui-sans-serif, system-ui, sans-serif;
-      color: #555;
-    }
-    .q {
-      margin: 0 0 13pt;
-      padding: 0 0 11pt;
-      border-bottom: 0.4pt solid #ddd;
-    }
-    .q-head {
+    .brand-row {
       display: flex;
-      gap: 8pt;
-      align-items: baseline;
-      margin-bottom: 6pt;
-      break-after: avoid;
+      justify-content: space-between;
+      align-items: center;
+      margin: 0 0 14pt;
     }
-    .q-num { font: 700 11pt ui-sans-serif, system-ui, sans-serif; }
-    .q-type, .q-marks {
-      font: 8pt/1 ui-sans-serif, system-ui, sans-serif;
+    .brand {
+      font: italic 400 15pt/1 "Instrument Serif", "Source Serif 4", Georgia, serif;
+      color: #0e1530;
+      letter-spacing: -0.01em;
+    }
+    .brand b { color: #3f6fc0; font-weight: 400; }
+    .tag {
+      font: 600 7pt/1 ui-sans-serif, system-ui, sans-serif;
+      letter-spacing: 0.14em;
       text-transform: uppercase;
-      letter-spacing: 0.04em;
-      color: #555;
+      color: #fff;
+      background: #0e1530;
+      padding: 4pt 8pt;
+      border-radius: 99pt;
     }
-    .stem { margin: 0 0 6pt; }
+    .tag.key { background: #1b7a2c; }
+    h1 {
+      margin: 0;
+      font: 400 27pt/1.05 "Instrument Serif", "Source Serif 4", Georgia, serif;
+      letter-spacing: -0.02em;
+      color: #0e1530;
+    }
+    .meta { margin: 5pt 0 0; font: 10pt/1.3 ui-sans-serif, system-ui, sans-serif; color: #44506b; }
+    .stats { display: flex; gap: 22pt; margin: 12pt 0 0; }
+    .stat { font: 7.5pt/1 ui-sans-serif, system-ui, sans-serif; letter-spacing: 0.1em; text-transform: uppercase; color: #6a7590; }
+    .stat strong { display: block; margin-bottom: 3pt; font: 400 17pt/1 "Instrument Serif", Georgia, serif; letter-spacing: 0; color: #0e1530; }
+    .q { margin: 0 0 11pt; padding: 0 0 10pt; border-bottom: 0.4pt solid #e3e7f0; }
+    .q:not(.passage) { break-inside: avoid; }
+    .q-head { display: flex; gap: 7pt; align-items: center; margin-bottom: 5pt; break-after: avoid; }
+    .q-num {
+      font: 700 8.5pt/1 ui-sans-serif, system-ui, sans-serif;
+      color: #fff;
+      background: #0e1530;
+      padding: 3pt 6pt;
+      border-radius: 4pt;
+    }
+    .q-type, .q-marks {
+      font: 600 7pt/1 ui-sans-serif, system-ui, sans-serif;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #6a7590;
+    }
+    .q-marks { margin-left: auto; }
+    .stem { margin: 0 0 5pt; }
     img.figure {
       display: block;
       max-width: 100%;
@@ -454,49 +496,50 @@ function documentCss() {
       vertical-align: middle;
     }
     .opt-body img.figure { max-height: 42mm; margin: 2pt 0; }
-    .opt-body img.figure.inline {
-      display: block;
-      max-height: 14mm;
-      margin: 2pt 0;
-    }
     .options { list-style: none; margin: 6pt 0 0; padding: 0; }
     .options li {
       display: flex;
       gap: 8pt;
       align-items: flex-start;
-      margin: 0 0 5pt;
-      padding: 4pt 6pt;
+      margin: 0 0 3pt;
+      padding: 3pt 6pt;
+      border-radius: 4pt;
       break-inside: avoid;
     }
-    .options li.correct { background: #eef7ee; outline: 0.6pt solid #1b7a2c; }
+    .options.compact { display: grid; grid-template-columns: 1fr 1fr; column-gap: 12pt; }
+    .options li.correct { background: #eaf6ec; }
     .opt {
-      flex: 0 0 16pt;
-      height: 16pt;
-      border: 0.8pt solid #222;
+      flex: 0 0 15pt;
+      height: 15pt;
+      border: 0.8pt solid #9aa3b8;
+      border-radius: 50%;
       display: flex;
       align-items: center;
       justify-content: center;
-      font: 8pt/1 ui-sans-serif, system-ui, sans-serif;
-      font-weight: 700;
+      font: 700 7.5pt/1 ui-sans-serif, system-ui, sans-serif;
+      color: #44506b;
     }
     .options li.correct .opt { background: #1b7a2c; color: #fff; border-color: #1b7a2c; }
-    .opt-body { flex: 1; min-width: 0; }
+    .opt-body { flex: 1; min-width: 0; padding-top: 1pt; }
     .sql {
       margin: 0;
       white-space: pre-wrap;
       font: 8pt/1.35 ui-monospace, "SF Mono", Menlo, monospace;
-      background: #f6f6f4;
+      background: #f4f6fb;
       padding: 6pt 7pt;
-      border: 0.4pt solid #ddd;
+      border: 0.4pt solid #dde2ee;
+      border-radius: 4pt;
     }
-    .hint, .blank, .key { font: 9.5pt/1.3 ui-sans-serif, system-ui, sans-serif; color: #333; }
+    .hint, .blank, .key { font: 9pt/1.3 ui-sans-serif, system-ui, sans-serif; color: #44506b; }
     .key { color: #145c24; }
     .missing { color: #9b1c1c; font-style: italic; }
+    .passage { background: #f6f8fc; border: 0.4pt solid #e3e7f0; border-radius: 6pt; padding: 10pt 12pt 2pt; }
     .passage > .q {
       margin-top: 10pt;
-      padding-left: 8pt;
-      border-left: 1.5pt solid #bbb;
-      border-bottom: 0.4pt solid #ddd;
+      padding: 0 0 8pt 9pt;
+      border-left: 1.5pt solid #3f6fc0;
+      border-bottom: 0.4pt solid #e3e7f0;
+      background: #fff;
     }
   `;
 }
@@ -517,16 +560,21 @@ export function renderPaperHtml(
 <head>
   <meta charset="utf-8">
   <title>${escapeHtml(paper.courseName)} ${escapeHtml(paper.examName)}${showAnswers ? ' (answers)' : ''}</title>
-  <style>${documentCss()}</style>
+  <style>${documentCss(paper.courseName, paper.examName)}</style>
 </head>
 <body>
   <div class="sheet">
     <header class="mast">
-      <p class="kicker">Praxis reconstruction${showAnswers ? ' · answer key' : ''}</p>
+      <div class="brand-row">
+        <span class="brand">prax<b>i</b>s</span>
+        <span class="tag${showAnswers ? ' key' : ''}">${showAnswers ? 'Praxis reconstruction · answer key' : 'Praxis reconstruction'}</span>
+      </div>
       <h1>${escapeHtml(paper.courseName)}</h1>
       <p class="meta">${escapeHtml(bits)}</p>
-      <p class="counts">${stats.answerableCount} questions · ${stats.totalMarks} marks</p>
-      <p class="disclaimer">Reconstructed from Praxis data. Not an official IIT Madras question paper. Source name: ${escapeHtml(paper.paperName)}.</p>
+      <div class="stats">
+        <span class="stat"><strong>${stats.answerableCount}</strong>questions</span>
+        <span class="stat"><strong>${stats.totalMarks}</strong>marks</span>
+      </div>
     </header>
     ${grouped.map((question) => renderQuestion(question, showAnswers)).join('\n')}
   </div>
@@ -560,7 +608,46 @@ export function resolveChromiumPath() {
   return chromiumCandidates().find((candidate) => existsSync(candidate)) ?? null;
 }
 
-export async function printHtmlToPdf(html: string): Promise<Uint8Array> {
+const PDF_CACHE_DIR = path.join(tmpdir(), 'praxis-pdf-cache');
+const PDF_CACHE_MAX_FILES = 200;
+const inflight = new Map<string, Promise<Uint8Array>>();
+
+function cachePathFor(html: string) {
+  return path.join(PDF_CACHE_DIR, `${createHash('sha256').update(html).digest('hex')}.pdf`);
+}
+
+function pruneCache() {
+  try {
+    const files = readdirSync(PDF_CACHE_DIR)
+      .map((name) => ({ name, mtime: statSync(path.join(PDF_CACHE_DIR, name)).mtimeMs }))
+      .sort((left, right) => right.mtime - left.mtime);
+    for (const stale of files.slice(PDF_CACHE_MAX_FILES)) {
+      rmSync(path.join(PDF_CACHE_DIR, stale.name), { force: true });
+    }
+  } catch {
+    // Pruning is best effort.
+  }
+}
+
+function runChromium(chromium: string, args: string[], timeoutMs: number) {
+  return new Promise<{ status: number | null; output: string }>((resolve) => {
+    const child = spawn(chromium, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    let output = '';
+    child.stdout.on('data', (chunk) => (output += chunk));
+    child.stderr.on('data', (chunk) => (output += chunk));
+    const timer = setTimeout(() => child.kill('SIGKILL'), timeoutMs);
+    child.on('close', (status) => {
+      clearTimeout(timer);
+      resolve({ status, output });
+    });
+    child.on('error', (error) => {
+      clearTimeout(timer);
+      resolve({ status: -1, output: error.message });
+    });
+  });
+}
+
+async function renderHtmlToPdf(html: string): Promise<{ bytes: Uint8Array; complete: boolean }> {
   const chromium = resolveChromiumPath();
   if (!chromium) {
     throw new Error('Chromium is not installed; cannot render paper PDFs');
@@ -579,32 +666,73 @@ export async function printHtmlToPdf(html: string): Promise<Uint8Array> {
     });
     writeFileSync(htmlPath, localized.html);
 
-    const result = spawnSync(
+    // Images are already local files, so there is no network to wait on.
+    const result = await runChromium(
       chromium,
       [
         '--headless=new',
         '--disable-gpu',
         '--no-sandbox',
         '--disable-dev-shm-usage',
-        '--hide-scrollbars',
+        '--disable-extensions',
+        '--disable-background-networking',
+        '--disable-component-update',
         '--no-pdf-header-footer',
+        '--hide-scrollbars',
         '--allow-file-access-from-files',
         '--run-all-compositor-stages-before-draw',
         '--virtual-time-budget=20000',
         `--print-to-pdf=${pdfPath}`,
         `file://${htmlPath}`,
       ],
-      { encoding: 'utf8', timeout: 60000 },
+      60_000,
     );
 
     if (result.status !== 0 || !existsSync(pdfPath)) {
-      throw new Error(
-        `Chromium PDF print failed (${result.status}): ${result.stderr || result.stdout || 'no output'}`,
-      );
+      throw new Error(`Chromium PDF print failed (${result.status}): ${result.output || 'no output'}`);
     }
 
-    return readFileSync(pdfPath);
+    return { bytes: readFileSync(pdfPath), complete: localized.failed === 0 };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+}
+
+/**
+ * Prints the paper to PDF. Identical HTML (same paper data, same layout) is
+ * served from a small on-disk cache, and concurrent identical requests share
+ * one render, so the second download of a paper is instant.
+ */
+export async function printHtmlToPdf(html: string): Promise<Uint8Array> {
+  const cachePath = cachePathFor(html);
+  try {
+    if (existsSync(cachePath)) {
+      console.info('pdf cache hit');
+      return readFileSync(cachePath);
+    }
+  } catch {
+    // Fall through to a fresh render.
+  }
+
+  const running = inflight.get(cachePath);
+  if (running) return running;
+
+  const job = renderHtmlToPdf(html)
+    .then(({ bytes, complete }) => {
+      // A PDF missing figures must not be served again from cache.
+      if (!complete) return bytes;
+      try {
+        mkdirSync(PDF_CACHE_DIR, { recursive: true });
+        const tmp = `${cachePath}.${process.pid}.tmp`;
+        writeFileSync(tmp, bytes);
+        renameSync(tmp, cachePath);
+        pruneCache();
+      } catch (error) {
+        console.warn('pdf cache write failed', error instanceof Error ? error.message : error);
+      }
+      return bytes;
+    })
+    .finally(() => inflight.delete(cachePath));
+  inflight.set(cachePath, job);
+  return job;
 }

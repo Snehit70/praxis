@@ -1,13 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useAuth, useUser, UserButton } from '@clerk/clerk-react';
-import { ArrowRight, BookMarked, Clock, Pencil, Plus, Search, UserRound, X } from 'lucide-react';
+import { useAuth, useUser } from '@clerk/clerk-react';
+import { ArrowRight, BookMarked, Clock, Pencil, Plus, Search, UserRound } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Skeleton, SkeletonRegion } from '@/components/ui/skeleton';
 import { StatePanel } from '@/components/ui/state-panel';
+import { SearchField } from '@/components/ui/search-field';
+import { SEGMENTED_LIST, SEGMENTED_TRIGGER } from '@/components/ui/segmented';
+import { AccountButton } from '@/components/auth/AccountButton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { CourseCard } from '@/components/CourseCard';
+import { CourseCard, CourseCardSkeleton } from '@/components/CourseCard';
 import { PraxisBrand } from '@/components/PraxisBrand';
 import { CourseSelector } from '@/components/CourseSelector';
 import { Reveal } from '@/components/Reveal';
@@ -76,19 +79,18 @@ const column = 'mx-auto w-full max-w-6xl px-4 md:px-8';
 /** Inline `--rise-i` style so an element takes its place in the stagger cascade. */
 const rise = (i: number) => ({ '--rise-i': i }) as React.CSSProperties;
 
-function DashboardSkeleton() {
+/** Card grid stand-in while the catalogue and enrollments load; the scene,
+ *  header and greeting are already real by then. */
+function CourseGridSkeleton({ label, count = 3 }: { label: string; count?: number }) {
   return (
-    <div role="status" aria-live="polite" aria-label="Loading your courses">
-      <Skeleton className="h-[clamp(300px,40vh,440px)] w-full rounded-none" />
-      <div className={cn(column, 'space-y-6 py-8')}>
-        <Skeleton className="h-9 w-72" />
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {[1, 2, 3, 4, 5, 6].map((i) => (
-            <Skeleton key={i} className="aspect-[16/10] w-full rounded-2xl" />
-          ))}
-        </div>
+    <SkeletonRegion label={label} tone="glass" className="space-y-5">
+      <Skeleton className="h-4 w-56 rounded-full" />
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {Array.from({ length: count }, (_, i) => (
+          <CourseCardSkeleton key={i} />
+        ))}
       </div>
-    </div>
+    </SkeletonRegion>
   );
 }
 
@@ -208,10 +210,7 @@ export default function HomePage() {
     );
   }
 
-  if (!catalogue || enrollLoading) {
-    return <DashboardSkeleton />;
-  }
-
+  const booting = !catalogue || enrollLoading;
   const greetingName = user?.firstName?.trim();
 
   return (
@@ -231,6 +230,10 @@ export default function HomePage() {
         />
         <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-black/45 to-transparent" />
         <div className="absolute inset-0 bg-gradient-to-r from-black/35 via-transparent to-transparent" />
+        {/* Dusk over the open sky where the greeting and tabs sit: the haze there
+            is the palest part of the painting, so light text washed out. Fades
+            before the tree and the party on the right. */}
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_60%_50%_at_20%_36%,rgb(10_16_32/0.6),rgb(10_16_32/0.25)_55%,transparent_80%)]" />
         <div className="absolute inset-0 bg-gradient-to-b from-transparent from-35% via-background/40 via-60% to-background/80" />
       </div>
 
@@ -239,7 +242,7 @@ export default function HomePage() {
       <header className="sticky top-0 z-50 bg-black/20 backdrop-blur-md">
         <div className="container relative mx-auto flex h-14 items-center px-4 md:px-8">
           <Link to="/" className="flex items-center gap-2.5 transition-opacity hover:opacity-80">
-            <PraxisBrand nameClassName="text-foreground" />
+            <PraxisBrand className="text-[#f1ead9]" />
           </Link>
           <nav className="ml-auto flex items-center gap-4">
             {BOOKMARKS_ENABLED && (
@@ -251,16 +254,17 @@ export default function HomePage() {
             <button
               type="button"
               onClick={() => setSelectorOpen(true)}
-              className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+              disabled={!catalogue}
+              className="inline-flex items-center gap-1.5 text-sm font-medium text-white/90 transition-colors hover:text-white disabled:pointer-events-none disabled:opacity-50"
             >
               <Pencil className="h-4 w-4" />
               <span className="hidden sm:inline">Companions</span>
             </button>
-            <Link to="/profile" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
+            <Link to="/profile" className="inline-flex items-center gap-1.5 text-sm font-medium text-white/90 transition-colors hover:text-white">
               <UserRound className="h-4 w-4" />
               <span className="hidden sm:inline">Profile</span>
             </Link>
-            <UserButton afterSignOutUrl="/" userProfileMode="navigation" userProfileUrl="/profile" />
+            <AccountButton />
           </nav>
         </div>
       </header>
@@ -284,13 +288,13 @@ export default function HomePage() {
                   <Link
                     to={historyHref(resume)}
                     style={rise(2)}
-                    className="praxis-rise group mt-2 inline-flex items-center gap-1.5 text-sm"
+                    className="praxis-rise group mt-2 inline-flex items-center gap-1.5 text-sm [text-shadow:0_1px_10px_rgb(0_0_0/0.5)]"
                   >
-                    <span className="font-medium text-primary transition-colors group-hover:text-primary/80">
+                    <span className="font-semibold text-white underline-offset-4 group-hover:underline">
                       Last on the road
                     </span>
-                    <ArrowRight className="h-3.5 w-3.5 text-primary transition-transform group-hover:translate-x-0.5" />
-                    <span className="text-foreground/85">
+                    <ArrowRight className="h-3.5 w-3.5 text-white drop-shadow transition-transform group-hover:translate-x-0.5" />
+                    <span className="text-white/85">
                       {getDisplayCourseName(resume.courseName)}
                       {resume.examName ? ` · ${resume.examName}` : ''}
                     </span>
@@ -305,16 +309,24 @@ export default function HomePage() {
         {/* ── Content below the hero ── */}
         <div className={cn(column, 'py-6 md:py-8')}>
           <div className="mb-6 flex items-center justify-between gap-4">
-          <TabsList className="squircle inline-flex gap-1 rounded-2xl border border-white/10 bg-white/[0.04] p-1">
+          <TabsList className={SEGMENTED_LIST}>
             <TabsTrigger
               value="mine"
-              className="squircle h-9 rounded-xl px-4 text-sm text-white/80 transition-colors hover:text-white data-[state=active]:bg-white data-[state=active]:text-[#141414]"
+              className={SEGMENTED_TRIGGER}
             >
               Companions
+              {!booting && enrolledCourses.length > 0 && (
+                <span
+                  aria-label={`${enrolledCourses.length} ${enrolledCourses.length === 1 ? 'course' : 'courses'} this term`}
+                  className="ml-2 inline-flex min-w-5 items-center justify-center rounded-md bg-current/15 px-1.5 text-xs font-semibold tabular-nums"
+                >
+                  {enrolledCourses.length}
+                </span>
+              )}
             </TabsTrigger>
             <TabsTrigger
               value="archive"
-              className="squircle h-9 rounded-xl px-4 text-sm text-white/80 transition-colors hover:text-white data-[state=active]:bg-white data-[state=active]:text-[#141414]"
+              className={SEGMENTED_TRIGGER}
             >
               The World
             </TabsTrigger>
@@ -323,46 +335,46 @@ export default function HomePage() {
 
         {/* Companions — the courses you travel with this term. */}
         <TabsContent value="mine" className="space-y-5">
-          {enrolledCourses.length > 0 && (
-            <p className="text-sm text-white/75 [text-shadow:0_1px_8px_rgba(0,0,0,0.5)]">
-              The courses you&apos;re taking this term
-              <span className="tabular-nums text-white/55"> · {enrolledCourses.length}</span>
-            </p>
-          )}
-          {enrolledCourses.length === 0 ? (
-            <div className="squircle relative flex min-h-[380px] overflow-hidden rounded-3xl border border-border md:min-h-[440px]">
-              <img
-                src={emptyArt}
-                alt=""
-                aria-hidden="true"
-                className="absolute inset-0 h-full w-full object-cover object-center"
-              />
-              {/* Dark on the text side, image breathing on the right. */}
-              <div className="absolute inset-0 bg-gradient-to-r from-background via-background/90 to-background/30" />
-              <div className="absolute inset-0 bg-gradient-to-t from-background/60 to-transparent" />
-              <div className="relative z-10 flex max-w-lg flex-col justify-center p-8 md:p-12">
-                <h2 className="font-display text-3xl font-normal tracking-tight text-foreground md:text-4xl">
-                  Your journey starts here
-                </h2>
-                <p className="mt-3 max-w-md text-pretty leading-relaxed text-muted-foreground">
-                  Add the courses you&apos;re taking this term and they&apos;ll live here for quick
-                  practice — sit any past paper, review it, and arrive at the exam already ready.
-                </p>
-                <div className="mt-6">
-                  <Button size="lg" onClick={() => setSelectorOpen(true)} className="gap-1.5 shadow-lg shadow-primary/20">
-                    <Plus className="h-4 w-4" />
-                    Choose your courses
-                  </Button>
-                </div>
-              </div>
-            </div>
+          {booting ? (
+            <CourseGridSkeleton label="Loading your courses" />
           ) : (
-            <Reveal className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {/* Companions tiles are clean — no per-tile toggle; manage via the Companions button. */}
-              {enrolledCourses.map((course, i) => (
-                <CourseCard key={course.key} course={course} enrolled revealIndex={i} />
-              ))}
-            </Reveal>
+            <>
+              {enrolledCourses.length === 0 ? (
+                <div className="squircle relative flex min-h-[380px] overflow-hidden rounded-3xl border border-border md:min-h-[440px]">
+                  <img
+                    src={emptyArt}
+                    alt=""
+                    aria-hidden="true"
+                    className="absolute inset-0 h-full w-full object-cover object-center"
+                  />
+                  {/* Dark on the text side, image breathing on the right. */}
+                  <div className="absolute inset-0 bg-gradient-to-r from-background via-background/90 to-background/30" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-background/60 to-transparent" />
+                  <div className="relative z-10 flex max-w-lg flex-col justify-center p-8 md:p-12">
+                    <h2 className="font-display text-3xl font-normal tracking-tight text-foreground md:text-4xl">
+                      Your journey starts here
+                    </h2>
+                    <p className="mt-3 max-w-md text-pretty leading-relaxed text-muted-foreground">
+                      Add the courses you&apos;re taking this term and they&apos;ll live here for quick
+                      practice — sit any past paper, review it, and arrive at the exam already ready.
+                    </p>
+                    <div className="mt-6">
+                      <Button size="lg" onClick={() => setSelectorOpen(true)} className="gap-1.5 shadow-lg shadow-primary/20">
+                        <Plus className="h-4 w-4" />
+                        Choose your courses
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <Reveal className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {/* Companions tiles are clean — no per-tile toggle; manage via the Companions button. */}
+                  {enrolledCourses.map((course, i) => (
+                    <CourseCard key={course.key} course={course} enrolled revealIndex={i} />
+                  ))}
+                </Reveal>
+              )}
+            </>
           )}
         </TabsContent>
 
@@ -371,30 +383,17 @@ export default function HomePage() {
           <p className="text-sm text-muted-foreground">
             Every course in the archive — roads you haven&apos;t walked yet.
           </p>
-          <div className="relative max-w-md">
-            <Search aria-hidden="true" className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <input
-              type="text"
-              value={archiveQuery}
-              onChange={(event) => setArchiveQuery(event.target.value)}
-              placeholder="Search all courses..."
-              autoComplete="off"
-              aria-label="Search all courses"
-              className="squircle h-11 w-full rounded-xl border border-border bg-card pl-10 pr-9 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-            />
-            {archiveQuery && (
-              <button
-                type="button"
-                onClick={() => setArchiveQuery('')}
-                aria-label="Clear search"
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            )}
-          </div>
+          <SearchField
+            value={archiveQuery}
+            onChange={setArchiveQuery}
+            placeholder="Search all courses..."
+            label="Search all courses"
+            className="max-w-md"
+          />
 
-          {archiveTotal === 0 ? (
+          {booting ? (
+            <CourseGridSkeleton label="Loading the archive" count={6} />
+          ) : archiveTotal === 0 ? (
             <StatePanel
               dashed
               icon={<Search className="h-10 w-10 text-muted-foreground/70" />}
@@ -457,7 +456,7 @@ export default function HomePage() {
         </p>
       )}
 
-      {selectorOpen && (
+      {selectorOpen && catalogue && (
         <CourseSelector
           open={selectorOpen}
           onOpenChange={setSelectorOpen}

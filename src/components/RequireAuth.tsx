@@ -21,7 +21,7 @@ export default function RequireAuth() {
         aria-live="polite"
         aria-label="Checking your session"
       >
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground motion-reduce:animate-none" />
+        <Loader2 className="delayed-in h-6 w-6 animate-spin text-muted-foreground motion-reduce:animate-none" />
       </div>
     );
   }

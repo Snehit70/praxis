@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, ArrowRight, FileSearch, Search } from 'lucide-react';
+import { ArrowLeft, ArrowRight, FileSearch } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Skeleton, SkeletonRegion } from '@/components/ui/skeleton';
 import { StatePanel } from '@/components/ui/state-panel';
+import { SearchField } from '@/components/ui/search-field';
 import {
   getSearchResults,
   type SearchCourseResult,
@@ -80,7 +81,7 @@ function PaperResultCard({ paper }: { paper: SearchPaperResult }) {
 
 function SearchSkeleton() {
   return (
-    <div className="space-y-8" role="status" aria-live="polite" aria-label="Loading search results">
+    <SkeletonRegion label="Loading search results" className="space-y-8">
       {[1, 2].map((section) => (
         <div key={section} className="space-y-4">
           <Skeleton className="h-4 w-24" />
@@ -95,7 +96,7 @@ function SearchSkeleton() {
           </div>
         </div>
       ))}
-    </div>
+    </SkeletonRegion>
   );
 }
 
@@ -182,23 +183,16 @@ export default function SearchPage() {
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="relative max-w-2xl">
-          <label htmlFor="global-search-input" className="sr-only">
-            Search courses and papers
-          </label>
-          <Search aria-hidden="true" className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
-          <input
+        <form onSubmit={handleSubmit} className="max-w-2xl">
+          <SearchField
             id="global-search-input"
-            type="text"
+            size="lg"
             value={draftQuery}
-            onChange={(event) => setDraftQuery(event.target.value)}
+            onChange={setDraftQuery}
             placeholder="Search for a course, code, or paper..."
-            autoComplete="off"
-            className="w-full rounded-xl border border-border bg-card py-3.5 pl-12 pr-28 text-base text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+            label="Search courses and papers"
+            trailing={<Button type="submit">Search</Button>}
           />
-          <Button type="submit" className="absolute right-2 top-1/2 -translate-y-1/2">
-            Search
-          </Button>
         </form>
 
         {query && !loading && !loadFailed && (
