@@ -225,9 +225,6 @@ export function CourseSelector({
         >
           Set your road this term
         </h2>
-        <p className="mt-0.5 text-sm text-muted-foreground">
-          Choose the paths you&apos;ll walk — they&apos;ll wait for you on the road.
-        </p>
       </div>
 
       {/* Filter chips + search */}
@@ -369,13 +366,31 @@ export function CourseSelector({
 
       {/* Footer */}
       <div className="flex shrink-0 items-center justify-between gap-3 border-t border-white/10 bg-background/55 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-md sm:px-5">
-        <p className="text-sm text-muted-foreground">{selected.size} chosen</p>
-        <div className="flex items-center gap-2">
-          {!mandatory && (
-            <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={saving}>
-              Not yet
-            </Button>
+        <div className="flex min-w-0 items-center gap-2.5" aria-live="polite">
+          {chosen.length > 0 && (
+            <div aria-hidden="true" className="flex -space-x-2">
+              {chosen.slice(0, 4).map((entry) => (
+                <img
+                  key={entry.key}
+                  src={LEVEL_META[entry.level].image}
+                  alt=""
+                  title={entry.displayName}
+                  className="size-7 rounded-full border-2 border-[#0E1530] object-cover object-[50%_18%]"
+                />
+              ))}
+              {chosen.length > 4 && (
+                <span className="flex size-7 items-center justify-center rounded-full border-2 border-[#0E1530] bg-white/15 text-[11px] font-semibold tabular-nums text-white">
+                  +{chosen.length - 4}
+                </span>
+              )}
+            </div>
           )}
+          <p className="truncate text-sm text-muted-foreground">
+            <span className="font-display text-xl leading-none tabular-nums text-foreground">{chosen.length}</span>{' '}
+            {chosen.length === 1 ? 'course' : 'courses'} chosen
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
           <Button onClick={handleSave} disabled={saving || !dirty}>
             {saving ? 'Setting out…' : 'Set out'}
           </Button>
