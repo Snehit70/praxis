@@ -1,12 +1,15 @@
+import { lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import HomePage from './pages/HomePage';
 import LandingPage from './pages/LandingPage';
-import ExamPage from './pages/ExamPage';
-import CoursePage from './pages/CoursePage';
-import PaperPage from './pages/PaperPage';
-import SearchPage from './pages/SearchPage';
-import SavedPage from './pages/SavedPage';
-import ProfilePage from './pages/ProfilePage';
+
+// Signed-in pages load on demand so the public landing page doesn't ship them.
+const HomePage = lazy(() => import('./pages/HomePage'));
+const ExamPage = lazy(() => import('./pages/ExamPage'));
+const CoursePage = lazy(() => import('./pages/CoursePage'));
+const PaperPage = lazy(() => import('./pages/PaperPage'));
+const SearchPage = lazy(() => import('./pages/SearchPage'));
+const SavedPage = lazy(() => import('./pages/SavedPage'));
+const ProfilePage = lazy(() => import('./pages/ProfilePage'));
 
 import RootLayout from '@/components/layout/RootLayout';
 import RequireAuth from '@/components/RequireAuth';
@@ -27,7 +30,7 @@ function App() {
             <Route path="sign-in/*" element={<LandingPage />} />
             <Route path="sign-up/*" element={<LandingPage />} />
             {/* Everything else requires a signed-in user. */}
-            <Route element={<RequireAuth />}>
+            <Route element={<Suspense fallback={null}><RequireAuth /></Suspense>}>
               <Route path="home" element={<HomePage />} />
               <Route path="search" element={<SearchPage />} />
               <Route path="profile" element={<ProfilePage />} />
