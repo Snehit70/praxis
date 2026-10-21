@@ -215,7 +215,7 @@ export function CourseSelector({
 
       {/* Filter chips + search */}
       <div className="shrink-0 space-y-3 border-b border-white/10 px-4 pb-3 sm:px-5">
-        <div className="flex gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="flex flex-wrap gap-1.5">
           <FilterChip active={filter === 'All'} onClick={() => setFilter('All')}>
             All
           </FilterChip>
@@ -243,7 +243,7 @@ export function CourseSelector({
         </div>
 
         <div className="relative">
-          <Search aria-hidden="true" className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Search aria-hidden="true" className="absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-white/60" />
           <input
             type="text"
             value={query}
@@ -267,7 +267,7 @@ export function CourseSelector({
       </div>
 
       {/* The deck — one card at a time, arrows either side. */}
-      <div className="relative flex min-h-0 flex-1 flex-col items-center justify-center gap-3 overflow-hidden px-4 py-5 sm:px-5">
+      <div className="relative flex min-h-[clamp(440px,62vh,540px)] min-w-0 flex-1 flex-col items-center justify-center gap-3 overflow-hidden px-4 py-5 sm:px-5">
         {current ? (
           <>
             <div className="relative flex w-full items-center justify-center">
@@ -308,13 +308,22 @@ export function CourseSelector({
             </p>
           </>
         ) : (
-          <div className="flex flex-col items-center py-8 text-center">
-            <div className="relative h-28 w-44 overflow-hidden rounded-xl border border-border">
-              <img src={emptySearchArt} alt="" aria-hidden="true" className="h-full w-full object-cover object-center" />
-              <div className="absolute inset-0 bg-gradient-to-t from-card/80 to-transparent" />
+          <div className="relative flex h-[clamp(348px,54vh,452px)] w-[clamp(256px,68vw,308px)] flex-col items-center justify-end overflow-hidden rounded-2xl border border-dashed border-white/25 p-6 text-center">
+            <img src={emptySearchArt} alt="" aria-hidden="true" className="absolute inset-0 h-full w-full object-cover object-center opacity-60" />
+            <div className="absolute inset-0 bg-gradient-to-t from-[#0E1530] via-[#0E1530]/60 to-[#0E1530]/10" />
+            <div className="relative">
+              <p className="font-display text-2xl text-foreground">No road by that name</p>
+              <p className="mt-1 text-sm text-white/70">Try a broader name or clear the search.</p>
+              {query && (
+                <button
+                  type="button"
+                  onClick={() => setQuery('')}
+                  className="mt-4 rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-white/20"
+                >
+                  Clear search
+                </button>
+              )}
             </div>
-            <p className="mt-4 text-sm font-medium text-foreground">No road by that name</p>
-            <p className="mt-1 text-sm text-muted-foreground">Try a broader name or code.</p>
           </div>
         )}
 
@@ -595,7 +604,7 @@ function DeckArrow({
       disabled={disabled}
       aria-label={dir === 'prev' ? 'Previous road' : 'Next road'}
       className={cn(
-        'flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/15 bg-white/[0.05] text-foreground backdrop-blur-md transition-colors hover:bg-white/[0.12] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50 disabled:pointer-events-none disabled:opacity-25',
+        'flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/15 bg-white/[0.05] text-foreground backdrop-blur-md transition-[background-color,transform] hover:bg-white/[0.12] motion-safe:active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50 disabled:pointer-events-none disabled:opacity-25',
         className,
       )}
     >
