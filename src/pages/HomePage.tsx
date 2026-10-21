@@ -1,13 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth, useUser, UserButton } from '@clerk/clerk-react';
-import { ArrowRight, BookMarked, BookOpen, Clock, Pencil, Plus, Search, UserRound, X } from 'lucide-react';
+import { ArrowRight, BookMarked, Clock, Pencil, Plus, Search, UserRound, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StatePanel } from '@/components/ui/state-panel';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { CourseCard } from '@/components/CourseCard';
+import { PraxisBrand } from '@/components/PraxisBrand';
 import { CourseSelector } from '@/components/CourseSelector';
 import { Reveal } from '@/components/Reveal';
 import { useEnrolledCourses } from '@/hooks/useEnrolledCourses';
@@ -63,45 +64,27 @@ const asset = (name: string): string => {
 // (Ep.11), web-optimized to webp. Continuity with the landing/sign-in: Himmel
 // handed you off, Frieren is the companion you travel with now. Greeting sits
 // over the open field to the lower-left; CSS object-cover keeps her centered.
-const headerImg = asset('home-road.webp');
 // Empty state: a quiet, contemplative frame inviting the first selection.
 const emptyArt = asset('feature-frieren-pray.jpeg');
-// Page backdrop: the Ep.18 First-Class Mage Exam frame held behind the whole
-// dashboard — the test ahead is the ground you stand on. webp, dimmed enough to
-// keep the dark UI legible but present enough to actually read (DESIGN.md).
-const pageBg = asset('home-ground.webp');
+// Full-page scene: a crossroads at early afternoon, Frieren, Fern and Stark resting
+// by the signpost while the roads (your courses) fan out under the cards.
+const sceneImg = asset('home-scene.webp');
+
+// Shared content column so hero chrome, greeting and the card grid line up.
+const column = 'mx-auto w-full max-w-6xl px-4 md:px-8';
 
 /** Inline `--rise-i` style so an element takes its place in the stagger cascade. */
 const rise = (i: number) => ({ '--rise-i': i }) as React.CSSProperties;
 
-/**
- * Sparse drifting light-motes over the hero field — same atmosphere as the
- * landing page (continuity: the road you return to). Fixed module-level config
- * so positions stay stable across renders; the `.praxis-mote` class self-gates
- * on reduced-motion (index.css).
- */
-const heroMotes = [
-  { left: '12%', top: '34%', size: 7, dur: 14, delay: 0, op: 0.5 },
-  { left: '26%', top: '58%', size: 5, dur: 17, delay: 2.4, op: 0.4 },
-  { left: '41%', top: '40%', size: 9, dur: 19, delay: 4.8, op: 0.52 },
-  { left: '63%', top: '30%', size: 6, dur: 15, delay: 1.6, op: 0.46 },
-  { left: '78%', top: '52%', size: 8, dur: 18, delay: 3.6, op: 0.48 },
-  { left: '90%', top: '36%', size: 6, dur: 16, delay: 6, op: 0.42 },
-];
-
-/** Frosted-glass control styling for use over imagery (DESIGN.md secondary CTA). */
-const glassControl =
-  'inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 text-sm font-medium text-white backdrop-blur-md transition-colors hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50';
-
 function DashboardSkeleton() {
   return (
     <div role="status" aria-live="polite" aria-label="Loading your courses">
-      <Skeleton className="h-[clamp(360px,48vh,520px)] w-full" />
-      <div className="container mx-auto space-y-6 px-4 py-6 md:px-8 md:py-8">
+      <Skeleton className="h-[clamp(300px,40vh,440px)] w-full rounded-none" />
+      <div className={cn(column, 'space-y-6 py-8')}>
         <Skeleton className="h-9 w-72" />
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {[1, 2, 3, 4, 5, 6].map((i) => (
-            <Skeleton key={i} className="h-32 w-full rounded-xl" />
+            <Skeleton key={i} className="aspect-[16/10] w-full rounded-2xl" />
           ))}
         </div>
       </div>
@@ -132,25 +115,6 @@ export default function HomePage() {
   const pendingEnrolled = useRef(new Set<string>());
   // Slow scroll-parallax on the fixed page backdrop (desktop, motion-safe only).
   const bgParallaxRef = useScrollParallax<HTMLImageElement>();
-
-  // Condensed sticky nav: the hero carries its own top row, so chrome scrolls
-  // away with it. A sentinel just below that row tells us when the in-hero nav
-  // has left the viewport — then we slide a compact bar in to replace it.
-  // Callback ref (not an effect) so the observer attaches the moment the
-  // sentinel mounts — the hero only renders after the catalogue loads, so an
-  // empty-deps effect would fire too early (while the skeleton is up) and miss.
-  const [showStickyNav, setShowStickyNav] = useState(false);
-  const stickyObserver = useRef<IntersectionObserver | null>(null);
-  const heroSentinelRef = useCallback((node: HTMLDivElement | null) => {
-    stickyObserver.current?.disconnect();
-    if (!node || typeof IntersectionObserver === 'undefined') return;
-    const io = new IntersectionObserver(
-      ([entry]) => setShowStickyNav(!(entry?.isIntersecting ?? true)),
-      { threshold: 0 },
-    );
-    io.observe(node);
-    stickyObserver.current = io;
-  }, []);
 
   useEffect(() => {
     logger.info('Dashboard mounted');
@@ -252,158 +216,61 @@ export default function HomePage() {
 
   return (
     <div className="relative isolate">
-      {/* Page backdrop — the soft Ep.18 exam frame held faintly behind the
-          dashboard as cinematic ground. Dimmed hard (near-solid by the lower
-          half) so it's only a whisper of warmth, never a prominent blob. The
-          frame drifts on a slow scroll parallax (desktop only) for depth, and a
-          warm bleed carries the hero's golden field down so hero + dashboard
-          read as one continuous plane rather than two stacked rooms. */}
-      <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+      {/* One continuous scene behind the whole dashboard: open sky over the
+          greeting, the party at the signpost on the right, and the meadow
+          under the cards. Fixed so long lists keep the same ground; the floor
+          scrim deepens only where cards sit. */}
+      <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 overflow-hidden bg-background">
         <img
           ref={bgParallaxRef}
-          src={pageBg}
+          src={sceneImg}
           alt=""
-          className="absolute inset-x-0 -top-[15%] h-[130%] w-full object-cover object-center will-change-transform"
+          fetchPriority="high"
+          className="absolute inset-x-0 -top-[6%] h-[112%] w-full object-cover object-[62%_40%] will-change-transform"
           style={{ transform: 'translate3d(0, var(--scroll-shift, 0px), 0)' }}
         />
-        <div className="absolute inset-0 bg-gradient-to-b from-background/55 via-background/72 to-background/90" />
-        {/* Vignette — transparent over the upper-centre (keeps the warm bleed +
-            parallax frame readable), deepening to solid toward the edges and
-            bottom where the backdrop's bright orange patch otherwise peeks
-            through between the lower cards. Frames the content, settles the blob. */}
-        <div
-          className="absolute inset-0"
-          style={{
-            background:
-              'radial-gradient(125% 85% at 50% 16%, transparent 44%, var(--background) 100%)',
-          }}
-        />
-        {/* Warm bleed — `screen` blend so the hero's gold *adds* light to the
-            backdrop instead of laying a translucent brown film over it (which is
-            what normal compositing of warm-over-dark produces). One clean peak
-            just below the seam, fading out by the lower page. */}
-        <div
-          className="absolute inset-0 mix-blend-screen"
-          style={{
-            background:
-              'linear-gradient(to bottom, rgba(214,178,110,0) 8%, rgba(214,178,110,0.30) 40%, rgba(214,178,110,0.12) 60%, rgba(214,178,110,0) 82%)',
-          }}
-        />
+        <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-black/45 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-r from-black/35 via-transparent to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-b from-transparent from-35% via-background/40 via-60% to-background/80" />
       </div>
 
-      {/* Condensed sticky nav — replaces the in-hero chrome once it scrolls off.
-          Slides + fades in; hidden (and inert) while you're up in the hero. */}
-      <div
-        className={cn(
-          'fixed inset-x-0 top-0 z-50 border-b border-border bg-background/90 backdrop-blur-md transition-all duration-300 ease-out',
-          showStickyNav
-            ? 'translate-y-0 opacity-100'
-            : 'pointer-events-none -translate-y-full opacity-0 motion-reduce:translate-y-0',
-        )}
-      >
-        <div className="container mx-auto flex h-14 items-center px-4 md:px-8">
+      {/* Same bar as every other page (RootLayout): glass over the scene,
+          container width, quiet text links. */}
+      <header className="sticky top-0 z-50 bg-black/20 backdrop-blur-md">
+        <div className="container relative mx-auto flex h-14 items-center px-4 md:px-8">
           <Link to="/" className="flex items-center gap-2.5 transition-opacity hover:opacity-80">
-            <BookOpen className="h-5 w-5 text-primary" />
-            <span className="text-base font-semibold tracking-tight">Praxis</span>
+            <PraxisBrand nameClassName="text-foreground" />
           </Link>
-          <div className="ml-auto flex items-center gap-2">
+          <nav className="ml-auto flex items-center gap-4">
             {BOOKMARKS_ENABLED && (
-              <Link
-                to="/saved"
-                className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-              >
+              <Link to="/saved" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
                 <BookMarked className="h-4 w-4" />
-                <span className="hidden sm:inline">Bookmarks</span>
+                <span className="hidden sm:inline">Saved papers</span>
               </Link>
             )}
             <button
               type="button"
               onClick={() => setSelectorOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+              className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
             >
               <Pencil className="h-4 w-4" />
               <span className="hidden sm:inline">Companions</span>
             </button>
-            <Link to="/profile" className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground">
+            <Link to="/profile" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
               <UserRound className="h-4 w-4" />
               <span className="hidden sm:inline">Profile</span>
             </Link>
             <UserButton afterSignOutUrl="/" userProfileMode="navigation" userProfileUrl="/profile" />
-          </div>
+          </nav>
         </div>
-      </div>
+      </header>
 
       <Tabs defaultValue="mine">
-        {/* ── Full-bleed cinematic hero — absorbs the top nav (no separate bar):
-            Praxis + account sit over the image, greeting lower-left, the section
-            tabs lower-right, so the whole page stays compact. ── */}
-        <header className="relative w-full overflow-hidden">
-          <div className="relative h-[clamp(360px,48vh,520px)] w-full">
-            <img
-              src={headerImg}
-              alt=""
-              aria-hidden="true"
-              fetchPriority="high"
-              className="animate-kenburns absolute inset-0 h-full w-full object-cover object-center"
-            />
-            {/* Legibility scrims: strong floor (greeting + tabs), top (nav), left. */}
-            <div className="absolute inset-0 bg-gradient-to-t from-background via-background/20 to-transparent" />
-            <div className="absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-background/75 to-transparent" />
-            <div className="absolute inset-0 bg-gradient-to-r from-background/55 via-transparent to-transparent" />
-
-            {/* Drifting light-motes — quiet atmosphere over the field (continuity
-                with the landing hero). Self-gates on reduced-motion. */}
-            <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
-              {heroMotes.map((m, i) => (
-                <span
-                  key={i}
-                  className="praxis-mote absolute rounded-full bg-white blur-[1px]"
-                  style={{
-                    left: m.left,
-                    top: m.top,
-                    width: m.size,
-                    height: m.size,
-                    ['--mote-opacity' as string]: m.op,
-                    animation: `praxis-mote ${m.dur}s ease-in-out ${m.delay}s infinite`,
-                  }}
-                />
-              ))}
-            </div>
-
-            {/* Top row — Praxis left, actions + account right (the old navbar). */}
-            <div className="absolute inset-x-0 top-0 z-20 flex items-center justify-between px-4 py-4 md:px-8 md:py-5">
-              <Link
-                to="/"
-                className="flex items-center gap-2.5 text-foreground transition-opacity hover:opacity-80 [text-shadow:0_1px_10px_rgba(0,0,0,0.7)]"
-              >
-                <BookOpen className="h-5 w-5 text-primary" />
-                <span className="text-lg font-semibold tracking-tight">Praxis</span>
-              </Link>
-              <div className="flex items-center gap-2">
-                {BOOKMARKS_ENABLED && (
-                  <Link to="/saved" className={glassControl}>
-                    <BookMarked className="h-4 w-4" />
-                    <span className="hidden sm:inline">Bookmarks</span>
-                  </Link>
-                )}
-                <button type="button" onClick={() => setSelectorOpen(true)} className={glassControl}>
-                  <Pencil className="h-4 w-4" />
-                  <span className="hidden sm:inline">Companions</span>
-                </button>
-                <Link to="/profile" className={glassControl}>
-                  <UserRound className="h-4 w-4" />
-                  <span className="hidden sm:inline">Profile</span>
-                </Link>
-                <UserButton afterSignOutUrl="/" userProfileMode="navigation" userProfileUrl="/profile" />
-              </div>
-            </div>
-
-            {/* Sentinel just below the hero's nav row: once it scrolls out of
-                view, the condensed sticky bar takes over. */}
-            <div ref={heroSentinelRef} aria-hidden="true" className="absolute left-0 top-16 h-px w-px" />
-
-            {/* Bottom cluster — greeting (left) + section tabs (right). */}
-            <div className="absolute inset-x-0 bottom-0 z-10 flex flex-col gap-4 p-5 md:flex-row md:items-end md:justify-between md:p-8">
+        {/* ── Hero: the greeting on the open sky of the page scene. ── */}
+        <section className="relative w-full">
+          <div className="relative h-[clamp(244px,calc(40vh-56px),384px)] w-full">
+            {/* Bottom cluster — greeting on the open field (tabs live below the hero). */}
+            <div className={cn(column, 'absolute inset-x-0 bottom-0 z-10 flex flex-col gap-4 pb-6 md:flex-row md:items-end md:justify-between md:pb-8')}>
               <Reveal className="max-w-xl">
                 <h1 style={rise(0)} className="praxis-rise font-display text-3xl font-normal leading-[1.05] tracking-tight text-foreground sm:text-4xl md:text-5xl">
                   {greetingName ? `There you are, ${greetingName}` : 'There you are'}
@@ -431,36 +298,39 @@ export default function HomePage() {
                 )}
               </Reveal>
 
-              <TabsList className="inline-flex gap-1 self-start rounded-lg border border-white/15 bg-black/35 p-1 backdrop-blur-md md:self-auto">
-                <TabsTrigger
-                  value="mine"
-                  className="rounded-md px-4 py-1.5 text-sm text-white/80 transition-colors data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
-                >
-                  Companions
-                </TabsTrigger>
-                <TabsTrigger
-                  value="archive"
-                  className="rounded-md px-4 py-1.5 text-sm text-white/80 transition-colors data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
-                >
-                  The World
-                </TabsTrigger>
-              </TabsList>
             </div>
           </div>
-        </header>
+        </section>
 
         {/* ── Content below the hero ── */}
-        <div className="container mx-auto px-4 py-6 md:px-8 md:py-8">
+        <div className={cn(column, 'py-6 md:py-8')}>
+          <div className="mb-6 flex items-center justify-between gap-4">
+          <TabsList className="squircle inline-flex gap-1 rounded-2xl border border-white/10 bg-white/[0.04] p-1">
+            <TabsTrigger
+              value="mine"
+              className="squircle h-9 rounded-xl px-4 text-sm text-white/80 transition-colors hover:text-white data-[state=active]:bg-white data-[state=active]:text-[#141414]"
+            >
+              Companions
+            </TabsTrigger>
+            <TabsTrigger
+              value="archive"
+              className="squircle h-9 rounded-xl px-4 text-sm text-white/80 transition-colors hover:text-white data-[state=active]:bg-white data-[state=active]:text-[#141414]"
+            >
+              The World
+            </TabsTrigger>
+          </TabsList>
+          </div>
 
         {/* Companions — the courses you travel with this term. */}
-        <TabsContent value="mine" className="space-y-4">
+        <TabsContent value="mine" className="space-y-5">
           {enrolledCourses.length > 0 && (
-            <p className="text-sm text-muted-foreground">
-              The courses you&apos;re taking this term.
+            <p className="text-sm text-white/75 [text-shadow:0_1px_8px_rgba(0,0,0,0.5)]">
+              The courses you&apos;re taking this term
+              <span className="tabular-nums text-white/55"> · {enrolledCourses.length}</span>
             </p>
           )}
           {enrolledCourses.length === 0 ? (
-            <div className="relative flex min-h-[380px] overflow-hidden rounded-2xl border border-border md:min-h-[440px]">
+            <div className="squircle relative flex min-h-[380px] overflow-hidden rounded-3xl border border-border md:min-h-[440px]">
               <img
                 src={emptyArt}
                 alt=""
@@ -487,7 +357,7 @@ export default function HomePage() {
               </div>
             </div>
           ) : (
-            <Reveal className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <Reveal className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {/* Companions tiles are clean — no per-tile toggle; manage via the Companions button. */}
               {enrolledCourses.map((course, i) => (
                 <CourseCard key={course.key} course={course} enrolled revealIndex={i} />
@@ -510,7 +380,7 @@ export default function HomePage() {
               placeholder="Search all courses..."
               autoComplete="off"
               aria-label="Search all courses"
-              className="w-full rounded-lg border border-border bg-card py-2.5 pl-10 pr-9 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+              className="squircle h-11 w-full rounded-xl border border-border bg-card pl-10 pr-9 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
             />
             {archiveQuery && (
               <button
@@ -547,7 +417,7 @@ export default function HomePage() {
                           alt=""
                           aria-hidden="true"
                           loading="lazy"
-                          className={cn('h-9 w-9 rounded-lg object-cover object-top ring-2', meta.ring)}
+                          className={cn('squircle h-9 w-9 rounded-xl object-cover object-top ring-2', meta.ring)}
                         />
                         <div>
                           <h2 className={cn('text-lg font-semibold', meta.text)}>{meta.label}</h2>
@@ -556,7 +426,7 @@ export default function HomePage() {
                           </p>
                         </div>
                       </div>
-                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                         {entries.map((course, i) => (
                           <CourseCard
                             key={course.key}
