@@ -126,7 +126,24 @@ export function CourseSelector({
   const clampedIndex = deck.length ? Math.min(index, deck.length - 1) : 0;
   const current = deck[clampedIndex] ?? null;
 
+  // The card being replaced stays mounted for one exit animation (skipped under
+  // reduced motion). A newer move simply replaces it, so no ghost can pile up.
+  const [leaving, setLeaving] = useState<{ entry: CatalogueEntry; dir: 1 | -1; id: number } | null>(null);
+  const leaveId = useRef(0);
+  useEffect(() => {
+    if (!leaving) return;
+    const t = window.setTimeout(() => setLeaving(null), 460);
+    return () => window.clearTimeout(t);
+  }, [leaving]);
+  useEffect(() => {
+    setLeaving(null);
+  }, [filter, query]);
+
   const go = (delta: number) => {
+    const next = Math.min(deck.length - 1, Math.max(0, clampedIndex + delta));
+    if (current && next !== clampedIndex && !opening && !prefersReducedMotion()) {
+      setLeaving({ entry: current, dir: delta >= 0 ? 1 : -1, id: ++leaveId.current });
+    }
     setNavDir(delta >= 0 ? 1 : -1);
     setIndex((i) => Math.min(deck.length - 1, Math.max(0, i + delta)));
   };
@@ -291,6 +308,24 @@ export function CourseSelector({
                     onToggle={toggle}
                   />
                 </DeckSlot>
+                {leaving && (
+                  <div
+                    key={leaving.id}
+                    aria-hidden="true"
+                    style={{ '--lvl': LEVEL_META[leaving.entry.level].color } as React.CSSProperties}
+                    className={cn(
+                      'pointer-events-none absolute inset-0 z-20 flex items-center justify-center',
+                      leaving.dir > 0 ? 'deck-out-next' : 'deck-out-prev',
+                    )}
+                  >
+                    <CourseCardFace
+                      entry={leaving.entry}
+                      charged={selected.has(leaving.entry.key)}
+                      charging={false}
+                      onToggle={() => {}}
+                    />
+                  </div>
+                )}
                 {!opening && <PeekCard side="next" entry={deck[clampedIndex + 1]} onClick={() => go(1)} />}
               </div>
               <DeckArrow

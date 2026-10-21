@@ -268,6 +268,20 @@
   }
 }
 
+@keyframes deck-out-next {
+  to {
+    opacity: 0;
+    transform: perspective(900px) translate3d(-70px, 0, 0) rotateY(16deg) scale(0.93);
+  }
+}
+
+@keyframes deck-out-prev {
+  to {
+    opacity: 0;
+    transform: perspective(900px) translate3d(70px, 0, 0) rotateY(-16deg) scale(0.93);
+  }
+}
+
 @keyframes deck-in-fade {
   from {
     opacity: 0.15;
@@ -278,6 +292,12 @@
 }
 
 @media (prefers-reduced-motion: no-preference) {
+  .deck-out-next {
+    animation: deck-out-next 0.3s cubic-bezier(0.4, 0, 1, 1) both;
+  }
+  .deck-out-prev {
+    animation: deck-out-prev 0.3s cubic-bezier(0.4, 0, 1, 1) both;
+  }
   .deck-mode-next {
     animation: deck-in-next 0.46s cubic-bezier(0.16, 1.1, 0.3, 1) both;
   }
