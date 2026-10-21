@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import LandingPage from './pages/LandingPage';
+import NotFoundPage from './pages/NotFoundPage';
 
 // Signed-in pages load on demand so the public landing page doesn't ship them.
 const HomePage = lazy(() => import('./pages/HomePage'));
@@ -39,6 +40,7 @@ function App() {
               <Route path="exam/:examId/course/:courseId" element={<CoursePage />} />
               <Route path="paper/:paperId" element={<PaperPage />} />
             </Route>
+            <Route path="*" element={<NotFoundPage />} />
           </Route>
         </Routes>
       </Router>
