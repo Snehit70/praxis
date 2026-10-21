@@ -13,7 +13,7 @@ import {
   type PaperBundle,
   type PaperSummary,
 } from '@/lib/api';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Skeleton, SkeletonRegion } from '@/components/ui/skeleton';
 import { StatePanel } from '@/components/ui/state-panel';
 import { cn } from '@/lib/utils';
 import { ArcaneSigil } from '@/components/ArcaneSigil';
@@ -345,32 +345,79 @@ function BundleCard({
   );
 }
 
-function LoadingSkeleton({ examId, examName }: { examId: string; examName: string | null }) {
+/** A face-down paper card: same gold frame and proportions as the real deck. */
+function PaperCardSkeleton() {
   return (
-    <div className="relative isolate space-y-8" role="status" aria-live="polite" aria-label="Loading paper bundles">
-      <ExamHallBackdrop />
-      <header className="space-y-4">
-        <Button variant="ghost" size="sm" asChild className="gap-1.5 -ml-2 text-muted-foreground">
-          <Link to={`/exam/${examId}`}>
-            <ArrowLeft className="h-4 w-4" />
-            {examName}
-          </Link>
-        </Button>
-        <div>
-          <Skeleton className="h-4 w-48 mb-2" />
-          <Skeleton className="h-8 w-64 mb-2" />
-          <Skeleton className="h-4 w-24" />
-        </div>
-      </header>
-      <div className="space-y-6">
-        {[1, 2, 3].map((i) => (
-          <div key={i} className="rounded-lg border border-border bg-card p-4">
-            <Skeleton className="h-6 w-40 mb-2" />
-            <Skeleton className="h-4 w-28" />
-          </div>
+    <div className="relative flex aspect-[5/7] flex-col overflow-hidden rounded-2xl border border-[rgba(214,178,110,0.3)] bg-[#15120c]/80 p-4 shadow-[0_18px_40px_-18px_rgba(0,0,0,0.7),inset_0_0_0_1px_rgba(214,178,110,0.1)]">
+      <div className="flex justify-between">
+        <Skeleton className="h-5 w-20 rounded-full" />
+        <Skeleton className="h-5 w-12 rounded-full" />
+      </div>
+      <div className="flex-1" />
+      <Skeleton className="h-5 w-4/5 rounded-md" />
+      <Skeleton className="mt-2 h-5 w-1/2 rounded-md" />
+      <div className="mt-3 grid grid-cols-3 gap-1.5">
+        {[0, 1, 2].map((i) => (
+          <Skeleton key={i} className="h-12 rounded-lg" />
         ))}
       </div>
+      <Skeleton className="mt-3 h-9 w-full rounded-lg" />
     </div>
+  );
+}
+
+/** Two bundle rows of face-down cards. */
+function BundlesSkeleton() {
+  return (
+    <div className="space-y-12">
+      {[4, 3].map((cards, section) => (
+        <section key={section} className="space-y-4">
+          <div className="flex items-end justify-between gap-4 border-b border-white/15 pb-2">
+            <Skeleton className="h-7 w-48 rounded-md" />
+            <Skeleton className="h-3 w-12 rounded-full" />
+          </div>
+          <div className="grid grid-cols-1 gap-5 min-[480px]:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5">
+            {Array.from({ length: cards }, (_, i) => (
+              <PaperCardSkeleton key={i} />
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+function LoadingSkeleton({ onBack }: { onBack: () => void }) {
+  return (
+    <SkeletonRegion label="Loading paper bundles" tone="glass" className="relative isolate space-y-8">
+      <ExamHallBackdrop />
+      <header className="space-y-4">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onBack}
+          className="gap-1.5 -ml-2 text-white/75 hover:bg-white/10 hover:text-white"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back
+        </Button>
+        <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+          <div className="space-y-3">
+            <div className="flex items-center gap-3.5">
+              <Skeleton className="hidden h-14 w-14 shrink-0 rounded-2xl sm:block" />
+              <div className="space-y-2">
+                <Skeleton className="h-3 w-24 rounded-full" />
+                <Skeleton className="h-10 w-64 rounded-lg sm:h-12 sm:w-80" />
+                <Skeleton className="h-3.5 w-40 rounded-full" />
+              </div>
+            </div>
+            <Skeleton className="h-11 w-56 rounded-xl" />
+          </div>
+          <Skeleton className="h-11 w-full rounded-xl md:w-72" />
+        </div>
+      </header>
+      <BundlesSkeleton />
+    </SkeletonRegion>
   );
 }
 
@@ -527,7 +574,7 @@ export default function CoursePage() {
   // course, exam-type switches keep the chrome (backdrop, header, tabs) mounted
   // and only the list region below reloads — see the list switch in the return.
   if (loading && !course) {
-    return <LoadingSkeleton examId={examId!} examName={examName} />;
+    return <LoadingSkeleton onBack={goBack} />;
   }
 
   if (loadFailed && !course) {
@@ -651,6 +698,10 @@ export default function CoursePage() {
           )}
           announce
         />
+      ) : loading && bundles.length === 0 ? (
+        <SkeletonRegion label="Loading papers" tone="glass">
+          <BundlesSkeleton />
+        </SkeletonRegion>
       ) : bundles.length === 0 ? (
         <StatePanel
           compact

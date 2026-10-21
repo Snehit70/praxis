@@ -5,7 +5,7 @@ import { SignInTrigger } from '@/components/auth/AuthDialog';
 import { Bookmark } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { StatePanel } from '@/components/ui/state-panel';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Skeleton, SkeletonRegion } from '@/components/ui/skeleton';
 import { getSavedPapers, type SavedPaper } from '@/lib/api';
 import { getExamSlugFromUuid } from '@/lib/examMapping';
 import { getDisplayCourseName } from '@/lib/courseMapping';
@@ -55,11 +55,15 @@ function SavedList() {
 
   if (papers === null) {
     return (
-      <div className="space-y-3" role="status" aria-live="polite" aria-label="Loading saved papers">
+      <SkeletonRegion label="Loading saved papers" className="space-y-3">
         {[1, 2, 3].map((i) => (
-          <Skeleton key={i} className="h-20 w-full rounded-xl" />
+          <div key={i} className="rounded-xl border border-border bg-card p-4">
+            <Skeleton className="h-3.5 w-24 rounded-full" />
+            <Skeleton className="mt-2 h-5 w-2/3 rounded-md" />
+            <Skeleton className="mt-2 h-3.5 w-1/3 rounded-full" />
+          </div>
         ))}
-      </div>
+      </SkeletonRegion>
     );
   }
 

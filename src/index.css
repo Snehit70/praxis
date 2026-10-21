@@ -945,6 +945,71 @@
   }
 }
 
+/* Skeletons — blocks fade in after a short beat (fast loads never flash grey),
+   then a soft light band sweeps each block. Blocks mount together and share one
+   clock, so the whole layout breathes in unison rather than flickering. (A
+   viewport-fixed band would be nicer, but fixed backgrounds fall back to
+   per-element under the transformed/blurred containers these pages use.) */
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background-color: var(--sk-base);
+  animation: skeleton-in 320ms ease-out 140ms backwards;
+}
+.skeleton[data-tone="muted"] {
+  --sk-base: color-mix(in oklab, var(--foreground) 7%, transparent);
+  --sk-hi: color-mix(in oklab, var(--foreground) 14%, transparent);
+}
+.skeleton[data-tone="glass"] {
+  --sk-base: rgb(255 255 255 / 0.075);
+  --sk-hi: rgb(255 255 255 / 0.2);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.05);
+}
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(
+    100deg,
+    transparent 40%,
+    var(--sk-hi) 50%,
+    transparent 60%
+  );
+  background-size: 300% 100%;
+  background-repeat: no-repeat;
+  animation: skeleton-sweep 2.4s ease-in-out infinite;
+}
+
+/* For spinners that should only appear once a wait is actually noticeable. */
+.delayed-in {
+  animation: skeleton-in 320ms ease-out 400ms backwards;
+}
+
+@keyframes skeleton-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes skeleton-sweep {
+  0% {
+    background-position: 100% 0;
+  }
+  75%,
+  100% {
+    background-position: 0% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton,
+  .delayed-in {
+    animation: none;
+  }
+  .skeleton::after {
+    display: none;
+  }
+}
+
 /* Dialog entrance — desktop springs up from 96% scale; mobile rises as a sheet.
    Scoped via a className on the panel, so the shared Dialog primitive is
    untouched. Backdrop keeps its own .animate-fade-in. */

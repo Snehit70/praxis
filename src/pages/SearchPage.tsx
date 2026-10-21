@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, FileSearch, Search } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Skeleton, SkeletonRegion } from '@/components/ui/skeleton';
 import { StatePanel } from '@/components/ui/state-panel';
 import {
   getSearchResults,
@@ -80,7 +80,7 @@ function PaperResultCard({ paper }: { paper: SearchPaperResult }) {
 
 function SearchSkeleton() {
   return (
-    <div className="space-y-8" role="status" aria-live="polite" aria-label="Loading search results">
+    <SkeletonRegion label="Loading search results" className="space-y-8">
       {[1, 2].map((section) => (
         <div key={section} className="space-y-4">
           <Skeleton className="h-4 w-24" />
@@ -95,7 +95,7 @@ function SearchSkeleton() {
           </div>
         </div>
       ))}
-    </div>
+    </SkeletonRegion>
   );
 }
 

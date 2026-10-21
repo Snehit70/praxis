@@ -45,7 +45,7 @@ import {
   type SavedPracticeRunSession,
   type SelectedAnswers,
 } from '@/lib/practiceRun';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Skeleton, SkeletonRegion } from '@/components/ui/skeleton';
 import { StatePanel } from '@/components/ui/state-panel';
 import { SaveButton } from '@/components/SaveButton';
 import { DownloadPdfButton } from '@/components/DownloadPdfButton';
@@ -100,34 +100,74 @@ function formatRemainingTime(totalSeconds: number | null) {
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
-function LoadingSkeleton() {
+/**
+ * Stand-in for the cover briefing (the page a paper opens on): the same hall,
+ * the same two-page tome, with the briefing and the run choice still blank.
+ */
+function LoadingSkeleton({ onBack }: { onBack: () => void }) {
   return (
-    <div className="max-w-3xl mx-auto space-y-6 px-4 sm:px-0" role="status" aria-live="polite" aria-label="Loading paper">
-      <Skeleton className="h-4 w-24" />
-      <div>
-        <Skeleton className="h-8 w-64 mb-2" />
-        <Skeleton className="h-4 w-48" />
-      </div>
-      <Skeleton className="h-2 w-full rounded-full" />
-      <div className="space-y-4">
-        {[1, 2, 3].map((i) => (
-          <div key={i} className="rounded-xl border border-border bg-card p-5 sm:p-6">
-            <div className="flex gap-3 sm:gap-4">
-              <Skeleton className="h-8 w-8 rounded-lg flex-shrink-0" />
-              <div className="flex-1 space-y-3">
-                <Skeleton className="h-5 w-full" />
-                <Skeleton className="h-4 w-3/4" />
-                <div className="space-y-2 pt-2">
-                  {[1, 2, 3, 4].map((j) => (
-                    <Skeleton key={j} className="h-12 w-full rounded-lg" />
-                  ))}
+    <SkeletonRegion label="Loading paper" tone="glass" className="relative isolate flex min-h-[calc(100vh-14rem)] w-full flex-col">
+      <HallBackdrop />
+      <button
+        type="button"
+        onClick={onBack}
+        className="inline-flex w-fit items-center gap-1.5 rounded-md px-2 py-1 text-sm text-white/75 transition-colors [text-shadow:0_1px_8px_rgba(0,0,0,0.6)] hover:bg-white/10 hover:text-white"
+      >
+        <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+        Back to papers
+      </button>
+      <div className="flex flex-1 items-center justify-center py-6">
+        <div className="exam-tome relative isolate grid w-full max-w-5xl overflow-hidden rounded-2xl border border-[rgba(214,178,110,0.24)] backdrop-blur-sm lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+          <div className="relative z-10 px-6 py-7 sm:px-9 sm:py-9">
+            <Skeleton className="h-3 w-40 rounded-full" />
+            <Skeleton className="mt-2.5 h-3.5 w-28 rounded-full" />
+            <Skeleton className="mt-3 h-9 w-4/5 rounded-lg sm:h-10" />
+            <div className="mt-6 flex gap-8">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="space-y-2">
+                  <Skeleton className="h-3 w-16 rounded-full" />
+                  <Skeleton className="h-6 w-10 rounded-md" />
                 </div>
+              ))}
+            </div>
+            <Skeleton className="mt-7 h-3 w-24 rounded-full" />
+            <div className="mt-2.5 flex flex-wrap gap-2">
+              {[28, 24, 32].map((w) => (
+                <Skeleton key={w} className="h-8 rounded-md" style={{ width: `${w * 4}px` }} />
+              ))}
+            </div>
+            <Skeleton className="mt-7 h-3 w-24 rounded-full" />
+            <div className="mt-3 space-y-3">
+              {['92%', '84%', '88%'].map((w) => (
+                <div key={w} className="flex gap-3">
+                  <Skeleton className="h-6 w-6 shrink-0 rounded-md" />
+                  <Skeleton className="mt-1 h-4 rounded-full" style={{ width: w }} />
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="relative z-10 flex flex-col border-t border-[rgba(214,178,110,0.16)] bg-black/25 px-6 py-7 sm:px-9 sm:py-9 lg:border-l lg:border-t-0">
+            <Skeleton className="h-6 w-40 rounded-md" />
+            <div className="mt-5 space-y-3">
+              <Skeleton className="h-[74px] w-full rounded-xl" />
+              <Skeleton className="h-[74px] w-full rounded-xl" />
+            </div>
+            <div className="mt-auto pt-7">
+              <Skeleton className="h-3 w-24 rounded-full" />
+              <div className="mt-2.5 flex gap-2">
+                <Skeleton className="h-9 w-28 rounded-lg" />
+                <Skeleton className="h-9 w-36 rounded-lg" />
               </div>
             </div>
           </div>
-        ))}
+          <div className="tcard-frame" aria-hidden="true" />
+          <span className="tcard-corner tcard-corner-tl" aria-hidden="true" />
+          <span className="tcard-corner tcard-corner-tr" aria-hidden="true" />
+          <span className="tcard-corner tcard-corner-bl" aria-hidden="true" />
+          <span className="tcard-corner tcard-corner-br" aria-hidden="true" />
+        </div>
       </div>
-    </div>
+    </SkeletonRegion>
   );
 }
 
@@ -2474,7 +2514,7 @@ export default function PaperPage() {
   }
 
   if (loading) {
-    return <LoadingSkeleton />;
+    return <LoadingSkeleton onBack={goBack} />;
   }
 
   if (loadFailed || !paper) {

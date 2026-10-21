@@ -13,7 +13,7 @@ import {
   type DeduplicatedCourse,
 } from '@/lib/courseMapping';
 import { getExamCourses, type CourseSummary } from '@/lib/api';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Skeleton, SkeletonRegion } from '@/components/ui/skeleton';
 import { StatePanel } from '@/components/ui/state-panel';
 
 const LEVEL_INFO: Record<CourseLevel, { label: string; accent: string }> = {
@@ -84,7 +84,7 @@ function LevelSection({
 
 function LoadingSkeleton({ examName }: { examName: string | null }) {
   return (
-    <div className="space-y-8" role="status" aria-live="polite" aria-label="Loading exam courses">
+    <SkeletonRegion label="Loading exam courses" className="space-y-8">
       <header className="space-y-4">
         <Button variant="ghost" size="sm" asChild className="gap-1.5 -ml-2 text-muted-foreground">
           <Link to="/">
@@ -119,7 +119,7 @@ function LoadingSkeleton({ examName }: { examName: string | null }) {
           </div>
         ))}
       </div>
-    </div>
+    </SkeletonRegion>
   );
 }
 
