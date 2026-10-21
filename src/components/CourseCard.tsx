@@ -65,7 +65,7 @@ export function CourseCard({ course, enrolled = false, onToggleEnroll, revealInd
     >
       <div
         className={cn(
-          'squircle relative flex flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0d1220]/85 backdrop-blur-xl',
+          'squircle relative flex h-full flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0d1220]/85 backdrop-blur-xl',
           'transition-[transform,box-shadow,border-color] duration-150 ease-out will-change-transform',
           '[transform:rotateX(var(--rx,0deg))_rotateY(var(--ry,0deg))]',
           'group-hover:border-white/25 group-hover:shadow-2xl group-hover:shadow-black/50',
