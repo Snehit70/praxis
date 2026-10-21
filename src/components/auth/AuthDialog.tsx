@@ -32,12 +32,15 @@ const embeddedAppearance = {
     header: { display: "none" },
     footerAction: { display: "none" },
     footer: { background: "transparent" },
-    formButtonPrimary: "!rounded-xl !text-[0.95rem]",
-    // Raised surface so the social button reads as a distinct button against
-    // the dark card (Clerk's default is near-transparent and disappears here).
+    formButtonPrimary: "!rounded-2xl !text-[0.95rem]",
+    // White button so the Google option reads as its own, familiar choice
+    // next to the blue primary action.
     socialButtonsBlockButton:
-      "!rounded-xl !border !border-white/20 !bg-white/[0.08] !text-white/90 transition-colors hover:!bg-white/[0.16] hover:!border-white/30",
-    formFieldInput: { borderRadius: "0.6rem" },
+      "!h-11 !rounded-2xl !border !border-transparent !bg-white !text-[#1f1f1f] !shadow-none transition-colors hover:!bg-white/90",
+    socialButtonsBlockButtonText: "!font-medium !text-[#1f1f1f]",
+    // The "Last used" badge is clipped by Clerk's own row and distorts the button.
+    lastAuthenticationStrategyBadge: { display: "none" },
+    formFieldInput: { borderRadius: "0.875rem" },
   },
 } as const;
 
@@ -46,7 +49,7 @@ type Mode = "sign-in" | "sign-up";
 const COPY: Record<Mode, { title: string; subtitle: string }> = {
   "sign-in": {
     title: "Sign in to Praxis",
-    subtitle: "Welcome back — pick up where you left off.",
+    subtitle: "Welcome back. Pick up where you left off.",
   },
   "sign-up": {
     title: "Create your account",
@@ -105,34 +108,40 @@ function AuthDialog({
               Come with me.
             </p>
             <p className="mt-2 max-w-[18rem] text-sm leading-relaxed text-white/75 drop-shadow-[0_1px_8px_rgba(0,0,0,0.7)]">
-              The practice is the journey — it begins here.
+              The practice is the journey. It begins here.
             </p>
           </div>
         </div>
 
         {/* ── Form pane ── */}
         <div className="bg-card px-6 py-8 sm:px-8">
-          <h2
-            id="auth-title"
-            className="font-display text-2xl font-normal tracking-tight text-foreground"
-          >
-            {copy.title}
-          </h2>
-          <p className="mb-5 mt-1 text-sm text-muted-foreground">{copy.subtitle}</p>
+          {/* key → remounts the heading so the swap gets a quick fade-rise */}
+          <div key={mode} className="animate-tab-in">
+            <h2
+              id="auth-title"
+              className="font-display text-2xl font-normal tracking-tight text-foreground"
+            >
+              {copy.title}
+            </h2>
+            <p className="mb-5 mt-1 text-sm text-muted-foreground">{copy.subtitle}</p>
+          </div>
 
-          {mode === "sign-in" ? (
+          {/* Both forms stay mounted; toggling is a show/hide, so switching is
+              instant instead of waiting on Clerk to re-initialise. */}
+          <div hidden={mode !== "sign-in"} className={mode === "sign-in" ? "animate-tab-in" : undefined}>
             <SignIn
               routing="virtual"
               fallbackRedirectUrl="/home"
               appearance={embeddedAppearance}
             />
-          ) : (
+          </div>
+          <div hidden={mode !== "sign-up"} className={mode === "sign-up" ? "animate-tab-in" : undefined}>
             <SignUp
               routing="virtual"
               fallbackRedirectUrl="/home"
               appearance={embeddedAppearance}
             />
-          )}
+          </div>
 
           {/* Our own sign-in ↔ sign-up toggle (Clerk's is hidden) */}
           <p className="mt-5 text-center text-sm text-muted-foreground">

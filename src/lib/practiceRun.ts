@@ -26,6 +26,12 @@ export interface SavedPracticeRunSession {
    * saves) means the cover plate hasn't been resolved yet for this session.
    */
   runMode: RunMode | null;
+  /** Epoch ms when the run started; times open runs. Absent in older saves. */
+  startedAt?: number | null;
+  /** Seconds the sitting took, fixed at hand-in. */
+  timeUsedSeconds?: number | null;
+  /** Server id of this sitting's stored attempt, once handed in and saved. */
+  attemptId?: string | null;
 }
 
 export interface PracticeRunStats {
@@ -95,6 +101,9 @@ export function parseSavedPracticeRunSession(
         ? parsed.flaggedIds.filter((id): id is string => typeof id === 'string')
         : [],
       runMode,
+      ...(typeof parsed.startedAt === 'number' ? { startedAt: parsed.startedAt } : {}),
+      ...(typeof parsed.timeUsedSeconds === 'number' ? { timeUsedSeconds: parsed.timeUsedSeconds } : {}),
+      ...(typeof parsed.attemptId === 'string' ? { attemptId: parsed.attemptId } : {}),
     };
   } catch {
     return null;
@@ -155,17 +164,98 @@ export function groupPracticeRunQuestions(questions: QuizQuestion[]): QuestionWi
   return topLevel;
 }
 
+const normalizeTyped = (value: string) => value.trim().replace(/\s+/g, '').toLowerCase();
+
+const parseNumber = (value: string) => {
+  const parsed = Number(value.trim().replace(/,/g, ''));
+  return value.trim() !== '' && Number.isFinite(parsed) ? parsed : null;
+};
+
 /**
- * Whether a gradable (MCQ/MSQ) question's selected answer is fully correct.
- * Manual-eval types (SA/OPPE) and empty answers are never "correct" here —
- * callers decide how to treat those. Shared by the score tally and the
- * post-submission review states so the two can never drift.
+ * The accepted answers for a short-answer question, from the paper's key:
+ * `Equal` (one value), `Range` (an inclusive numeric interval) or `Set` (a JSON
+ * list of accepted values, otherwise one exact string such as "36,28,30").
+ * `null` when the paper has no usable key — essays and OPPE stay manual.
+ */
+export function getShortAnswerKey(
+  question: QuizQuestion,
+): { kind: 'equal' | 'set'; values: string[]; numeric: boolean } | { kind: 'range'; min: number; max: number } | null {
+  if (question.questionType !== 'SA') return null;
+  const start = question.valueStart?.trim();
+  if (!start) return null;
+  const numeric = question.responseType === 'Numeric';
+
+  if (question.answerType === 'Range') {
+    const min = parseNumber(start);
+    const max = parseNumber(question.valueEnd ?? '');
+    if (min === null || max === null) return null;
+    return { kind: 'range', min: Math.min(min, max), max: Math.max(min, max) };
+  }
+  if (question.answerType === 'Equal') return { kind: 'equal', values: [start], numeric };
+  if (question.answerType === 'Set') {
+    if (start.startsWith('[')) {
+      try {
+        const list = JSON.parse(start) as unknown;
+        if (Array.isArray(list)) {
+          const values = list.map(String).filter((value) => value.trim() !== '');
+          if (values.length > 0) return { kind: 'set', values, numeric };
+        }
+      } catch {
+        // Not JSON — fall through to an exact match on the raw text.
+      }
+    }
+    return { kind: 'set', values: [start], numeric };
+  }
+  return null;
+}
+
+/** The key in words for the review screen: "0.54 – 0.64", "8 or 8000", "thick". */
+export function describeShortAnswerKey(question: QuizQuestion): string | null {
+  const key = getShortAnswerKey(question);
+  if (!key) return null;
+  if (key.kind === 'range') return `${key.min} – ${key.max}`;
+  return key.values.join(' or ');
+}
+
+/** Manual-eval: OPPE, and short answers the key can't grade. */
+export function isManualEvalQuestion(question: QuizQuestion) {
+  if (question.questionType === 'OPPE') return true;
+  return question.questionType === 'SA' && getShortAnswerKey(question) === null;
+}
+
+function isShortAnswerCorrect(question: QuizQuestion, response: string) {
+  const key = getShortAnswerKey(question);
+  if (!key) return false;
+  if (key.kind === 'range') {
+    const value = parseNumber(response);
+    return value !== null && value >= key.min - 1e-9 && value <= key.max + 1e-9;
+  }
+  return key.values.some((accepted) => {
+    const a = parseNumber(accepted);
+    const b = parseNumber(response);
+    // Numeric keys compare as numbers so "0.50" matches "0.5".
+    if (a !== null && b !== null && (key.numeric || !/,/.test(accepted))) {
+      return Math.abs(a - b) <= 1e-9 * Math.max(1, Math.abs(a));
+    }
+    return normalizeTyped(accepted) === normalizeTyped(response);
+  });
+}
+
+/**
+ * Whether a question's answer is fully correct: MCQ/MSQ against the option
+ * key, SA against the short-answer key. Manual-eval questions and empty
+ * answers are never "correct" here — callers decide how to treat those.
+ * Shared by the score tally, the review states and the server's grader so
+ * they can never drift.
  */
 export function isPracticeRunQuestionCorrect(
   question: QuizQuestion,
   selected: string | string[] | undefined,
 ): boolean {
   if (!hasMeaningfulAnswer(selected)) return false;
+  if (question.questionType === 'SA') {
+    return typeof selected === 'string' && isShortAnswerCorrect(question, selected);
+  }
 
   const correctIndices = question.options
     .map((option, index) => (option.isCorrect === 1 ? String(index) : null))
@@ -196,7 +286,7 @@ export function calculatePracticeRunStats(
   for (const question of groupedQuestions) {
     if (question.questionType !== 'COMPREHENSION') {
       allQuestionIds.add(question.uuid);
-      if (question.questionType === 'SA' || question.questionType === 'OPPE') {
+      if (isManualEvalQuestion(question)) {
         manualEvalCount++;
       } else {
         gradableTotal++;
@@ -205,7 +295,7 @@ export function calculatePracticeRunStats(
     if (question.subQuestions) {
       question.subQuestions.forEach((subQuestion) => {
         allQuestionIds.add(subQuestion.uuid);
-        if (subQuestion.questionType === 'SA' || subQuestion.questionType === 'OPPE') {
+        if (isManualEvalQuestion(subQuestion)) {
           manualEvalCount++;
         } else {
           gradableTotal++;
@@ -225,7 +315,7 @@ export function calculatePracticeRunStats(
   let scoredMarks = 0;
 
   const countQuestion = (question: QuizQuestion) => {
-    const isManualEval = question.questionType === 'SA' || question.questionType === 'OPPE';
+    const isManualEval = isManualEvalQuestion(question);
     if (isManualEval) return;
 
     const marks = parseFloat(question.totalMark) || 0;
@@ -278,7 +368,7 @@ export function getPracticeRunReviewStates(
   selectedAnswers: SelectedAnswers,
 ): PracticeRunReviewState[] {
   const stateFor = (question: QuizQuestion): PracticeRunReviewState => {
-    if (question.questionType === 'SA' || question.questionType === 'OPPE') return 'manual';
+    if (isManualEvalQuestion(question)) return 'manual';
     if (!hasMeaningfulAnswer(selectedAnswers[question.uuid])) return 'unanswered';
     return isPracticeRunQuestionCorrect(question, selectedAnswers[question.uuid])
       ? 'correct'
@@ -298,6 +388,49 @@ export function getPracticeRunReviewStates(
     if (states.includes('correct')) return 'correct';
     return 'manual';
   });
+}
+
+export interface GradedQuestion {
+  questionUuid: string;
+  questionType: QuestionType;
+  outcome: PracticeRunReviewState;
+  marksAwarded: number;
+  maxMarks: number;
+}
+
+/**
+ * Grade every answerable question (passage parts individually) in paper order.
+ * This is the attempt record the server stores, so a stored score and the
+ * on-screen verdict come from the same rules.
+ */
+export function gradePracticeRun(
+  groupedQuestions: QuestionWithChildren[],
+  selectedAnswers: SelectedAnswers,
+): GradedQuestion[] {
+  const grade = (question: QuizQuestion): GradedQuestion => {
+    const maxMarks = parseFloat(question.totalMark) || 0;
+    const selected = selectedAnswers[question.uuid];
+    const outcome: PracticeRunReviewState = isManualEvalQuestion(question)
+      ? 'manual'
+      : !hasMeaningfulAnswer(selected)
+      ? 'unanswered'
+      : isPracticeRunQuestionCorrect(question, selected)
+      ? 'correct'
+      : 'incorrect';
+    return {
+      questionUuid: question.uuid,
+      questionType: question.questionType,
+      outcome,
+      marksAwarded: outcome === 'correct' ? maxMarks : 0,
+      maxMarks: outcome === 'manual' ? 0 : maxMarks,
+    };
+  };
+
+  return groupedQuestions.flatMap((question) =>
+    question.questionType === 'COMPREHENSION'
+      ? (question.subQuestions ?? []).map(grade)
+      : [grade(question)],
+  );
 }
 
 export function getPracticeRunPageStates(

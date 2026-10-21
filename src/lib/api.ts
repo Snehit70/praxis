@@ -307,6 +307,99 @@ export function recordView(paperId: string, getToken: TokenGetter) {
   });
 }
 
+export interface ProfileActivity {
+  id: string;
+  uuid: string;
+  paperName: string;
+  examUuid: string;
+  examName: string;
+  courseUuid: string;
+  courseName: string;
+  year: number | null;
+  viewedAt: string | null;
+}
+
+export interface UserProfile {
+  displayName: string | null;
+  bio: string | null;
+  avatarKey: string | null;
+  level: string | null;
+  courseKeys: string[];
+  recentViews: ProfileActivity[];
+  viewedPaperCount: number;
+}
+
+export interface AttemptSummary {
+  id: string;
+  /** 1-based position in the user's attempts at this paper. */
+  number: number;
+  paperId: string;
+  runMode: 'timed' | 'open';
+  timeUsedSeconds: number | null;
+  timeExpired: boolean;
+  score: number;
+  maxScore: number;
+  correct: number;
+  incorrect: number;
+  unanswered: number;
+  manual: number;
+  submittedAt: string;
+}
+
+export interface AttemptAnswer {
+  questionUuid: string;
+  response: string | string[] | null;
+  outcome: 'correct' | 'incorrect' | 'unanswered' | 'manual';
+  marksAwarded: number;
+  maxMarks: number;
+  flagged: boolean;
+}
+
+export interface AttemptDetail extends AttemptSummary {
+  answers: AttemptAnswer[];
+}
+
+export interface SubmitAttemptPayload {
+  paperId: string;
+  runMode: 'timed' | 'open';
+  answers: Record<string, string | string[]>;
+  flaggedIds: string[];
+  timeUsedSeconds: number | null;
+  timeExpired: boolean;
+}
+
+export function submitAttempt(payload: SubmitAttemptPayload, getToken: TokenGetter) {
+  return fetchAuthedJson<AttemptDetail>('/api/me/attempts', getToken, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function getAttempts(paperId: string, getToken: TokenGetter) {
+  return fetchAuthedJson<AttemptSummary[]>(
+    `/api/me/attempts?paperId=${encodeURIComponent(paperId)}`,
+    getToken,
+  );
+}
+
+export function getAttempt(attemptId: string, getToken: TokenGetter) {
+  return fetchAuthedJson<AttemptDetail>(`/api/me/attempts/${encodeURIComponent(attemptId)}`, getToken);
+}
+
+export function getProfile(getToken: TokenGetter) {
+  return fetchAuthedJson<UserProfile>('/api/me/profile', getToken);
+}
+
+export function updateProfile(
+  payload: Partial<Pick<UserProfile, 'displayName' | 'bio' | 'avatarKey'>>,
+  getToken: TokenGetter,
+) {
+  return fetchAuthedJson<UserProfile>('/api/me/profile', getToken, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
 export interface EnrolledCourses {
   /** Program level the user selected (e.g. "Foundation"), or null if unset. */
   level: string | null;

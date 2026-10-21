@@ -18,7 +18,7 @@ import { StatePanel } from '@/components/ui/state-panel';
 import { cn } from '@/lib/utils';
 import { ArcaneSigil } from '@/components/ArcaneSigil';
 import { LEVEL_META } from '@/lib/courseCatalogue';
-import pageBg from '@/assets/Sousou no Frieren - Ep. 18_ First-Class Mage Exam - 11_07.png';
+import examHall from '@/assets/exam-hall.webp';
 import cardBg from '@/assets/10273905393555527.jpeg';
 
 const prefersReducedMotion = () =>
@@ -46,6 +46,21 @@ function ageOf(year: number | null, newestYear: number): { patina: number; fresh
   return { patina: Math.min(step * 0.1, 0.4), fresh: step === 0 };
 }
 
+/**
+ * Page scene: the Mage Association hall on exam day, held still behind the page.
+ * The hall and sky stay clear up top; scrims only darken where text sits.
+ */
+function ExamHallBackdrop() {
+  return (
+    <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 overflow-hidden bg-background">
+      <img src={examHall} alt="" fetchPriority="high" className="h-full w-full object-cover object-[65%_30%]" />
+      <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-black/45 to-transparent" />
+      <div className="absolute inset-0 bg-gradient-to-r from-black/45 via-black/10 to-transparent" />
+      <div className="absolute inset-0 bg-gradient-to-b from-transparent from-30% via-background/55 via-55% to-background/85" />
+    </div>
+  );
+}
+
 const EXAM_TABS = [
   { slug: 'quiz1', label: 'Quiz 1' },
   { slug: 'quiz2', label: 'Quiz 2' },
@@ -63,7 +78,7 @@ function ExamTypeSwitcher({
   aliasSuffix: string;
 }) {
   return (
-    <div role="tablist" aria-label="Exam type" className="flex flex-wrap gap-2">
+    <div role="tablist" aria-label="Exam type" className="squircle inline-flex flex-wrap gap-1 rounded-xl border border-white/10 bg-black/35 p-1 backdrop-blur-md">
       {EXAM_TABS.map((tab) => {
         const active = tab.slug === activeSlug;
         return (
@@ -75,8 +90,8 @@ function ExamTypeSwitcher({
             to={`/exam/${tab.slug}/course/${courseId}${aliasSuffix}`}
             className={
               active
-                ? 'rounded-md border border-primary bg-primary/10 px-3.5 py-1.5 text-sm font-medium text-foreground'
-                : 'rounded-md border border-border bg-card px-3.5 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground'
+                ? 'rounded-lg bg-white/15 px-3.5 py-1.5 text-sm font-medium text-white shadow-sm'
+                : 'rounded-lg px-3.5 py-1.5 text-sm font-medium text-white/65 transition-colors hover:bg-white/5 hover:text-white'
             }
           >
             {tab.label}
@@ -90,10 +105,13 @@ function ExamTypeSwitcher({
 /** One stat in the card's stat block. */
 function Stat({ icon, value, label }: { icon: React.ReactNode; value: string; label: string }) {
   return (
-    <div className="flex flex-col items-center gap-0.5 rounded-lg bg-black/25 px-1 py-2 text-center">
-      <span className="text-muted-foreground/80">{icon}</span>
-      <span className="font-display text-lg leading-none text-foreground">{value}</span>
-      <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70">{label}</span>
+    <div className="flex flex-col items-center gap-1 rounded-lg bg-black/40 px-1 py-2 text-center ring-1 ring-inset ring-white/[0.08] backdrop-blur-sm">
+      <dt className="sr-only">{label}</dt>
+      <dd className="flex items-center gap-1 text-base font-semibold leading-none tabular-nums text-white">
+        <span className="text-white/45">{icon}</span>
+        {value}
+      </dd>
+      <span aria-hidden="true" className="text-[10px] uppercase tracking-wider text-white/50">{label}</span>
     </div>
   );
 }
@@ -160,29 +178,32 @@ function PaperVariantCard({
         href={to}
         onClick={activate}
         onPointerMove={track}
-        className="tcard relative isolate flex aspect-[9/16] flex-col overflow-hidden rounded-2xl border border-[color-mix(in_srgb,var(--lvl)_55%,transparent)] bg-gradient-to-b from-[#35302a] via-[#241f19] to-[#15120c] p-4 text-left shadow-[inset_0_0_30px_-10px_color-mix(in_srgb,var(--lvl)_55%,transparent),inset_0_0_0_1px_rgba(214,178,110,0.14)]"
+        className="tcard relative isolate flex aspect-[5/7] flex-col overflow-hidden rounded-2xl border border-[rgba(214,178,110,0.45)] bg-[#15120c] transition-[border-color] group-hover:border-[rgba(214,178,110,0.8)] text-left shadow-[0_18px_40px_-18px_rgba(0,0,0,0.7),inset_0_0_0_1px_rgba(214,178,110,0.14)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
       >
-        {/* Dimmed Frieren portrait — the bottom texture layer. Kept faint so the
-            sigil/element glow read as the focal art and the per-level tint wins. */}
+        {/* Card art: the party portrait, framed a little differently per paper so
+            sets in one bundle don't look identical. */}
         <img
           src={cardBg}
           alt=""
           aria-hidden="true"
-          className="pointer-events-none absolute inset-0 h-full w-full object-cover object-center opacity-[0.55]"
+          loading="lazy"
+          style={{ objectPosition: `50% ${15 + (seed % 30)}%` }}
+          className="pointer-events-none absolute inset-0 h-full w-full scale-105 object-cover transition-transform duration-500 ease-out motion-safe:group-hover:scale-110"
+        />
+        {/* Level tint over the art, then a solid fade so the lower half reads. */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_30%,transparent_35%,rgba(21,18,12,0.55)_90%)]"
         />
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute inset-0 bg-gradient-to-b from-[#15120c]/85 via-[#15120c]/25 to-[#15120c]/92"
+          className="pointer-events-none absolute inset-0 bg-gradient-to-b from-[#15120c]/60 via-transparent via-25% to-[#15120c] to-[58%]"
         />
-        {/* Element glow + seeded arcane sigil — the card's art, no two alike. */}
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_42%,color-mix(in_srgb,var(--lvl)_26%,transparent),transparent_62%)]"
-        />
-        <div aria-hidden="true" className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <ArcaneSigil seed={seed} className="opacity-40 !w-[82%] !max-w-[280px]" />
+        {/* Seeded arcane sigil: a faint watermark, no two alike. */}
+        <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-[6%] flex justify-center mix-blend-screen">
+          <ArcaneSigil seed={seed} className="!w-[70%] !max-w-[240px] opacity-25" />
         </div>
-        {/* Age patina — weathers older papers; newest stays clear. */}
+        {/* Age patina: weathers older papers; newest stays clear. */}
         <div
           aria-hidden="true"
           className="pointer-events-none absolute inset-0 bg-gradient-to-br from-[#6b4f2a] via-transparent to-[#1a120a] mix-blend-overlay"
@@ -191,18 +212,20 @@ function PaperVariantCard({
         <div className="tcard-foil" aria-hidden="true" />
         <div className="tcard-glare" aria-hidden="true" />
 
-        {/* Top row — CODE + year/rarity badge */}
-        <div className="relative z-10 flex items-start justify-between gap-2">
-          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">
-            CODE: {paper.uuid}
-          </span>
+        {/* Top row: set + year chips. */}
+        <div className="relative z-10 flex items-start justify-between gap-2 p-4">
+          {variantCount > 1 ? (
+            <span className="rounded-full bg-black/45 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-[color-mix(in_srgb,var(--lvl)_75%,white)] backdrop-blur-sm">
+              Set {variantIndex + 1} of {variantCount}
+            </span>
+          ) : <span />}
           {paper.year !== null && (
             <span
               className={cn(
-                'shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-semibold',
+                'shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-semibold tabular-nums backdrop-blur-sm',
                 fresh
                   ? 'border-amber-300/60 bg-amber-300/15 text-amber-200'
-                  : 'border-foreground/15 bg-black/30 text-muted-foreground',
+                  : 'border-white/15 bg-black/45 text-white/75',
               )}
             >
               {paper.year}
@@ -210,14 +233,11 @@ function PaperVariantCard({
           )}
         </div>
 
-        {/* Title + descriptor */}
-        <div className="relative z-10 mt-3">
-          {variantCount > 1 && (
-            <p className="mb-1 text-[11px] font-medium uppercase tracking-[0.16em] text-[color-mix(in_srgb,var(--lvl)_85%,white)]">
-              Set {variantIndex + 1} of {variantCount}
-            </p>
-          )}
-          <h3 className="font-display text-xl font-normal leading-snug tracking-tight text-foreground">
+        <div className="flex-1" />
+
+        {/* Reading panel: name, the three facts that matter, then the action. */}
+        <div className="relative z-10 px-4 pb-4">
+          <h3 className="line-clamp-2 font-display text-[1.2rem] font-normal leading-snug tracking-tight text-white [text-shadow:0_1px_8px_rgba(0,0,0,0.6)]">
             {formatPaperName(paper.paperName, paper.year ?? undefined)}
           </h3>
           {paper.isNew === 1 && (
@@ -225,24 +245,25 @@ function PaperVariantCard({
               <Sparkles className="h-3 w-3" /> New
             </span>
           )}
+
+          <dl className="mt-3 grid grid-cols-3 gap-1.5">
+            <Stat icon={<ListChecks className="h-3.5 w-3.5" />} value={`${paper.questionCount}`} label="Questions" />
+            <Stat icon={<Clock className="h-3.5 w-3.5" />} value={`${getExamDurationMinutes(examId)}m`} label="Duration" />
+            <Stat icon={<Trophy className="h-3.5 w-3.5" />} value={`${paper.calculatedTotalMarks || paper.totalScore || '—'}`} label="Marks" />
+          </dl>
+
+          <span className="mt-3 inline-flex h-9 w-full items-center justify-center gap-2 rounded-lg border border-[rgba(214,178,110,0.45)] bg-[rgba(214,178,110,0.12)] text-sm font-medium text-amber-50 transition-colors group-hover:bg-[rgba(214,178,110,0.24)]">
+            <Play className="h-3.5 w-3.5" aria-hidden="true" />
+            {charging ? 'Summoning…' : 'Take test'}
+          </span>
         </div>
 
-        <div className="flex-1" />
-
-        {/* Stat block */}
-        <div className="relative z-10 mt-3 grid grid-cols-3 gap-1.5">
-          <Stat icon={<ListChecks className="h-3.5 w-3.5" />} value={`${paper.questionCount}`} label="Questions" />
-          <Stat icon={<Clock className="h-3.5 w-3.5" />} value={`${getExamDurationMinutes(examId)}m`} label="Duration" />
-          <Stat icon={<Trophy className="h-3.5 w-3.5" />} value={`${paper.calculatedTotalMarks || paper.totalScore || '—'}`} label="Marks" />
-        </div>
-
-        <Button className="relative z-10 mt-3 w-full gap-2" variant="outline">
-          <Play className="h-4 w-4" />
-          {charging ? 'Summoning…' : 'Take Test'}
-        </Button>
-
-        {/* Ornate frame, corner brackets and summon overlays (reused from deck). */}
-        <div className="tcard-frame" aria-hidden="true" />
+        {/* Ornate gold frame (not the level tint), corner brackets, summon overlays. */}
+        <div
+          className="tcard-frame"
+          aria-hidden="true"
+          style={{ borderColor: 'rgba(214,178,110,0.32)', boxShadow: 'inset 0 0 0 1px rgba(214,178,110,0.12)' }}
+        />
         <span className="tcard-corner tcard-corner-tl" aria-hidden="true" />
         <span className="tcard-corner tcard-corner-tr" aria-hidden="true" />
         <span className="tcard-corner tcard-corner-bl" aria-hidden="true" />
@@ -291,20 +312,20 @@ function BundleCard({
 
   return (
     <section ref={sectionRef} data-revealed={revealed} className="space-y-4">
-      <div className="flex items-end justify-between gap-4 border-b border-[color-mix(in_srgb,var(--lvl,#d6b26e)_30%,transparent)] pb-2">
+      <div className="flex items-end justify-between gap-4 border-b border-white/15 pb-2 [text-shadow:0_1px_8px_rgba(0,0,0,0.55)]">
         <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5">
-          <h2 className="font-display text-2xl font-normal tracking-tight text-foreground">{bundle.bundleLabel}</h2>
-          <span className="text-sm text-muted-foreground">
+          <h2 className="font-display text-2xl font-normal tracking-tight text-white">{bundle.bundleLabel}</h2>
+          <span className="text-sm text-white/70">
             {bundle.dateLabel}
             {bundle.termLabel ? ` · ${bundle.termLabel}` : ''}
           </span>
         </div>
-        <span className="shrink-0 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-          {bundle.variantCount}-card set
+        <span className="shrink-0 text-xs font-medium uppercase tracking-wider text-white/60">
+          {bundle.variantCount} {bundle.variantCount === 1 ? 'set' : 'sets'}
         </span>
       </div>
 
-      <div className="grid gap-4 grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+      <div className="grid grid-cols-1 gap-5 min-[480px]:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5">
         {bundle.papers.map((paper, i) => (
           <PaperVariantCard
             key={paper._id}
@@ -326,7 +347,8 @@ function BundleCard({
 
 function LoadingSkeleton({ examId, examName }: { examId: string; examName: string | null }) {
   return (
-    <div className="space-y-8" role="status" aria-live="polite" aria-label="Loading paper bundles">
+    <div className="relative isolate space-y-8" role="status" aria-live="polite" aria-label="Loading paper bundles">
+      <ExamHallBackdrop />
       <header className="space-y-4">
         <Button variant="ghost" size="sm" asChild className="gap-1.5 -ml-2 text-muted-foreground">
           <Link to={`/exam/${examId}`}>
@@ -537,20 +559,16 @@ export default function CoursePage() {
 
   return (
     <div className="relative isolate space-y-8">
-      {/* Page backdrop — the First-Class Mage Exam hall, held still behind the
-          page and dimmed so the bundle list stays legible. `isolate` + `-z-10`
-          keeps it above the app background but below the content. */}
-      <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
-        <img src={pageBg} alt="" className="h-full w-full object-cover object-center" />
-        <div className="absolute inset-0 bg-gradient-to-b from-background/82 via-background/88 to-background/94" />
-      </div>
+      {/* `isolate` + `-z-10` keeps the scene above the app background but
+          below the content. */}
+      <ExamHallBackdrop />
 
       <header className="space-y-4">
         <Button
           variant="ghost"
           size="sm"
           onClick={goBack}
-          className="gap-1.5 -ml-2 text-muted-foreground"
+          className="gap-1.5 -ml-2 text-white/75 hover:bg-white/10 hover:text-white"
         >
           <ArrowLeft className="h-4 w-4" />
           Back
@@ -564,18 +582,18 @@ export default function CoursePage() {
                 alt=""
                 aria-hidden="true"
                 className={cn(
-                  'hidden h-14 w-14 shrink-0 rounded-2xl object-cover object-top ring-2 ring-offset-2 ring-offset-background sm:block',
+                  'hidden h-14 w-14 shrink-0 rounded-2xl object-cover object-top ring-2 ring-offset-2 ring-offset-black/40 sm:block',
                   levelMeta.ring,
                 )}
               />
-              <div className="min-w-0">
+              <div className="min-w-0 [text-shadow:0_1px_10px_rgba(0,0,0,0.55)]">
                 <p className={cn('mb-0.5 text-xs font-semibold uppercase tracking-[0.18em]', levelMeta.text)}>
                   {levelMeta.label}
                 </p>
-                <h1 className="font-display text-4xl font-normal leading-[1.05] tracking-tight text-foreground sm:text-5xl">
+                <h1 className="font-display text-4xl font-normal leading-[1.05] tracking-tight text-white sm:text-5xl">
                   {displayCourseName}
                 </h1>
-                <p className="mt-1 text-sm text-muted-foreground">
+                <p className="mt-1 text-sm text-white/75">
                   {bundles.length} bundles · {totalPapers} papers
                   {courseUuids.length > 1 && ' · merged variants'}
                 </p>
@@ -588,7 +606,7 @@ export default function CoursePage() {
             <label htmlFor="bundle-search-input" className="sr-only">
               Filter bundles and papers
             </label>
-            <Search aria-hidden="true" className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Search aria-hidden="true" className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/60" />
             <input
               id="bundle-search-input"
               type="text"
@@ -596,7 +614,7 @@ export default function CoursePage() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               autoComplete="off"
-              className="w-full rounded-lg border border-border bg-card/80 py-2.5 pl-10 pr-10 text-sm text-foreground backdrop-blur-sm placeholder:text-muted-foreground focus:border-primary focus:bg-card focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+              className="squircle w-full rounded-xl border border-white/10 bg-black/35 py-2.5 pl-10 pr-10 text-sm text-white backdrop-blur-md placeholder:text-white/55 transition-all focus:border-white/30 focus:bg-black/50 focus:outline-none focus:ring-2 focus:ring-white/20"
             />
             {searchQuery && (
               <button

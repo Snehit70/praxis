@@ -7,6 +7,11 @@ import {
 } from './paperCatalogue';
 import { SUPPORTED_EXAM_SLUGS, isSupportedExamSlug } from '../src/lib/examMapping';
 import { loadQuizQuestions } from './paperQuestions';
+import {
+  gradePracticeRun,
+  groupPracticeRunQuestions,
+  type SelectedAnswers,
+} from '../src/lib/practiceRun';
 import { pdfDownloadFilename, printHtmlToPdf, renderPaperHtml } from './paperPdf';
 import {
   consumePdfDownloadSlot,
@@ -34,12 +39,81 @@ const clerk = clerkSecretKey
   : null;
 const authorizedParties = allowedOrigin === '*' ? undefined : [allowedOrigin];
 const [quiz1Slug, quiz2Slug, endTermSlug] = SUPPORTED_EXAM_SLUGS;
+const PROFILE_AVATAR_KEYS = new Set(['lawine', 'ubel', 'sein', 'serie', 'flamme', 'himmel']);
+
+const ATTEMPT_SUMMARY_COLUMNS = `
+  id::text AS "id",
+  paper_id AS "paperId",
+  run_mode AS "runMode",
+  time_used_seconds AS "timeUsedSeconds",
+  time_expired AS "timeExpired",
+  score,
+  max_score AS "maxScore",
+  correct,
+  incorrect,
+  unanswered,
+  manual,
+  submitted_at::text AS "submittedAt"
+`;
+
+interface AttemptSummaryRow {
+  id: string;
+  paperId: string;
+  runMode: string;
+  timeUsedSeconds: number | null;
+  timeExpired: boolean;
+  score: number;
+  maxScore: number;
+  correct: number;
+  incorrect: number;
+  unanswered: number;
+  manual: number;
+  submittedAt: string;
+}
+
+/** `number` is the attempt's 1-based position in the user's history for that paper. */
+function toAttemptSummary(row: AttemptSummaryRow, index: number) {
+  return { ...row, number: index + 1 };
+}
+
+const MAX_SUBMITTED_ANSWERS = 500;
+const MAX_ANSWER_LENGTH = 2000;
+
+/** Validate a submitted answer map: question id -> string, or string[] for MSQ. */
+function parseSubmittedAnswers(value: unknown): SelectedAnswers | null {
+  if (value === undefined || value === null) return {};
+  if (typeof value !== 'object' || Array.isArray(value)) return null;
+  const entries = Object.entries(value as Record<string, unknown>);
+  if (entries.length > MAX_SUBMITTED_ANSWERS) return null;
+  const answers: SelectedAnswers = {};
+  for (const [id, answer] of entries) {
+    if (typeof answer === 'string') {
+      if (answer.length > MAX_ANSWER_LENGTH) return null;
+      answers[id] = answer;
+    } else if (Array.isArray(answer) && answer.length <= 26 && answer.every((item) => typeof item === 'string' && item.length <= 8)) {
+      answers[id] = answer as string[];
+    } else {
+      return null;
+    }
+  }
+  return answers;
+}
+
+function parseStoredResponse(value: string | null): string | string[] | null {
+  if (value === null) return null;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return typeof parsed === 'string' || Array.isArray(parsed) ? (parsed as string | string[]) : null;
+  } catch {
+    return null;
+  }
+}
 
 function corsHeaders(): Record<string, string> {
   return {
     'content-type': 'application/json',
     'access-control-allow-origin': allowedOrigin,
-    'access-control-allow-methods': 'GET,POST,DELETE,OPTIONS',
+    'access-control-allow-methods': 'GET,POST,PATCH,DELETE,OPTIONS',
     'access-control-allow-headers': 'content-type, authorization',
     // Cross-origin fetch from the Vercel app cannot read Content-Disposition
     // unless it is listed here. Without this, the client saves paper.pdf.
@@ -146,6 +220,96 @@ export function createApiFetchHandler(sql: DbClient, options: ApiHandlerOptions 
           INSERT INTO users (clerk_user_id) VALUES (${userId})
           ON CONFLICT (clerk_user_id) DO NOTHING
         `;
+
+        if (url.pathname === '/api/me/profile') {
+          if (request.method === 'PATCH') {
+            const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+            const allowed = new Set(['displayName', 'bio', 'avatarKey']);
+            const unknown = Object.keys(body ?? {}).find((key) => !allowed.has(key));
+            if (unknown) return jsonPrivate({ error: `Unknown profile field: ${unknown}` }, 400);
+
+            if (body && Object.prototype.hasOwnProperty.call(body, 'displayName')) {
+              if (body.displayName !== null && typeof body.displayName !== 'string') {
+                return jsonPrivate({ error: 'displayName must be a string or null' }, 400);
+              }
+              const value = typeof body.displayName === 'string' ? body.displayName.trim() : '';
+              if (value.length > 80) return jsonPrivate({ error: 'displayName is too long' }, 400);
+              await sql`UPDATE users SET display_name = ${value || null} WHERE clerk_user_id = ${userId}`;
+            }
+
+            if (body && Object.prototype.hasOwnProperty.call(body, 'bio')) {
+              if (body.bio !== null && typeof body.bio !== 'string') {
+                return jsonPrivate({ error: 'bio must be a string or null' }, 400);
+              }
+              const value = typeof body.bio === 'string' ? body.bio.trim() : '';
+              if (value.length > 160) return jsonPrivate({ error: 'bio is too long' }, 400);
+              await sql`UPDATE users SET bio = ${value || null} WHERE clerk_user_id = ${userId}`;
+            }
+
+            if (body && Object.prototype.hasOwnProperty.call(body, 'avatarKey')) {
+              if (body.avatarKey !== null && typeof body.avatarKey !== 'string') {
+                return jsonPrivate({ error: 'avatarKey must be a string or null' }, 400);
+              }
+              const value = typeof body.avatarKey === 'string' ? body.avatarKey.trim().toLowerCase() : '';
+              if (value && !PROFILE_AVATAR_KEYS.has(value)) {
+                return jsonPrivate({ error: 'Unsupported avatarKey' }, 400);
+              }
+              await sql`UPDATE users SET avatar_key = ${value || null} WHERE clerk_user_id = ${userId}`;
+            }
+          } else if (request.method !== 'GET') {
+            return jsonPrivate({ error: 'Method not allowed' }, 405);
+          }
+
+          const [profile] = await sql<Array<{
+            displayName: string | null;
+            bio: string | null;
+            avatarKey: string | null;
+            level: string | null;
+          }>>`
+            SELECT display_name AS "displayName", bio, avatar_key AS "avatarKey", level
+            FROM users WHERE clerk_user_id = ${userId} LIMIT 1
+          `;
+          const activity = await sql<Array<{
+            id: string;
+            uuid: string;
+            paperName: string;
+            examUuid: string;
+            examName: string;
+            courseUuid: string;
+            courseName: string;
+            year: number | null;
+            viewedAt: string | null;
+          }>>`
+            SELECT DISTINCT ON (v.paper_id)
+              p.id AS "id", p.source_uuid AS "uuid", p.paper_name AS "paperName",
+              p.exam_uuid AS "examUuid", e.exam_name AS "examName",
+              p.course_uuid AS "courseUuid", c.course_name AS "courseName",
+              p.year, v.viewed_at::text AS "viewedAt"
+            FROM paper_views v
+            JOIN paper_variants p ON p.id = v.paper_id
+            JOIN exams e ON e.source_uuid = p.exam_uuid
+            JOIN courses c ON c.source_uuid = p.course_uuid
+            WHERE v.clerk_user_id = ${userId}
+            ORDER BY v.paper_id, v.viewed_at DESC
+          `;
+          activity.sort((a, b) => (b.viewedAt ?? '').localeCompare(a.viewedAt ?? ''));
+          const [count] = await sql<Array<{ count: number }>>`
+            SELECT COUNT(DISTINCT paper_id)::int AS count FROM paper_views WHERE clerk_user_id = ${userId}
+          `;
+          const courses = await sql<Array<{ courseKey: string }>>`
+            SELECT course_key AS "courseKey" FROM user_courses
+            WHERE clerk_user_id = ${userId} ORDER BY created_at ASC, course_key ASC
+          `;
+          return jsonPrivate({
+            displayName: profile?.displayName ?? null,
+            bio: profile?.bio ?? null,
+            avatarKey: profile?.avatarKey ?? null,
+            level: profile?.level ?? null,
+            courseKeys: courses.map((row) => row.courseKey),
+            recentViews: activity.slice(0, 5),
+            viewedPaperCount: count?.count ?? 0,
+          });
+        }
 
         if (url.pathname === '/api/me/saved') {
           if (request.method === 'GET') {
@@ -331,6 +495,142 @@ export function createApiFetchHandler(sql: DbClient, options: ApiHandlerOptions 
           }
 
           return jsonPrivate({ error: 'Method not allowed' }, 405);
+        }
+
+        // Paper attempts: graded and stored on hand-in, listed for comparison.
+        if (url.pathname === '/api/me/attempts') {
+          if (request.method === 'GET') {
+            const paperId = url.searchParams.get('paperId')?.trim();
+            if (!paperId) return jsonPrivate({ error: 'paperId is required' }, 400);
+            const rows = await sql<AttemptSummaryRow[]>`
+              SELECT ${sql.unsafe(ATTEMPT_SUMMARY_COLUMNS)}
+              FROM attempts
+              WHERE clerk_user_id = ${userId} AND paper_id = ${paperId}
+              ORDER BY submitted_at ASC, id ASC
+            `;
+            return jsonPrivate(rows.map(toAttemptSummary));
+          }
+
+          if (request.method === 'POST') {
+            const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+            const paperId = typeof body?.paperId === 'string' ? body.paperId.trim() : '';
+            if (!paperId) return jsonPrivate({ error: 'paperId is required' }, 400);
+            const runMode = body?.runMode === 'timed' ? 'timed' : body?.runMode === 'open' ? 'open' : null;
+            if (!runMode) return jsonPrivate({ error: 'runMode must be timed or open' }, 400);
+            const answers = parseSubmittedAnswers(body?.answers);
+            if (!answers) return jsonPrivate({ error: 'answers must map question ids to strings' }, 400);
+            const flagged = new Set(
+              Array.isArray(body?.flaggedIds)
+                ? body.flaggedIds.filter((id): id is string => typeof id === 'string')
+                : [],
+            );
+            const timeUsed =
+              typeof body?.timeUsedSeconds === 'number' && Number.isFinite(body.timeUsedSeconds)
+                ? Math.max(0, Math.round(body.timeUsedSeconds))
+                : null;
+
+            const [paper] = await sql<Array<{ id: string }>>`
+              SELECT id FROM paper_variants WHERE id = ${paperId} LIMIT 1
+            `;
+            if (!paper) return jsonPrivate({ error: 'Paper not found' }, 404);
+
+            // Grade from the stored key, never from anything the client claims.
+            const graded = gradePracticeRun(
+              groupPracticeRunQuestions(await loadQuizQuestions(sql, paperId)),
+              answers,
+            );
+            const count = (outcome: string) => graded.filter((row) => row.outcome === outcome).length;
+            const score = graded.reduce((sum, row) => sum + row.marksAwarded, 0);
+            const maxScore = graded.reduce((sum, row) => sum + row.maxMarks, 0);
+
+            const attempt = await sql.begin(async (tx) => {
+              const [row] = await tx<AttemptSummaryRow[]>`
+                INSERT INTO attempts (
+                  clerk_user_id, paper_id, run_mode, time_used_seconds, time_expired,
+                  score, max_score, correct, incorrect, unanswered, manual
+                ) VALUES (
+                  ${userId}, ${paperId}, ${runMode}, ${timeUsed}, ${body?.timeExpired === true},
+                  ${score}, ${maxScore}, ${count('correct')}, ${count('incorrect')},
+                  ${count('unanswered')}, ${count('manual')}
+                )
+                RETURNING ${tx.unsafe(ATTEMPT_SUMMARY_COLUMNS)}
+              `;
+              if (graded.length > 0) {
+                await tx`
+                  INSERT INTO attempt_answers ${tx(
+                    graded.map((item) => ({
+                      attempt_id: row!.id,
+                      question_uuid: item.questionUuid,
+                      response: answers[item.questionUuid] === undefined
+                        ? null
+                        : JSON.stringify(answers[item.questionUuid]),
+                      outcome: item.outcome,
+                      marks_awarded: item.marksAwarded,
+                      max_marks: item.maxMarks,
+                      flagged: flagged.has(item.questionUuid),
+                    })),
+                    'attempt_id', 'question_uuid', 'response', 'outcome', 'marks_awarded', 'max_marks', 'flagged',
+                  )}
+                `;
+              }
+              return row!;
+            });
+
+            const [{ number } = { number: 1 }] = await sql<Array<{ number: number }>>`
+              SELECT COUNT(*)::int AS number FROM attempts
+              WHERE clerk_user_id = ${userId} AND paper_id = ${paperId} AND id <= ${attempt.id}
+            `;
+            console.info('attempt submitted', { userId, paperId, attemptId: attempt.id, score, maxScore });
+            return jsonPrivate(
+              { ...toAttemptSummary(attempt, number - 1), answers: graded.map((item) => ({
+                ...item,
+                response: answers[item.questionUuid] ?? null,
+                flagged: flagged.has(item.questionUuid),
+              })) },
+              201,
+            );
+          }
+
+          return jsonPrivate({ error: 'Method not allowed' }, 405);
+        }
+
+        const attemptMatch = url.pathname.match(/^\/api\/me\/attempts\/(\d+)$/);
+        if (attemptMatch && request.method === 'GET') {
+          const attemptId = attemptMatch[1]!;
+          const [row] = await sql<AttemptSummaryRow[]>`
+            SELECT ${sql.unsafe(ATTEMPT_SUMMARY_COLUMNS)}
+            FROM attempts
+            WHERE id = ${attemptId} AND clerk_user_id = ${userId}
+          `;
+          if (!row) return jsonPrivate({ error: 'Attempt not found' }, 404);
+          const [{ number } = { number: 1 }] = await sql<Array<{ number: number }>>`
+            SELECT COUNT(*)::int AS number FROM attempts
+            WHERE clerk_user_id = ${userId} AND paper_id = ${row.paperId} AND id <= ${row.id}
+          `;
+          const answers = await sql<
+            Array<{
+              questionUuid: string;
+              response: string | null;
+              outcome: string;
+              marksAwarded: number;
+              maxMarks: number;
+              flagged: boolean;
+            }>
+          >`
+            SELECT
+              question_uuid AS "questionUuid",
+              response,
+              outcome,
+              marks_awarded AS "marksAwarded",
+              max_marks AS "maxMarks",
+              flagged
+            FROM attempt_answers
+            WHERE attempt_id = ${row.id}
+          `;
+          return jsonPrivate({
+            ...toAttemptSummary(row, number - 1),
+            answers: answers.map((answer) => ({ ...answer, response: parseStoredResponse(answer.response) })),
+          });
         }
 
         return jsonPrivate({ error: 'Route not found' }, 404);

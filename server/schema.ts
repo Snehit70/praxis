@@ -147,6 +147,11 @@ export async function ensureSchema(sql: DbClient) {
     ALTER TABLE users
       ADD COLUMN IF NOT EXISTS level TEXT;
 
+    ALTER TABLE users
+      ADD COLUMN IF NOT EXISTS display_name TEXT,
+      ADD COLUMN IF NOT EXISTS bio TEXT,
+      ADD COLUMN IF NOT EXISTS avatar_key TEXT;
+
     -- Courses a user is taking this term. The key is the canonical course name
     -- (the stable identity used for dedup/display), not a source_uuid, because a
     -- single canonical course can map to several source rows across programs.
@@ -179,6 +184,38 @@ export async function ensureSchema(sql: DbClient) {
 
     CREATE INDEX IF NOT EXISTS idx_paper_views_user_recent
       ON paper_views (clerk_user_id, viewed_at DESC);
+
+    -- One row per hand-in. Re-attempts append, so a paper's rows are its history.
+    CREATE TABLE IF NOT EXISTS attempts (
+      id BIGSERIAL PRIMARY KEY,
+      clerk_user_id TEXT NOT NULL,
+      paper_id TEXT NOT NULL REFERENCES paper_variants(id) ON DELETE CASCADE,
+      run_mode TEXT NOT NULL,
+      time_used_seconds INTEGER,
+      time_expired BOOLEAN NOT NULL DEFAULT false,
+      score DOUBLE PRECISION NOT NULL,
+      max_score DOUBLE PRECISION NOT NULL,
+      correct INTEGER NOT NULL,
+      incorrect INTEGER NOT NULL,
+      unanswered INTEGER NOT NULL,
+      manual INTEGER NOT NULL,
+      submitted_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_attempts_user_paper
+      ON attempts (clerk_user_id, paper_id, submitted_at DESC);
+
+    CREATE TABLE IF NOT EXISTS attempt_answers (
+      attempt_id BIGINT NOT NULL REFERENCES attempts(id) ON DELETE CASCADE,
+      question_uuid TEXT NOT NULL,
+      -- The answer as JSON text: "2" for MCQ/SA, ["0","2"] for MSQ.
+      response TEXT,
+      outcome TEXT NOT NULL,
+      marks_awarded DOUBLE PRECISION NOT NULL DEFAULT 0,
+      max_marks DOUBLE PRECISION NOT NULL DEFAULT 0,
+      flagged BOOLEAN NOT NULL DEFAULT false,
+      PRIMARY KEY (attempt_id, question_uuid)
+    );
 
     ALTER TABLE users
       ADD COLUMN IF NOT EXISTS pdf_rate_limit_bypass BOOLEAN NOT NULL DEFAULT false;

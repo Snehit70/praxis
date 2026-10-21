@@ -510,6 +510,115 @@ describe('Praxis API authenticated routes', () => {
     expect(historyJson[0]).toMatchObject({ id: 'variant-2024', uuid: 'paper-2024' });
   });
 
+  test('grades, stores and lists paper attempts per user', async () => {
+    const handler = authedHandler('user_attempts_1');
+    const base = 'http://local.test/api/me/attempts';
+    const submit = (body: unknown) =>
+      handler(new Request(base, { method: 'POST', body: JSON.stringify(body) }));
+
+    const first = await submit({
+      paperId: 'variant-2025',
+      runMode: 'timed',
+      answers: { 'q-child': '1', 'q-main': '0', 'not-on-paper': '0' },
+      flaggedIds: ['q-child'],
+      timeUsedSeconds: 312.4,
+      // Client-claimed scores are ignored; the server grades from the key.
+      score: 999,
+    });
+    expect(first.status).toBe(201);
+    const firstJson = (await first.json()) as {
+      id: string;
+      number: number;
+      answers: Array<{ questionUuid: string; outcome: string; flagged: boolean }>;
+    };
+    expect(firstJson).toMatchObject({
+      number: 1,
+      runMode: 'timed',
+      timeUsedSeconds: 312,
+      score: 2,
+      maxScore: 3,
+      correct: 1,
+      incorrect: 1,
+      unanswered: 0,
+    });
+    expect(firstJson.answers).toEqual([
+      expect.objectContaining({ questionUuid: 'q-child', outcome: 'incorrect', flagged: true, response: '1' }),
+      expect.objectContaining({ questionUuid: 'q-main', outcome: 'correct', flagged: false, marksAwarded: 2 }),
+    ]);
+
+    const second = await submit({ paperId: 'variant-2025', runMode: 'open', answers: { 'q-child': '0' } });
+    expect(await second.json()).toMatchObject({ number: 2, score: 1, correct: 1, unanswered: 1 });
+
+    const list = await handler(new Request(`${base}?paperId=variant-2025`));
+    const listJson = (await list.json()) as Array<{ number: number; score: number }>;
+    expect(listJson.map((row) => [row.number, row.score])).toEqual([[1, 2], [2, 1]]);
+
+    const detail = await handler(new Request(`${base}/${firstJson.id}`));
+    expect(detail.status).toBe(200);
+    expect(await detail.json()).toMatchObject({
+      number: 1,
+      answers: expect.arrayContaining([
+        expect.objectContaining({ questionUuid: 'q-child', response: '1', outcome: 'incorrect' }),
+      ]),
+    });
+
+    // Another user sees neither the list nor the detail.
+    const stranger = authedHandler('user_attempts_2');
+    expect(await (await stranger(new Request(`${base}?paperId=variant-2025`))).json()).toEqual([]);
+    expect((await stranger(new Request(`${base}/${firstJson.id}`))).status).toBe(404);
+  });
+
+  test('rejects malformed attempts', async () => {
+    const handler = authedHandler('user_attempts_3');
+    const submit = (body: unknown) =>
+      handler(new Request('http://local.test/api/me/attempts', { method: 'POST', body: JSON.stringify(body) }));
+
+    expect((await submit({ runMode: 'open', answers: {} })).status).toBe(400);
+    expect((await submit({ paperId: 'variant-2025', runMode: 'sprint', answers: {} })).status).toBe(400);
+    expect((await submit({ paperId: 'variant-2025', runMode: 'open', answers: { 'q-main': 3 } })).status).toBe(400);
+    expect((await submit({ paperId: 'nope', runMode: 'open', answers: {} })).status).toBe(404);
+  });
+
+  test('reads and updates the user profile with recent paper views', async () => {
+    const handler = authedHandler('user_profile_1');
+    const base = 'http://local.test/api/me/profile';
+
+    const empty = await handler(new Request(base));
+    expect(empty.status).toBe(200);
+    expect(await empty.json()).toMatchObject({
+      displayName: null,
+      bio: null,
+      avatarKey: null,
+      level: null,
+      courseKeys: [],
+      recentViews: [],
+      viewedPaperCount: 0,
+    });
+
+    const updated = await handler(new Request(base, {
+      method: 'PATCH',
+      body: JSON.stringify({ displayName: 'Frieren', bio: 'Walking the road.', avatarKey: 'lawine' }),
+    }));
+    expect(updated.status).toBe(200);
+    expect(await updated.json()).toMatchObject({ displayName: 'Frieren', bio: 'Walking the road.', avatarKey: 'lawine' });
+
+    const invalid = await handler(new Request(base, {
+      method: 'PATCH',
+      body: JSON.stringify({ avatarKey: 'unknown' }),
+    }));
+    expect(invalid.status).toBe(400);
+
+    await handler(new Request('http://local.test/api/me/history', {
+      method: 'POST',
+      body: JSON.stringify({ paperId: 'variant-2025' }),
+    }));
+    const withActivity = await handler(new Request(base));
+    expect(await withActivity.json()).toMatchObject({
+      viewedPaperCount: 1,
+      recentViews: [{ id: 'variant-2025', uuid: 'paper-2025' }],
+    });
+  });
+
   test('saves and lists the user course selection with level', async () => {
     const handler = authedHandler('user_test_courses');
     const base = 'http://local.test/api/me/courses';

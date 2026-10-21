@@ -1,20 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
-import { ArrowRight, BookOpen } from "lucide-react";
-import { SignedIn, SignedOut, UserButton, useAuth } from "@clerk/clerk-react";
+import { ArrowRight } from "lucide-react";
+import { useAuth } from "@clerk/clerk-react";
 import { SignInTrigger } from "@/components/auth/AuthDialog";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { PraxisBrand } from "@/components/PraxisBrand";
 
 /**
- * Cinematic, layered-parallax hero.
- *
- * Four depth planes — flower field (back), headline (mid), a cut-out Himmel
- * (front, overlapping the headline's right edge), and sparse light motes
- * (frontmost) — each translated by a depth-scaled amount. Motion is driven by a
- * single rAF loop combining a smoothed pointer offset with a slow ambient
- * drift, so the scene feels alive on touch / before the mouse moves, and the
- * whole thing is disabled under prefers-reduced-motion.
+ * Hero: a single painted Frieren-style scene (Himmel + flower field at sunset)
+ * with a gentle pointer/ambient parallax drift. The art keeps its left side calm
+ * so the headline sits on it; scrims below guarantee text contrast.
  *
  * Asset filenames contain spaces / apostrophes / unicode, which break plain ES
  * imports — so we resolve them through Vite's glob and look them up by name.
@@ -31,10 +27,8 @@ const asset = (name: string): string => {
 };
 
 const IMG = {
-  // Back plane: the serene blue flower field at sunset.
-  bg: asset("hero-flower-field.jpeg"),
-  // Front plane: Himmel, matted to alpha (birefnet) and exported as webp.
-  himmel: asset("himmel-hero.webp"),
+  // Full hero scene (1672x941).
+  hero: asset("hero-landing-v2.png"),
   // Stage portraits.
   frieren: asset("Frieren.jpeg"),
   fern: asset("Fern.jpeg"),
@@ -45,20 +39,6 @@ const stages = [
   { src: IMG.frieren, name: "Foundation", blurb: "Where it begins" },
   { src: IMG.fern, name: "Diploma", blurb: "Deeper still" },
   { src: IMG.himmelStage, name: "Degree", blurb: "The last stretch" },
-];
-
-// Sparse, frontmost light motes. Fixed config (module-level) so positions are
-// stable across renders. Kept deliberately few so the scene reads calm.
-const motes = [
-  { left: "14%", top: "30%", size: 7, dur: 13, delay: 0, op: 0.5 },
-  { left: "22%", top: "62%", size: 5, dur: 16, delay: 2.5, op: 0.4 },
-  { left: "34%", top: "44%", size: 9, dur: 18, delay: 5, op: 0.55 },
-  { left: "44%", top: "72%", size: 6, dur: 14, delay: 1.2, op: 0.45 },
-  { left: "57%", top: "26%", size: 8, dur: 17, delay: 3.8, op: 0.5 },
-  { left: "66%", top: "58%", size: 5, dur: 15, delay: 6.5, op: 0.4 },
-  { left: "73%", top: "38%", size: 10, dur: 19, delay: 2, op: 0.5 },
-  { left: "84%", top: "66%", size: 6, dur: 16, delay: 4.5, op: 0.45 },
-  { left: "90%", top: "30%", size: 7, dur: 14, delay: 7, op: 0.42 },
 ];
 
 function usePrefersReducedMotion() {
@@ -151,116 +131,49 @@ export default function LandingPage() {
     <section
       ref={rootRef}
       onPointerMove={onPointerMove}
-      className="relative isolate flex min-h-[100svh] w-full flex-col overflow-hidden text-white [perspective:1000px]"
+      className="relative isolate flex min-h-[100svh] w-full flex-col overflow-hidden bg-[#0b0d1e] text-white [perspective:1000px]"
     >
-      {/* ── Back plane: flower field, oversized so parallax never reveals edges ── */}
+      {/* ── Scene: one painted image. Desktop: full-bleed, anchored right, slightly
+           oversized so parallax never reveals edges. Mobile: the whole 16:9 scene
+           as a strip across the top (fading into the page) so Himmel and the
+           castle stay in frame and the copy sits below on solid colour. ── */}
       <img
-        src={IMG.bg}
+        src={IMG.hero}
         alt=""
         aria-hidden="true"
         fetchPriority="high"
-        style={plane(8, "scale(1.14)")}
-        className="absolute inset-0 -z-30 h-full w-full object-cover object-center brightness-[0.88] saturate-[0.9] will-change-transform"
+        style={plane(10, "scale(1.03)")}
+        className="absolute inset-x-0 top-0 -z-30 h-auto w-full [mask-image:linear-gradient(to_bottom,#000_72%,transparent)] will-change-transform md:inset-0 md:h-full md:object-cover md:object-right md:[mask-image:none]"
       />
 
-      {/* Directional scrims (own plane, no parallax) */}
+      {/* Scrims (own plane, no parallax): left for the headline, top for the
+          nav, bottom for the stage row. */}
       <div
         aria-hidden="true"
-        className="absolute inset-0 -z-20 bg-gradient-to-r from-black/85 via-black/50 to-black/20"
-      />
-      <div
-        aria-hidden="true"
-        className="absolute inset-x-0 top-0 -z-20 h-1/2 bg-gradient-to-b from-black/70 via-black/25 to-transparent"
+        className="absolute inset-0 -z-20 hidden bg-gradient-to-r from-[#0b0d1e]/75 via-[#0b0d1e]/30 to-transparent md:block md:via-[#0b0d1e]/15"
       />
       <div
         aria-hidden="true"
-        className="absolute inset-x-0 bottom-0 -z-20 h-2/5 bg-gradient-to-t from-black/75 to-transparent"
+        className="absolute inset-x-0 top-0 -z-20 h-1/4 bg-gradient-to-b from-[#0b0d1e]/50 to-transparent"
       />
-
-      {/* ── Front plane: Himmel cut-out, anchored bottom-right, overlapping the
-           headline's right edge. Soft left/bottom mask melts the original crop. ── */}
-      <img
-        src={IMG.himmel}
-        alt=""
+      <div
         aria-hidden="true"
-        style={{
-          ...plane(26, "translateX(-6%)"),
-          WebkitMaskImage:
-            "linear-gradient(to right, transparent 0%, #000 16%), linear-gradient(to top, transparent 0%, #000 10%)",
-          maskImage:
-            "linear-gradient(to right, transparent 0%, #000 16%), linear-gradient(to top, transparent 0%, #000 10%)",
-          WebkitMaskComposite: "source-in",
-          maskComposite: "intersect",
-        }}
-        className="pointer-events-none absolute -z-10 bottom-0 right-0 hidden h-[88vh] max-h-[960px] w-auto object-contain object-bottom drop-shadow-[0_8px_40px_rgba(0,0,0,0.45)] will-change-transform md:block lg:h-[96vh]"
+        className="absolute inset-x-0 bottom-0 -z-20 h-1/3 bg-gradient-to-t from-[#0b0d1e]/70 to-transparent"
       />
 
-      {/* ── Frontmost plane: sparse drifting light motes ── */}
-      {!reduced && (
-        <div
-          aria-hidden="true"
-          style={plane(40)}
-          className="pointer-events-none absolute inset-0 z-[5] hidden md:block"
-        >
-          {motes.map((m, i) => (
-            <span
-              key={i}
-              className="praxis-mote absolute rounded-full bg-white blur-[1px]"
-              style={
-                {
-                  left: m.left,
-                  top: m.top,
-                  width: m.size,
-                  height: m.size,
-                  "--mote-opacity": m.op,
-                  animation: `praxis-mote ${m.dur}s ease-in-out ${m.delay}s infinite`,
-                } as React.CSSProperties
-              }
-            />
-          ))}
-        </div>
-      )}
-
-      {/* ── Top row — plain text, no bar / no boundary ── */}
-      <header className="relative z-20 flex items-center justify-between px-6 py-6 md:px-12">
+      {/* ── Top row — logo only; every route past the front door needs an
+           account, so "Start practising" below is the single entry point ── */}
+      <header className="relative z-20 flex items-center px-6 py-5 md:px-12 md:py-6">
         <Link
           to="/"
-          className="flex items-center gap-2.5 transition-opacity hover:opacity-80"
+          className="flex items-center gap-2.5 rounded-lg transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
         >
-          <BookOpen className="size-5" />
-          <span className="text-lg font-semibold tracking-tight">Praxis</span>
+          <PraxisBrand markClassName="size-9" nameClassName="text-lg text-white" />
         </Link>
-        <nav className="flex items-center gap-6 text-sm [text-shadow:0_1px_10px_rgba(0,0,0,0.85)]">
-          {/* Signed-in users are redirected to the dashboard, so this header is
-              effectively the signed-out marketing nav: browsing requires sign-in. */}
-          <SignInTrigger>
-            <button type="button" className="text-white/80 underline-offset-4 transition-colors hover:text-white hover:underline">
-              Papers
-            </button>
-          </SignInTrigger>
-          <SignInTrigger>
-            <button type="button" className="text-white/80 underline-offset-4 transition-colors hover:text-white hover:underline">
-              Archive
-            </button>
-          </SignInTrigger>
-          <SignedIn>
-            <UserButton afterSignOutUrl="/" />
-          </SignedIn>
-          <SignedOut>
-            <SignInTrigger>
-              <button
-                type="button"
-                className="font-medium text-white underline-offset-4 hover:underline"
-              >
-                Sign in
-              </button>
-            </SignInTrigger>
-          </SignedOut>
-        </nav>
       </header>
 
       {/* ── Mid plane: headline + actions, pinned left ── */}
-      <div className="relative z-[2] flex flex-1 items-center" style={plane(13)}>
+      <div className="relative z-[2] flex flex-1 items-end pb-4 pt-[48vw] md:pb-8 md:pt-0" style={plane(13)}>
         <div className="w-full px-6 md:px-12 lg:px-20">
           <div className="max-w-xl">
             <p
@@ -304,7 +217,7 @@ export default function LandingPage() {
                 <Button
                   type="button"
                   size="lg"
-                  className="group h-11 gap-2.5 rounded-xl border border-white/25 bg-white/10 px-7 text-[0.95rem] text-white shadow-[0_8px_30px_rgba(0,0,0,0.35)] backdrop-blur-md transition-all hover:-translate-y-0.5 hover:border-white/40 hover:bg-white/20"
+                  className="squircle group h-11 gap-2.5 rounded-2xl border border-white/25 bg-white/10 px-7 text-[0.95rem] text-white shadow-[0_8px_30px_rgba(0,0,0,0.35)] backdrop-blur-md transition-all hover:-translate-y-0.5 hover:border-white/40 hover:bg-white/20"
                 >
                   Start practising
                   <ArrowRight className="transition-transform duration-200 group-hover:translate-x-0.5" />
