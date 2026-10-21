@@ -225,74 +225,86 @@
   }
 }
 
-/* Deck card change — the new card slides in from the side of the flip (next =
-   from the right, prev = from the left) so navigation is unmistakable even when
-   neighbouring cards share the same art. */
-@keyframes deck-in-next {
-  from {
-    opacity: 0;
-    transform: perspective(900px) translate3d(70px, 0, 0) rotateY(-16deg) scale(0.93);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
+/* Deck track — every card sits at the centre and is moved by its offset --d
+   (0 hero, ±1 neighbours, ±2 waiting off-stage). One shared curve and duration
+   moves position, scale, tilt, dimming and visibility together. */
+.deck-track {
+  --cw: clamp(256px, 68vw, 308px);
+  --ch: clamp(348px, 54vh, 452px);
+  --glide: 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+  width: var(--cw);
+  height: var(--ch);
 }
 
-@keyframes deck-in-prev {
-  from {
-    opacity: 0;
-    transform: perspective(900px) translate3d(-70px, 0, 0) rotateY(16deg) scale(0.93);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
+.deck-item {
+  position: absolute;
+  inset: 0;
+  transform-origin: center;
+  transform: perspective(900px) translate3d(calc(var(--d) * var(--cw) * 0.74), 0, 0)
+    rotateY(calc(var(--d) * -14deg)) scale(calc(1 - var(--d-abs, 0) * 0.12));
+  z-index: calc(10 - var(--d-abs, 0));
 }
 
-@keyframes deck-out-next {
-  to {
-    opacity: 0;
-    transform: perspective(900px) translate3d(-70px, 0, 0) rotateY(16deg) scale(0.93);
-  }
+.deck-item[data-d='0'] {
+  --d-abs: 0;
 }
 
-@keyframes deck-out-prev {
-  to {
-    opacity: 0;
-    transform: perspective(900px) translate3d(70px, 0, 0) rotateY(-16deg) scale(0.93);
-  }
+.deck-item[data-d='1'],
+.deck-item[data-d='-1'] {
+  --d-abs: 1;
 }
 
-@keyframes deck-in-fade {
-  from {
-    opacity: 0.15;
-  }
-  to {
-    opacity: 1;
+.deck-item[data-d='2'],
+.deck-item[data-d='-2'] {
+  --d-abs: 2;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Opening: neighbours wait invisible and fade in after; the hero is swapped in
+   instantly (visibility is discrete) under the flip overlay that replaces it. */
+.deck-item-hidden {
+  opacity: 0 !important;
+}
+
+.deck-item-hidden[data-d='0'] {
+  visibility: hidden;
+}
+
+.deck-item-dim {
+  position: absolute;
+  inset: 0;
+  border-radius: 16px;
+  pointer-events: none;
+  background: #0e1530;
+  opacity: 0;
+}
+
+.deck-item:not([data-d='0']) .deck-item-dim {
+  opacity: 0.45;
+}
+
+@media (max-width: 639px) {
+  .deck-item:not([data-d='0']) {
+    opacity: 0;
+    pointer-events: none;
   }
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .deck-out-next {
-    animation: deck-out-next 0.3s cubic-bezier(0.4, 0, 1, 1) both;
+  .deck-item {
+    transition:
+      transform var(--glide),
+      opacity var(--glide);
   }
-  .deck-out-prev {
-    animation: deck-out-prev 0.3s cubic-bezier(0.4, 0, 1, 1) both;
-  }
-  .deck-mode-next {
-    animation: deck-in-next 0.46s cubic-bezier(0.16, 1.1, 0.3, 1) both;
-  }
-  .deck-mode-prev {
-    animation: deck-in-prev 0.46s cubic-bezier(0.16, 1.1, 0.3, 1) both;
+  .deck-item-dim {
+    transition: opacity var(--glide);
   }
 }
 
-/* Reduced motion: keep a quick fade so the card change is still perceptible. */
 @media (prefers-reduced-motion: reduce) {
-  .deck-mode-next,
-  .deck-mode-prev {
-    animation: deck-in-fade 0.2s ease-out both;
+  .deck-item {
+    transition: opacity 0.2s ease-out;
   }
 }
 

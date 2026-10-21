@@ -77,8 +77,6 @@ export function CourseSelector({
   const [selected, setSelected] = useState<Set<string>>(new Set(initialCourseKeys));
   const [query, setQuery] = useState('');
   const [index, setIndex] = useState(0);
-  // Direction of the last flip — drives which way the new card slides in.
-  const [navDir, setNavDir] = useState<1 | -1>(1);
   // Opening sequence: a quick deck-shuffle that settles on the first card.
   // Skipped under reduced motion.
   const [opening, setOpening] = useState(() => !prefersReducedMotion());
@@ -126,25 +124,7 @@ export function CourseSelector({
   const clampedIndex = deck.length ? Math.min(index, deck.length - 1) : 0;
   const current = deck[clampedIndex] ?? null;
 
-  // The card being replaced stays mounted for one exit animation (skipped under
-  // reduced motion). A newer move simply replaces it, so no ghost can pile up.
-  const [leaving, setLeaving] = useState<{ entry: CatalogueEntry; dir: 1 | -1; id: number } | null>(null);
-  const leaveId = useRef(0);
-  useEffect(() => {
-    if (!leaving) return;
-    const t = window.setTimeout(() => setLeaving(null), 460);
-    return () => window.clearTimeout(t);
-  }, [leaving]);
-  useEffect(() => {
-    setLeaving(null);
-  }, [filter, query]);
-
   const go = (delta: number) => {
-    const next = Math.min(deck.length - 1, Math.max(0, clampedIndex + delta));
-    if (current && next !== clampedIndex && !opening && !prefersReducedMotion()) {
-      setLeaving({ entry: current, dir: delta >= 0 ? 1 : -1, id: ++leaveId.current });
-    }
-    setNavDir(delta >= 0 ? 1 : -1);
     setIndex((i) => Math.min(deck.length - 1, Math.max(0, i + delta)));
   };
 
@@ -291,39 +271,45 @@ export function CourseSelector({
                 onClick={() => go(-1)}
                 className="absolute left-0 z-20"
               />
-              <div className="relative flex items-center justify-center">
-                {!opening && <PeekCard side="prev" entry={deck[clampedIndex - 1]} onClick={() => go(-1)} />}
-                <DeckSlot
-                  key={current.key}
-                  mode={opening ? 'reveal' : navDir > 0 ? 'next' : 'prev'}
-                  color={LEVEL_META[current.level].color}
-                >
-                  <CourseCardFace
-                    entry={current}
-                    charged={selected.has(current.key)}
-                    charging={chargingKey === current.key}
-                    onToggle={toggle}
-                  />
-                </DeckSlot>
-                {leaving && (
-                  <div
-                    key={leaving.id}
-                    aria-hidden="true"
-                    style={{ '--lvl': LEVEL_META[leaving.entry.level].color } as React.CSSProperties}
-                    className={cn(
-                      'pointer-events-none absolute inset-0 z-20 flex items-center justify-center',
-                      leaving.dir > 0 ? 'deck-out-next' : 'deck-out-prev',
-                    )}
-                  >
+              {/* One track: every card keeps its identity and only its offset from
+                  the centre changes, so a flip is a single glide where the hero
+                  steps back as a neighbour and the neighbour steps up. */}
+              <div className="deck-track relative">
+                {deck.map((entry, i) => {
+                  const d = i - clampedIndex;
+                  if (Math.abs(d) > 2) return null;
+                  const hero = d === 0;
+                  return (
+                    <div
+                      key={entry.key}
+                      data-d={d}
+                      aria-hidden={hero ? undefined : true}
+                      style={{ '--d': d, '--lvl': LEVEL_META[entry.level].color } as React.CSSProperties}
+                      onClick={hero ? undefined : () => go(d)}
+                      className={cn('deck-item', opening && 'deck-item-hidden', !hero && 'cursor-pointer')}
+                    >
+                      <div className={cn(!hero && 'pointer-events-none')}>
+                        <CourseCardFace
+                          entry={entry}
+                          charged={selected.has(entry.key)}
+                          charging={chargingKey === entry.key}
+                          onToggle={toggle}
+                        />
+                      </div>
+                      <span aria-hidden="true" className="deck-item-dim" />
+                    </div>
+                  );
+                })}
+                {opening && current && (
+                  <DeckSlot color={LEVEL_META[current.level].color}>
                     <CourseCardFace
-                      entry={leaving.entry}
-                      charged={selected.has(leaving.entry.key)}
-                      charging={false}
-                      onToggle={() => {}}
+                      entry={current}
+                      charged={selected.has(current.key)}
+                      charging={chargingKey === current.key}
+                      onToggle={toggle}
                     />
-                  </div>
+                  </DeckSlot>
                 )}
-                {!opening && <PeekCard side="next" entry={deck[clampedIndex + 1]} onClick={() => go(1)} />}
               </div>
               <DeckArrow
                 dir="next"
@@ -576,36 +562,18 @@ function CourseCardFace({
  *  replay it. On open ('reveal') the card is the reverse face of a 3D flip whose
  *  front is an ornate back — it sits showing the back behind the reel, then
  *  rotates 180° to reveal the real card. Navigation just slides. */
-function DeckSlot({
-  mode,
-  color,
-  children,
-}: {
-  mode: 'reveal' | 'next' | 'prev';
-  color: string;
-  children: React.ReactNode;
-}) {
-  const [frozen] = useState(mode);
-
-  if (frozen === 'reveal') {
-    return (
-      <div
-        className="deck-reveal-appear relative z-10 -mx-7 sm:-mx-9"
-        style={{ '--lvl': color } as React.CSSProperties}
-      >
-        <div className="deck-flip">
-          <span className="deck-flip-face deck-flip-back">
-            <ArcaneSigil mark />
-          </span>
-          <div className="deck-flip-face deck-flip-front">{children}</div>
-        </div>
-      </div>
-    );
-  }
-
+function DeckSlot({ color, children }: { color: string; children: React.ReactNode }) {
   return (
-    <div className={cn('relative z-10 -mx-7 sm:-mx-9', frozen === 'next' ? 'deck-mode-next' : 'deck-mode-prev')}>
-      {children}
+    <div
+      className="deck-reveal-appear absolute inset-0 z-20 flex items-center justify-center"
+      style={{ '--lvl': color } as React.CSSProperties}
+    >
+      <div className="deck-flip">
+        <span className="deck-flip-face deck-flip-back">
+          <ArcaneSigil mark />
+        </span>
+        <div className="deck-flip-face deck-flip-front">{children}</div>
+      </div>
     </div>
   );
 }
@@ -658,33 +626,6 @@ function DeckArrow({
       )}
     >
       {dir === 'prev' ? <ChevronLeft className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
-    </button>
-  );
-}
-
-/** Faint neighbour preview tucked behind the hero card — clickable to flip. */
-function PeekCard({ entry, side, onClick }: { entry?: CatalogueEntry; side: 'prev' | 'next'; onClick: () => void }) {
-  if (!entry) return null;
-  const meta = LEVEL_META[entry.level];
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-hidden="true"
-      tabIndex={-1}
-      className={cn('absolute top-1/2 hidden -translate-y-1/2 sm:block', side === 'prev' ? 'right-full -mr-6' : 'left-full -ml-6')}
-    >
-      <div className="relative h-[clamp(260px,40vh,340px)] w-[clamp(140px,32vw,180px)] scale-95 overflow-hidden rounded-2xl border border-white/10 opacity-35 blur-[1.5px] saturate-50">
-        <img
-          src={meta.image}
-          alt=""
-          aria-hidden="true"
-          loading="lazy"
-          style={{ objectPosition: ART_POSITION }}
-          className="h-full w-full object-cover"
-        />
-        <div className="absolute inset-0 bg-background/40" />
-      </div>
     </button>
   );
 }
