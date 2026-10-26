@@ -10,11 +10,14 @@ import { getExamSlugFromUuid, getExamUuidFromSlug, getExamDurationMinutes } from
 import { getDisplayCourseName, getCourseLevel } from '@/lib/courseMapping';
 import { LEVEL_META } from '@/lib/courseCatalogue';
 import { ArcaneSigil } from '@/components/ArcaneSigil';
+import { PaperVerification } from '@/components/PaperVerification';
 import { logger } from '@/lib/logger';
 import { getQuestionImageUrl, getOptionImageUrl, imageSourceFallbacks } from '@/lib/imageUtils';
 import { splitMarkupImages } from '@/lib/markupImages';
 import {
   getPaperByUuid,
+  ApiRequestError,
+  VerificationRequiredError,
   getAttempt,
   getAttempts,
   getQuestionsByPaperUuid,
@@ -1623,6 +1626,9 @@ export default function PaperPage() {
   const [paper, setPaper] = useState<PaperDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
+  const [loadError, setLoadError] = useState('Could not load this paper.');
+  const [verification, setVerification] = useState<{ siteKey: string; binding: string } | null>(null);
+  const verificationToken = useRef<{ paperId: string; token: string } | null>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [timerRunning, setTimerRunning] = useState(false);
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
@@ -1693,13 +1699,17 @@ export default function PaperPage() {
 
     setLoading(true);
     setLoadFailed(false);
+    setVerification(null);
+    setLoadError('Could not load this paper.');
     setSelectedAnswers({});
     setShowResults(false);
     setCurrentIndex(0);
 
+    const turnstileToken = verificationToken.current?.paperId === paperId ? verificationToken.current.token : undefined;
+    verificationToken.current = null;
     Promise.all([
-      getPaperByUuid(paperId, courseId, examUuidFromSearch, { signal: controller.signal }),
-      getQuestionsByPaperUuid(paperId, courseId, examUuidFromSearch, { signal: controller.signal }),
+      getPaperByUuid(paperId, courseId, examUuidFromSearch, { signal: controller.signal, getToken }),
+      getQuestionsByPaperUuid(paperId, courseId, examUuidFromSearch, { signal: controller.signal, getToken, turnstileToken }),
     ])
       .then(([paperData, questionData]) => {
         if (active) {
@@ -1744,7 +1754,11 @@ export default function PaperPage() {
         if (error instanceof DOMException && error.name === 'AbortError') return;
         logger.error('Failed to load paper data', error);
         if (active) {
+          if (error instanceof VerificationRequiredError) {
+            setVerification({ siteKey: error.siteKey, binding: error.binding });
+          }
           setLoadFailed(true);
+          setLoadError(error instanceof ApiRequestError ? error.message : 'Could not load this paper.');
           setPaper(null);
           setQuestions([]);
           setTimerRunning(false);
@@ -1761,7 +1775,7 @@ export default function PaperPage() {
       active = false;
       controller.abort();
     };
-  }, [paperId, courseId, examUuidFromSearch, storageKey, retryNonce]);
+  }, [paperId, courseId, examUuidFromSearch, storageKey, retryNonce, getToken]);
 
   useEffect(() => {
     if (!paper || !storageKey) return;
@@ -2412,12 +2426,18 @@ export default function PaperPage() {
   }
 
   if (loadFailed || !paper) {
+    if (verification && paperId) {
+      return <PaperVerification {...verification} onVerified={(token) => {
+        verificationToken.current = { paperId, token };
+        setRetryNonce((value) => value + 1);
+      }} onBack={goBack} />;
+    }
     return (
       <StatePanel
         compact
         tone="error"
         title="Unable to load paper"
-        description="Could not load this paper."
+        description={loadError}
         actions={(
           <>
             <Button variant="default" onClick={() => setRetryNonce((value) => value + 1)}>

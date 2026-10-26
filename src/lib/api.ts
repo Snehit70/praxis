@@ -92,13 +92,48 @@ export interface PaperDetails {
 
 interface ApiRequestOptions {
   signal?: AbortSignal;
+  getToken?: TokenGetter;
+  turnstileToken?: string;
+}
+
+export class ApiRequestError extends Error {
+  constructor(public status: number, message: string) {
+    super(message);
+  }
+}
+
+export class VerificationRequiredError extends ApiRequestError {
+  constructor(public siteKey: string, public binding: string) {
+    super(403, 'Please verify before opening another paper.');
+  }
 }
 
 async function fetchJson<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     signal: options.signal,
+    headers: {
+      ...(options.getToken ? { authorization: `Bearer ${await options.getToken() ?? ''}` } : {}),
+      ...(options.turnstileToken ? { 'x-turnstile-token': options.turnstileToken } : {}),
+    },
   });
   if (!response.ok) {
+    if (response.status === 403) {
+      const detail = await response.json().catch(() => null);
+      if (detail?.code === 'verification_required' && typeof detail.siteKey === 'string' &&
+        detail.siteKey.length <= 100 && /^[a-f0-9]{64}$/.test(detail.binding)) {
+        throw new VerificationRequiredError(detail.siteKey, detail.binding);
+      }
+    }
+    if (response.status === 429) {
+      const seconds = Number(response.headers.get('retry-after'));
+      const wait = Number.isFinite(seconds) && seconds > 0
+        ? ` Try again in about ${Math.ceil(seconds / 60)} minutes.`
+        : ' Please try again later.';
+      throw new ApiRequestError(429, `Request limit reached.${wait}`);
+    }
+    if (response.status === 401) {
+      throw new ApiRequestError(401, 'Your session has expired. Please sign in again to open this paper.');
+    }
     throw new Error(`API request failed (${response.status}): ${path}`);
   }
 

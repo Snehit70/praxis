@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { createApiFetchHandler } from './app';
+import { challengeBinding, createTurnstileChallenge } from './turnstile';
+import { resolveClientIp } from './contentGuard';
 import {
   createApiTestContext,
   seedAliasCourseFixture,
@@ -9,6 +11,11 @@ import {
 /** Build a handler over the current test DB that authenticates as `userId`. */
 function authedHandler(userId: string) {
   return createApiFetchHandler(context.database.sql, { resolveUserId: async () => userId });
+}
+
+async function getAuthedJson<T = unknown>(path: string) {
+  const response = await authedHandler('user_content_fixture')(new Request(`http://local.test${path}`));
+  return { response, json: await response.json() as T };
 }
 
 let context: ApiTestContext;
@@ -272,7 +279,7 @@ describe('Praxis API integration', () => {
   });
 
   test('returns paper details only for the requested exam and course context', async () => {
-    const { response, json } = await context.getJson(
+    const { response, json } = await getAuthedJson(
       '/api/papers/paper-2025?courseUuid=course-1&examUuid=exam-1',
     );
 
@@ -285,7 +292,7 @@ describe('Praxis API integration', () => {
       courseName: 'Computational Thinking',
     });
 
-    const missing = await context.getJson(
+    const missing = await getAuthedJson(
       '/api/papers/paper-2025?courseUuid=course-1&examUuid=wrong-exam',
     );
     expect(missing.response.status).toBe(404);
@@ -293,7 +300,7 @@ describe('Praxis API integration', () => {
   });
 
   test('returns paper questions with ordered options and parent linkage', async () => {
-    const { response, json } = await context.getJson<Array<Record<string, unknown>>>(
+    const { response, json } = await getAuthedJson<Array<Record<string, unknown>>>(
       '/api/papers/paper-2025/questions?courseUuid=course-1&examUuid=exam-1',
     );
 
@@ -336,6 +343,134 @@ describe('Praxis API integration', () => {
 });
 
 describe('Praxis API authenticated routes', () => {
+  test('trusts only configured proxy peers, including the Docker gateway', () => {
+    const request = new Request('http://local.test', { headers: { 'x-real-ip': '198.51.100.4' } });
+    const proxies = new Set(['127.0.0.1', '172.19.0.1']);
+    expect(resolveClientIp(request, '::ffff:172.19.0.1', proxies)).toBe('198.51.100.4');
+    expect(resolveClientIp(request, '192.0.2.10', proxies)).toBe('192.0.2.10');
+    const invalid = new Request('http://local.test', { headers: { 'x-real-ip': 'forged-value' } });
+    expect(resolveClientIp(invalid, '172.19.0.1', proxies)).toBe('172.19.0.1');
+  });
+
+  test('verifies challenge success, hostname, action, and account binding server-side', async () => {
+    const valid = { success: true, hostname: 'praxis.snehit70.dev', action: 'paper-access', cdata: challengeBinding('user_a') };
+    for (const result of [valid, { ...valid, success: false }, { ...valid, hostname: 'other.example' },
+      { ...valid, action: 'other-action' }, { ...valid, cdata: challengeBinding('user_b') }]) {
+      const verify = createTurnstileChallenge({ siteKey: 'site', secret: 'secret', hostname: 'praxis.snehit70.dev' },
+        (async (_url, init) => {
+          expect(JSON.parse(init!.body as string)).toEqual({ secret: 'secret', response: 'token' });
+          expect(init!.signal).toBeDefined();
+          return Response.json(result);
+        }) as typeof fetch);
+      expect(await verify.verify('token', 'user_a')).toBe(result === valid);
+    }
+    const offline = createTurnstileChallenge({ siteKey: 'site', secret: 'secret', hostname: 'praxis.snehit70.dev' },
+      (async () => { throw new Error('offline'); }) as unknown as typeof fetch);
+    expect(await offline.verify('token', 'user_a')).toBe(false);
+  });
+
+  test('rejects anonymous paper details and questions, including query variants', async () => {
+    for (const path of ['/api/papers/paper-2025', '/api/papers/paper-2025/questions?courseUuid=course-1']) {
+      const response = await context.get(path);
+      expect(response.status).toBe(401);
+      expect(response.headers.get('cache-control')).toBe('private, no-store');
+    }
+  });
+
+  test('never publicly caches signed-in paper content', async () => {
+    for (const path of ['/api/papers/paper-2025', '/api/papers/paper-2025/questions']) {
+      const { response } = await getAuthedJson(path);
+      expect(response.status).toBe(200);
+      expect(response.headers.get('cache-control')).toBe('private, no-store');
+    }
+  });
+
+  async function seedContentPapers(count: number) {
+    await context.database.sql`
+      INSERT INTO paper_variants
+      SELECT (jsonb_populate_record(NULL::paper_variants, to_jsonb(p) ||
+        jsonb_build_object('id', 'bulk-' || n, 'source_uuid', 'bulk-' || n, 'source_path', 'bulk-' || n))).*
+      FROM paper_variants p CROSS JOIN generate_series(1, ${count}::int) n
+      WHERE p.id = 'variant-2025'
+    `;
+  }
+
+  test('refreshes and parallel loads of one paper use one persistent access grant', async () => {
+    const request = () => new Request('http://local.test/api/papers/paper-2025/questions');
+    const responses = await Promise.all(Array.from({ length: 12 }, () => authedHandler('user_refresh')(request())));
+    expect(responses.every((r) => r.status === 200)).toBe(true);
+    const [{ count }] = await context.database.sql`SELECT count(*)::int AS count FROM paper_access_grants`;
+    expect(count).toBe(1);
+    expect((await authedHandler('user_refresh')(request())).status).toBe(200);
+  });
+
+  test('atomically caps distinct papers across handlers and keeps opened papers usable at the cap', async () => {
+    await seedContentPapers(13);
+    const responses = await Promise.all(Array.from({ length: 12 }, (_, i) =>
+      authedHandler('user_bulk')(new Request(`http://local.test/api/papers/bulk-${i + 1}/questions`))));
+    expect(responses.filter((r) => r.status === 200)).toHaveLength(10);
+    expect(responses.filter((r) => r.status === 429)).toHaveLength(2);
+    const blocked = await authedHandler('user_bulk')(new Request('http://local.test/api/papers/bulk-13/questions'));
+    expect(blocked.status).toBe(429);
+    expect(Number(blocked.headers.get('retry-after'))).toBeGreaterThan(0);
+    expect(blocked.headers.get('cache-control')).toBe('private, no-store');
+    const [opened] = await context.database.sql`SELECT paper_id FROM paper_access_grants WHERE user_id = 'user_bulk' LIMIT 1`;
+    expect((await authedHandler('user_bulk')(new Request(`http://local.test/api/papers/${opened.paper_id}/questions`))).status).toBe(200);
+    expect((await authedHandler('other_user')(new Request('http://local.test/api/papers/bulk-13/questions'))).status).toBe(200);
+  });
+
+  test('enforces sliding hourly and daily distinct-paper budgets', async () => {
+    await seedContentPapers(200);
+    for (const [count, minutes] of [[60, 2], [200, 120]]) {
+      const userId = `user_window_${count}`;
+      await context.database.sql`
+        INSERT INTO paper_access_grants (user_id, paper_id, created_at, expires_at)
+        SELECT ${userId}, 'bulk-' || n, now() - ${minutes} * interval '1 minute', now() + interval '20 hours'
+        FROM generate_series(1, ${count}::int) n
+      `;
+      const response = await authedHandler(userId)(new Request('http://local.test/api/papers/paper-2025/questions'));
+      expect(response.status).toBe(429);
+    }
+  });
+
+  test('challenges rapid new-paper access, grants only after verification, and never challenges a refresh', async () => {
+    await seedContentPapers(6);
+    let verifications = 0;
+    const handler = createApiFetchHandler(context.database.sql, {
+      resolveUserId: async () => 'user_challenge',
+      contentChallenge: { siteKey: 'test-site-key', verify: async (token, userId) => {
+        verifications++;
+        return token === 'valid-single-use-token' && userId === 'user_challenge';
+      } },
+    });
+    for (let n = 1; n <= 5; n++) {
+      expect((await handler(new Request(`http://local.test/api/papers/bulk-${n}/questions`))).status).toBe(200);
+    }
+    const url = 'http://local.test/api/papers/bulk-6/questions';
+    const required = await handler(new Request(url));
+    expect(required.status).toBe(403);
+    expect(await required.json()).toMatchObject({ code: 'verification_required', siteKey: 'test-site-key' });
+    expect((await handler(new Request(url, { headers: { 'x-turnstile-token': 'forged' } }))).status).toBe(403);
+    expect((await handler(new Request(url, { headers: { 'x-turnstile-token': 'valid-single-use-token' } }))).status).toBe(200);
+    expect((await handler(new Request(url))).status).toBe(200);
+    expect(verifications).toBe(2);
+  });
+
+  test('limits requests before authentication and ignores spoofed forwarding headers', async () => {
+    let authCalls = 0;
+    const handler = createApiFetchHandler(context.database.sql, {
+      getClientIp: () => '192.0.2.1',
+      resolveUserId: async () => { authCalls++; return null; },
+    });
+    for (let i = 0; i < 240; i++) {
+      expect((await handler(new Request('http://local.test/api/papers/paper-2025', {
+        headers: { 'x-forwarded-for': `198.51.100.${i}`, 'x-real-ip': `198.51.100.${i}` },
+      }))).status).toBe(401);
+    }
+    expect((await handler(new Request('http://local.test/api/papers/paper-2025'))).status).toBe(429);
+    expect(authCalls).toBe(240);
+  });
+
   test('rejects paper PDF without a verified user', async () => {
     const response = await context.fetchHandler(
       new Request('http://local.test/api/papers/paper-2025/pdf?courseUuid=course-1&examUuid=exam-1'),

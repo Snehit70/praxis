@@ -135,6 +135,15 @@ export async function ensureSchema(sql: DbClient) {
     CREATE INDEX IF NOT EXISTS idx_courses_search_canonical_trgm
       ON courses USING gin (canonical_name gin_trgm_ops);
 
+    CREATE TABLE IF NOT EXISTS paper_access_grants (
+      user_id TEXT NOT NULL,
+      paper_id TEXT NOT NULL REFERENCES paper_variants(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      expires_at TIMESTAMPTZ NOT NULL,
+      PRIMARY KEY (user_id, paper_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_paper_access_expiry ON paper_access_grants(expires_at);
+
     -- Auth / per-user data (Clerk is the identity source; we mirror the id only).
     CREATE TABLE IF NOT EXISTS users (
       clerk_user_id TEXT PRIMARY KEY,

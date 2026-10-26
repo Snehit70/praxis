@@ -7,6 +7,8 @@ import {
 } from './paperCatalogue';
 import { SUPPORTED_EXAM_SLUGS, isSupportedExamSlug } from '../src/lib/examMapping';
 import { loadQuizQuestions } from './paperQuestions';
+import { createContentGuard, createIpLimiter, type ContentChallenge } from './contentGuard';
+import { challengeBinding, readTurnstileChallenge } from './turnstile';
 import {
   gradePracticeRun,
   groupPracticeRunQuestions,
@@ -25,8 +27,8 @@ const allowedOrigin = process.env.API_ALLOWED_ORIGIN?.trim() || '*';
 const cacheableApiResponse = 'public, max-age=60, s-maxage=300, stale-while-revalidate=600';
 
 // Auth: a Clerk client is only created when a secret key is configured, so the
-// public API keeps working (and tests keep passing) without Clerk credentials.
-// When absent, the authenticated /api/me/* routes return 401.
+// public catalogue keeps working without Clerk credentials. Paper content and
+// /api/me/* routes fail closed with 401 when those credentials are absent.
 const clerkSecretKey = process.env.CLERK_SECRET_KEY?.trim();
 // authenticateRequest() validates the publishable key too, not just the secret.
 // createClerkClient auto-reads CLERK_PUBLISHABLE_KEY; this app only sets the
@@ -114,10 +116,11 @@ function corsHeaders(): Record<string, string> {
     'content-type': 'application/json',
     'access-control-allow-origin': allowedOrigin,
     'access-control-allow-methods': 'GET,POST,PATCH,DELETE,OPTIONS',
-    'access-control-allow-headers': 'content-type, authorization',
+    'access-control-allow-headers': 'content-type, authorization, x-turnstile-token',
     // Cross-origin fetch from the Vercel app cannot read Content-Disposition
     // unless it is listed here. Without this, the client saves paper.pdf.
-    'access-control-expose-headers': 'content-disposition, x-pdf-filename',
+    'access-control-expose-headers': 'content-disposition, x-pdf-filename, retry-after',
+    'x-content-type-options': 'nosniff',
   };
 }
 
@@ -165,6 +168,9 @@ async function getUserId(request: Request): Promise<string | null> {
 }
 
 export interface ApiHandlerOptions {
+  contentChallenge?: ContentChallenge | null;
+  /** Provided by the HTTP server, never taken from arbitrary client headers. */
+  getClientIp?: (request: Request) => string | null;
   /** Override session resolution (used in tests). Defaults to Clerk verification. */
   resolveUserId?: (request: Request) => Promise<string | null>;
   /** Override Chromium print (used in tests). */
@@ -177,6 +183,9 @@ export function createApiFetchHandler(sql: DbClient, options: ApiHandlerOptions 
   const resolveUserId = options.resolveUserId ?? getUserId;
   const renderPdf = options.printHtmlToPdf ?? printHtmlToPdf;
   const pdfGuard = options.pdfGuard ?? readPdfGuardConfig();
+  const checkIp = createIpLimiter();
+  const admitContent = createContentGuard(sql, options.contentChallenge === undefined ? readTurnstileChallenge() : options.contentChallenge);
+  let nextContentCleanup = 0;
   async function resolvePaperVariantId(
     paperUuid: string,
     courseUuid: string | null,
@@ -202,6 +211,16 @@ export function createApiFetchHandler(sql: DbClient, options: ApiHandlerOptions 
   return async function fetch(request: Request) {
     try {
       const url = new URL(request.url);
+
+      const ip = options.getClientIp?.(request);
+      if (ip && url.pathname.startsWith('/api/')) {
+        const retryAfter = checkIp(ip);
+        if (retryAfter) {
+          return jsonPrivate({ error: 'Too many requests. Please try again shortly.' }, 429, {
+            'retry-after': String(retryAfter),
+          });
+        }
+      }
 
       if (request.method === 'OPTIONS') {
         return json({ ok: true });
@@ -1064,6 +1083,7 @@ export function createApiFetchHandler(sql: DbClient, options: ApiHandlerOptions 
 
       const paperMatch = url.pathname.match(/^\/api\/papers\/([^/]+)$/);
       if (paperMatch) {
+        if (!await resolveUserId(request)) return jsonPrivate({ error: 'Unauthorized' }, 401);
         const paperUuid = decodeURIComponent(paperMatch[1] ?? '');
         const courseUuid = url.searchParams.get('courseUuid');
         const examUuid = url.searchParams.get('examUuid');
@@ -1115,11 +1135,13 @@ export function createApiFetchHandler(sql: DbClient, options: ApiHandlerOptions 
           return notFound('Paper not found');
         }
 
-        return json(paper);
+        return jsonPrivate(paper);
       }
 
       const questionMatch = url.pathname.match(/^\/api\/papers\/([^/]+)\/questions$/);
       if (questionMatch) {
+        const userId = await resolveUserId(request);
+        if (!userId) return jsonPrivate({ error: 'Unauthorized' }, 401);
         const paperUuid = decodeURIComponent(questionMatch[1] ?? '');
         const courseUuid = url.searchParams.get('courseUuid');
         const examUuid = url.searchParams.get('examUuid');
@@ -1129,7 +1151,23 @@ export function createApiFetchHandler(sql: DbClient, options: ApiHandlerOptions 
           return notFound('Paper questions not found');
         }
 
-        return json(await loadQuizQuestions(sql, variantId));
+        const access = await admitContent(userId, variantId, request.headers.get('x-turnstile-token'));
+        if (access.status === 'limited') {
+          console.warn('Distinct paper limit reached', { userId });
+          return jsonPrivate({ error: 'Paper request limit reached. Please try again later.' }, 429, {
+            'retry-after': String(access.retryAfter),
+          });
+        }
+        if (access.status === 'challenge') {
+          console.info('Paper verification required', { userId });
+          return jsonPrivate({ code: 'verification_required', siteKey: access.siteKey, binding: challengeBinding(userId) }, 403);
+        }
+        if (Date.now() >= nextContentCleanup) {
+          nextContentCleanup = Date.now() + 3600_000;
+          await sql`DELETE FROM paper_access_grants WHERE expires_at < now()`;
+        }
+
+        return jsonPrivate(await loadQuizQuestions(sql, variantId));
       }
 
       return notFound('Route not found');

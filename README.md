@@ -56,7 +56,7 @@ Current production shape:
 Browser
   -> https://praxis.snehit70.dev
   -> Vercel static frontend
-  -> https://api.praxis.snehit70.dev/api/*
+  -> https://praxis-api.snehit70.dev/api/*
   -> AWS EC2 Nginx TLS proxy
   -> Docker container praxis-api on 127.0.0.1:8787
   -> Docker container praxis-postgres on praxis-net
@@ -66,9 +66,9 @@ Browser
 Production API health checks:
 
 ```bash
-curl -fsS https://api.praxis.snehit70.dev/api/health
-curl -fsS https://api.praxis.snehit70.dev/api/health/db
-curl -fsS https://api.praxis.snehit70.dev/api/stats
+curl -fsS https://praxis-api.snehit70.dev/api/health
+curl -fsS https://praxis-api.snehit70.dev/api/health/db
+curl -fsS https://praxis-api.snehit70.dev/api/stats
 ```
 
 Expected production stats after the current import:

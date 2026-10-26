@@ -8,6 +8,8 @@ data-new-stale-*
 images
 images-new
 reports
+art-archive
+tmp
 tools/rescrape/node_modules
 tools/rescrape/scraper.log
 tools/rescrape/.stop
