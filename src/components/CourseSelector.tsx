@@ -189,7 +189,7 @@ export function CourseSelector({
       onOpenChange={onOpenChange}
       dismissable={!mandatory}
       labelledBy="course-selector-title"
-      className="animate-dialog-in bg-transparent sm:max-w-xl"
+      className="animate-dialog-in max-h-[92dvh] bg-transparent sm:max-h-[88dvh] sm:max-w-xl"
     >
       {/* Calmed meadow backdrop (blur + deep scrim) so the glass reads clean. */}
       <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10">
@@ -246,10 +246,10 @@ export function CourseSelector({
       </div>
 
       {/* The deck — one card at a time, arrows either side. */}
-      <div className="relative flex min-h-[clamp(440px,62vh,540px)] min-w-0 flex-1 flex-col items-center justify-center gap-3 overflow-hidden px-4 py-5 sm:px-5">
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col items-center gap-3 overflow-x-hidden overflow-y-auto overscroll-contain px-4 py-5 sm:px-5">
         {current ? (
           <>
-            <div className="relative flex w-full items-center justify-center">
+            <div className="relative mt-auto flex w-full shrink-0 items-center justify-center">
               <DeckArrow
                 dir="prev"
                 disabled={clampedIndex <= 0}
@@ -304,14 +304,14 @@ export function CourseSelector({
               />
             </div>
             {/* Position pill */}
-            <p className="text-xs font-medium text-muted-foreground">
+            <p className="mb-auto shrink-0 text-xs font-medium text-muted-foreground">
               <span className="text-foreground">{clampedIndex + 1}</span> / {deck.length}
               <span className="mx-1.5 text-white/20">·</span>
               <span className={LEVEL_META[current.level].text}>{LEVEL_META[current.level].label}</span>
             </p>
           </>
         ) : (
-          <div className="relative flex h-[clamp(348px,54vh,452px)] w-[clamp(256px,68vw,308px)] flex-col items-center justify-end overflow-hidden rounded-2xl border border-dashed border-white/25 p-6 text-center">
+          <div className="relative my-auto flex h-[clamp(348px,54vh,452px)] w-[clamp(256px,68vw,308px)] shrink-0 flex-col items-center justify-end overflow-hidden rounded-2xl border border-dashed border-white/25 p-6 text-center">
             <img src={emptySearchArt} alt="" aria-hidden="true" className="absolute inset-0 h-full w-full object-cover object-center opacity-60" />
             <div className="absolute inset-0 bg-gradient-to-t from-[#0E1530] via-[#0E1530]/60 to-[#0E1530]/10" />
             <div className="relative">
