@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useAuth, useUser } from '@clerk/clerk-react';
-import { ArrowLeft, ArrowRight, Check, Edit3, Loader2, UserRound } from 'lucide-react';
+import { useAuth, useClerk, useUser } from '@clerk/clerk-react';
+import { ArrowLeft, ArrowRight, Check, Edit3, Loader2, LogOut, UserRound } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogClose } from '@/components/ui/dialog';
@@ -17,21 +17,7 @@ import { formatPaperName } from '@/lib/paperUtils';
 import { logger } from '@/lib/logger';
 
 import editArt from '@/assets/profile-edit-desk.webp';
-import lawineImage from '@/assets/Lawine.jpeg';
-import ubelImage from '@/assets/Übel.jpeg';
-import seinImage from '@/assets/Sein.jpeg';
-import serieImage from '@/assets/Serie.jpeg';
-import flammeImage from '@/assets/Flamme.jpeg';
-import himmelImage from '@/assets/𝖧𝗂𝗆𝗆𝖾𝗅.jpeg';
-
-const AVATARS = [
-  { key: 'lawine', label: 'Lawine', src: lawineImage },
-  { key: 'ubel', label: 'Übel', src: ubelImage },
-  { key: 'sein', label: 'Sein', src: seinImage },
-  { key: 'serie', label: 'Serie', src: serieImage },
-  { key: 'flamme', label: 'Flamme', src: flammeImage },
-  { key: 'himmel', label: 'Himmel', src: himmelImage },
-] as const;
+import { AVATARS } from '@/lib/avatars';
 
 function initials(name: string | null | undefined, email: string | null | undefined) {
   const value = name?.trim() || email?.split('@')[0]?.trim() || 'P';
@@ -50,6 +36,7 @@ function paperHref(item: UserProfile['recentViews'][number]) {
 
 export default function ProfilePage() {
   const { getToken } = useAuth();
+  const { signOut } = useClerk();
   const { user } = useUser();
   const courses = useEnrolledCourses();
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -112,6 +99,7 @@ export default function ProfilePage() {
         getToken,
       );
       setProfile(next);
+      window.dispatchEvent(new Event('praxis:profile-updated'));
       setEditing(false);
       setSaved(true);
     } catch (error) {
@@ -215,6 +203,7 @@ export default function ProfilePage() {
               </div>
             </div>
             </div>
+            <div className="flex flex-wrap gap-2 self-start sm:self-auto">
             <Button
               variant="outline"
               className="squircle shrink-0 self-start rounded-2xl border-white/25 bg-black/30 text-white backdrop-blur-md hover:bg-black/45 sm:self-auto"
@@ -222,6 +211,10 @@ export default function ProfilePage() {
             >
               <Edit3 /> Edit profile
             </Button>
+            <Button variant="outline" className="squircle rounded-2xl border-white/25 bg-black/30 text-white hover:bg-black/45" onClick={() => void signOut({ redirectUrl: "/" })}>
+              <LogOut /> Sign out
+            </Button>
+            </div>
           </div>
         </div>
       </section>
