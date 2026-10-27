@@ -75,7 +75,7 @@ const emptyArt = asset('feature-frieren-pray.jpeg');
 const sceneImg = asset('home-scene.webp');
 
 // Shared content column so hero chrome, greeting and the card grid line up.
-const column = 'mx-auto w-full max-w-6xl px-4 md:px-8';
+const column = 'w-full max-w-6xl px-4 md:px-8 xl:ml-[10%]';
 
 /** Inline `--rise-i` style so an element takes its place in the stagger cascade. */
 const rise = (i: number) => ({ '--rise-i': i }) as React.CSSProperties;
