@@ -83,6 +83,8 @@ export default function RootLayout() {
           <div className="container relative mx-auto flex h-14 items-center px-4 md:px-8">
             <Link
               to={isSignedIn ? "/home" : "/"}
+              onMouseEnter={() => { if (isSignedIn) void import('@/pages/HomePage'); }}
+              onFocus={() => { if (isSignedIn) void import('@/pages/HomePage'); }}
               className="flex items-center gap-2.5 transition-opacity hover:opacity-80"
             >
               <PraxisBrand className="text-[#f1ead9]" />
@@ -101,6 +103,8 @@ export default function RootLayout() {
                 {pathname !== "/profile" && (
                   <Link
                     to="/profile"
+                    onMouseEnter={() => { void import('@/pages/ProfilePage'); }}
+                    onFocus={() => { void import('@/pages/ProfilePage'); }}
                     className="inline-flex items-center gap-1.5 text-sm font-medium text-white/90 transition-colors hover:text-white"
                   >
                     <UserRound className="h-4 w-4" />
