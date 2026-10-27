@@ -16,6 +16,7 @@ import RootLayout from '@/components/layout/RootLayout';
 import RequireAuth from '@/components/RequireAuth';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { BOOKMARKS_ENABLED } from '@/lib/featureFlags';
+import { PageLoading } from '@/components/ui/page-loading';
 
 function App() {
   return (
@@ -31,7 +32,7 @@ function App() {
             <Route path="sign-in/*" element={<LandingPage />} />
             <Route path="sign-up/*" element={<LandingPage />} />
             {/* Everything else requires a signed-in user. */}
-            <Route element={<Suspense fallback={null}><RequireAuth /></Suspense>}>
+            <Route element={<Suspense fallback={<PageLoading />}><RequireAuth /></Suspense>}>
               <Route path="home" element={<HomePage />} />
               <Route path="search" element={<SearchPage />} />
               <Route path="profile" element={<ProfilePage />} />
