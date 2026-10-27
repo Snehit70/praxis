@@ -127,7 +127,9 @@ export default function ProfilePage() {
           <div className="h-[72px] w-full sm:h-[clamp(200px,28vh,280px)]" />
           <div className="relative -mt-10 sm:absolute sm:inset-x-0 sm:bottom-0 sm:mt-0">
             <div className="mx-auto flex max-w-6xl flex-col gap-5 px-4 sm:flex-row sm:items-end sm:justify-between sm:pb-6 md:px-8">
-              <div className="flex items-end gap-4 md:gap-5">
+              <div className="min-w-0">
+                <Skeleton className="mb-4 h-5 w-32 rounded-md" />
+                <div className="flex items-end gap-4 md:gap-5">
                 <Skeleton className="squircle size-20 shrink-0 rounded-[1.75rem] md:size-24" />
                 <div className="space-y-2.5 pb-0.5">
                   <Skeleton className="h-10 w-56 rounded-lg md:h-12 md:w-72" />
@@ -135,7 +137,11 @@ export default function ProfilePage() {
                   <Skeleton className="h-3 w-48 rounded-full" />
                 </div>
               </div>
-              <Skeleton className="squircle h-9 w-32 shrink-0 rounded-2xl" />
+              </div>
+              <div className="flex gap-2">
+                <Skeleton className="h-9 w-32 rounded-xl" />
+                <Skeleton className="h-9 w-28 rounded-xl" />
+              </div>
             </div>
           </div>
         </section>
@@ -150,7 +156,7 @@ export default function ProfilePage() {
                 <Skeleton className="h-8 w-24 rounded-xl" />
               </div>
               <div className="mt-4 space-y-1 border-t border-white/10 pt-2">
-                {[0, 1, 2].map((row) => (
+                {Array.from({ length: panel === 0 ? 4 : 2 }, (_, row) => (
                   <div key={row} className="flex items-center gap-4 py-3">
                     <Skeleton className="squircle size-11 shrink-0 rounded-xl" />
                     <div className="flex-1 space-y-2">
@@ -182,6 +188,8 @@ export default function ProfilePage() {
             <div className="min-w-0">
             <Link
               to="/home"
+              onMouseEnter={() => { void import('@/pages/HomePage'); }}
+              onFocus={() => { void import('@/pages/HomePage'); }}
               className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-white/90 transition-colors [text-shadow:0_1px_10px_rgba(0,0,0,0.5)] hover:text-white"
             >
               <ArrowLeft className="h-4 w-4" />
