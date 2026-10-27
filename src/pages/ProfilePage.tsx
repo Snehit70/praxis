@@ -43,6 +43,9 @@ export default function ProfilePage() {
   const [catalogue, setCatalogue] = useState<ReturnType<typeof buildCatalogue> | null>(null);
   const [failed, setFailed] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [confirmSignOut, setConfirmSignOut] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+  const [signOutFailed, setSignOutFailed] = useState(false);
   const [courseEditorOpen, setCourseEditorOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -211,7 +214,7 @@ export default function ProfilePage() {
             >
               <Edit3 /> Edit profile
             </Button>
-            <Button variant="outline" className="squircle rounded-2xl border-white/25 bg-black/30 text-white hover:bg-black/45" onClick={() => void signOut({ redirectUrl: "/" })}>
+            <Button variant="outline" className="squircle rounded-2xl border-white/25 bg-black/30 text-white hover:bg-black/45" onClick={() => { setSignOutFailed(false); setConfirmSignOut(true); }}>
               <LogOut /> Sign out
             </Button>
             </div>
@@ -297,8 +300,28 @@ export default function ProfilePage() {
             ) : (
               <p className="mt-6 text-sm text-white/55">Choose the courses you want waiting on your road.</p>
             )}
+            {selectedCourses.length > 2 && (
+              <p className="mt-2 text-xs text-white/65">Scroll to see all {selectedCourses.length} courses</p>
+            )}
           </section>
         </div>
+
+        <Dialog open={confirmSignOut} onOpenChange={setConfirmSignOut} labelledBy="sign-out-title" dismissable={!signingOut} className="border-white/10 bg-[#0d1220] sm:max-w-md">
+          <div className="p-6 sm:p-8">
+            <h2 id="sign-out-title" className="font-display text-3xl text-white">Sign out of Praxis?</h2>
+            <p className="mt-3 text-sm leading-relaxed text-white/70">You can sign back in whenever you&rsquo;re ready.</p>
+            {signOutFailed && <p role="alert" className="mt-3 text-sm text-red-300">Couldn&rsquo;t sign out. Please try again.</p>}
+            <div className="mt-6 flex flex-wrap justify-end gap-3">
+              <Button variant="outline" disabled={signingOut} onClick={() => setConfirmSignOut(false)}>Cancel</Button>
+              <Button disabled={signingOut} onClick={async () => {
+                setSigningOut(true);
+                setSignOutFailed(false);
+                try { await signOut({ redirectUrl: '/' }); }
+                catch (error) { logger.error('Failed to sign out', error); setSignOutFailed(true); setSigningOut(false); }
+              }}>{signingOut ? 'Signing out...' : 'Sign out'}</Button>
+            </div>
+          </div>
+        </Dialog>
 
         <Dialog open={editing} onOpenChange={setEditing} labelledBy="edit-profile-title" className="border-white/10 bg-[#0d1220] sm:max-w-2xl">
           {/* Writing desk: the calm left wall carries the title, the window
