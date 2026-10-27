@@ -41,7 +41,7 @@ const clerk = clerkSecretKey
   : null;
 const authorizedParties = allowedOrigin === '*' ? undefined : [allowedOrigin];
 const [quiz1Slug, quiz2Slug, endTermSlug] = SUPPORTED_EXAM_SLUGS;
-const PROFILE_AVATAR_KEYS = new Set(['lawine', 'ubel', 'sein', 'serie', 'flamme', 'himmel']);
+const PROFILE_AVATAR_KEYS = new Set(['lawine', 'ubel', 'sein', 'serie', 'flamme', 'himmel', 'land', 'ubel-2', 'himmel-2', 'stark']);
 
 const ATTEMPT_SUMMARY_COLUMNS = `
   id::text AS "id",
