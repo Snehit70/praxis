@@ -181,7 +181,7 @@ export default function ProfilePage() {
           <div className="mx-auto flex max-w-6xl flex-col gap-5 px-4 sm:pb-6 sm:flex-row sm:items-end sm:justify-between md:px-8">
             <div className="min-w-0">
             <Link
-              to="/"
+              to="/home"
               className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-white/90 transition-colors [text-shadow:0_1px_10px_rgba(0,0,0,0.5)] hover:text-white"
             >
               <ArrowLeft className="h-4 w-4" />

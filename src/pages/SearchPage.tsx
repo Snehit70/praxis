@@ -169,7 +169,7 @@ export default function SearchPage() {
     <div className="space-y-8">
       <header className="space-y-4">
         <Button variant="ghost" size="sm" asChild className="gap-1.5 -ml-2 text-muted-foreground">
-          <Link to="/">
+          <Link to="/home">
             <ArrowLeft className="h-4 w-4" />
             Home
           </Link>

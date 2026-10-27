@@ -1,6 +1,6 @@
 import { Outlet, Link, useLocation } from "react-router-dom";
 import { UserRound } from "lucide-react";
-import { SignedIn, SignedOut } from "@clerk/clerk-react";
+import { SignedIn, SignedOut, useAuth } from "@clerk/clerk-react";
 import { AccountButton } from "@/components/auth/AccountButton";
 import { SignInTrigger } from "@/components/auth/AuthDialog";
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,7 @@ export default function RootLayout() {
   // layout, so we drop the global chrome (header, footer, centered container)
   // there. Every other route keeps it.
   const { pathname } = useLocation();
+  const { isSignedIn } = useAuth();
   const bare = pathname === "/" || pathname === "/home";
   // The exam-taking page uses a question + navigator layout that should span
   // the full viewport width rather than the narrower centered reading column.
@@ -81,7 +82,7 @@ export default function RootLayout() {
           )}
           <div className="container relative mx-auto flex h-14 items-center px-4 md:px-8">
             <Link
-              to="/"
+              to={isSignedIn ? "/home" : "/"}
               className="flex items-center gap-2.5 transition-opacity hover:opacity-80"
             >
               <PraxisBrand className="text-[#f1ead9]" />

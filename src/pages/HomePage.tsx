@@ -204,7 +204,7 @@ export default function HomePage() {
         <img src={courseErrorScene} alt="" aria-hidden="true" className="absolute inset-0 -z-20 h-full w-full object-cover object-[65%_center] md:object-center" />
         <div aria-hidden="true" className="absolute inset-0 -z-10 bg-gradient-to-t from-[#101720] via-[#101720]/75 to-[#101720]/25 md:bg-gradient-to-r md:from-[#101720]/95 md:via-[#101720]/75 md:to-transparent" />
         <header className="px-6 py-6 md:px-12">
-          <Link to="/" aria-label="Praxis home" className="inline-flex rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">
+          <Link to="/home" aria-label="Praxis home" className="inline-flex rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">
             <PraxisBrand className="h-12 text-[#f1ead9]" />
           </Link>
         </header>
@@ -252,7 +252,7 @@ export default function HomePage() {
           container width, quiet text links. */}
       <header className="sticky top-0 z-50 bg-black/20 backdrop-blur-md">
         <div className="container relative mx-auto flex h-14 items-center px-4 md:px-8">
-          <Link to="/" className="flex items-center gap-2.5 transition-opacity hover:opacity-80">
+          <Link to="/home" className="flex items-center gap-2.5 transition-opacity hover:opacity-80">
             <PraxisBrand className="text-[#f1ead9]" />
           </Link>
           <nav className="ml-auto flex items-center gap-4">

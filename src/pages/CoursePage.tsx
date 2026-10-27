@@ -596,7 +596,7 @@ export default function CoursePage() {
         description="Course not found."
         actions={(
           <Button asChild variant="outline">
-            <Link to="/">Go home</Link>
+            <Link to="/home">Go home</Link>
           </Button>
         )}
         announce
