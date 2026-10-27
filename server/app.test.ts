@@ -737,6 +737,15 @@ describe('Praxis API authenticated routes', () => {
     expect(updated.status).toBe(200);
     expect(await updated.json()).toMatchObject({ displayName: 'Frieren', bio: 'Walking the road.', avatarKey: 'lawine' });
 
+    for (const avatarKey of ['land', 'ubel-2', 'himmel-2', 'stark']) {
+      const response = await handler(new Request(base, {
+        method: 'PATCH',
+        body: JSON.stringify({ avatarKey }),
+      }));
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({ avatarKey });
+    }
+
     const invalid = await handler(new Request(base, {
       method: 'PATCH',
       body: JSON.stringify({ avatarKey: 'unknown' }),

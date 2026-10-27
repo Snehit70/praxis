@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth, useUser } from '@clerk/clerk-react';
-import { ArrowRight, BookMarked, Clock, Pencil, Plus, Search, UserRound } from 'lucide-react';
+import { ArrowRight, BookMarked, Clock, Pencil, Plus, RotateCw, Search, UserRound } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Skeleton, SkeletonRegion } from '@/components/ui/skeleton';
@@ -23,6 +23,7 @@ import { getExamSlugFromUuid } from '@/lib/examMapping';
 import { cn } from '@/lib/utils';
 import { logger } from '@/lib/logger';
 import { BOOKMARKS_ENABLED } from '@/lib/featureFlags';
+import courseErrorScene from '@/assets/course-error-scene-v2.webp';
 
 /**
  * Frieren's voice, keyed to the local clock — the measured, slightly dry-warm
@@ -74,7 +75,7 @@ const emptyArt = asset('feature-frieren-pray.jpeg');
 const sceneImg = asset('home-scene.webp');
 
 // Shared content column so hero chrome, greeting and the card grid line up.
-const column = 'mx-auto w-full max-w-6xl px-4 md:px-8';
+const column = 'w-full max-w-6xl px-4 md:px-8 xl:ml-[10%]';
 
 /** Inline `--rise-i` style so an element takes its place in the stagger cascade. */
 const rise = (i: number) => ({ '--rise-i': i }) as React.CSSProperties;
@@ -113,6 +114,7 @@ export default function HomePage() {
   const [selectorOpen, setSelectorOpen] = useState(false);
   const [autoOpened, setAutoOpened] = useState(false);
   const [archiveQuery, setArchiveQuery] = useState('');
+  const [activeTab, setActiveTab] = useState('mine');
   const [resume, setResume] = useState<HistoryItem | null>(null);
   const pendingEnrolled = useRef(new Set<string>());
   // Slow scroll-parallax on the fixed page backdrop (desktop, motion-safe only).
@@ -198,15 +200,24 @@ export default function HomePage() {
 
   if (catalogueFailed) {
     return (
-      <div className="container mx-auto px-4 py-10 md:px-8">
-        <StatePanel
-          tone="error"
-          title="Couldn't load courses"
-          description="We couldn't reach the course catalogue. Please try again in a moment."
-          actions={<Button onClick={() => window.location.reload()}>Reload</Button>}
-          announce
-        />
-      </div>
+      <main className="relative isolate flex min-h-[100svh] flex-col overflow-hidden bg-[#171e26] text-white">
+        <img src={courseErrorScene} alt="" aria-hidden="true" className="absolute inset-0 -z-20 h-full w-full object-cover object-[65%_center] md:object-center" />
+        <div aria-hidden="true" className="absolute inset-0 -z-10 bg-gradient-to-t from-[#101720] via-[#101720]/75 to-[#101720]/25 md:bg-gradient-to-r md:from-[#101720]/95 md:via-[#101720]/75 md:to-transparent" />
+        <header className="px-6 py-6 md:px-12">
+          <Link to="/home" aria-label="Praxis home" className="inline-flex rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">
+            <PraxisBrand className="h-12 text-[#f1ead9]" />
+          </Link>
+        </header>
+        <section role="status" aria-live="polite" className="flex flex-1 items-end px-6 pb-16 pt-48 md:items-center md:px-12 md:pb-24 md:pt-12 lg:px-20">
+          <div className="max-w-lg">
+            <h1 className="font-display text-5xl leading-[1.05] tracking-tight sm:text-6xl">We couldn&rsquo;t load<br /><em>your courses.</em></h1>
+            <p className="mt-6 max-w-sm text-base leading-relaxed text-white/80 sm:text-lg">Something got in the way. Give it another try when you&rsquo;re ready.</p>
+            <Button onClick={() => window.location.reload()} className="mt-8 h-12 gap-2 rounded-2xl px-6">
+              <RotateCw aria-hidden="true" className="size-4" /> Try again
+            </Button>
+          </div>
+        </section>
+      </main>
     );
   }
 
@@ -241,7 +252,7 @@ export default function HomePage() {
           container width, quiet text links. */}
       <header className="sticky top-0 z-50 bg-black/20 backdrop-blur-md">
         <div className="container relative mx-auto flex h-14 items-center px-4 md:px-8">
-          <Link to="/" className="flex items-center gap-2.5 transition-opacity hover:opacity-80">
+          <Link to="/home" className="flex items-center gap-2.5 transition-opacity hover:opacity-80">
             <PraxisBrand className="text-[#f1ead9]" />
           </Link>
           <nav className="ml-auto flex items-center gap-4">
@@ -269,7 +280,7 @@ export default function HomePage() {
         </div>
       </header>
 
-      <Tabs defaultValue="mine">
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         {/* ── Hero: the greeting on the open sky of the page scene. ── */}
         <section className="relative w-full">
           <div className="relative h-[clamp(244px,calc(40vh-56px),384px)] w-full">
@@ -308,7 +319,7 @@ export default function HomePage() {
 
         {/* ── Content below the hero ── */}
         <div className={cn(column, 'py-6 md:py-8')}>
-          <div className="mb-6 flex items-center justify-between gap-4">
+          <div className="mb-6 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
           <TabsList className={SEGMENTED_LIST}>
             <TabsTrigger
               value="mine"
@@ -331,6 +342,15 @@ export default function HomePage() {
               The World
             </TabsTrigger>
           </TabsList>
+          {activeTab === 'archive' && (
+            <SearchField
+              value={archiveQuery}
+              onChange={setArchiveQuery}
+              placeholder="Search all courses..."
+              label="Search all courses"
+              className="w-full sm:max-w-md"
+            />
+          )}
           </div>
 
         {/* Companions — the courses you travel with this term. */}
@@ -369,8 +389,8 @@ export default function HomePage() {
               ) : (
                 <Reveal className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   {/* Companions tiles are clean — no per-tile toggle; manage via the Companions button. */}
-                  {enrolledCourses.map((course, i) => (
-                    <CourseCard key={course.key} course={course} enrolled revealIndex={i} />
+                  {enrolledCourses.map((course) => (
+                    <CourseCard key={course.key} course={course} enrolled />
                   ))}
                 </Reveal>
               )}
@@ -381,16 +401,8 @@ export default function HomePage() {
         {/* The World — every course in the archive; roads not yet walked. */}
         <TabsContent value="archive" className="space-y-6">
           <p className="text-sm text-muted-foreground">
-            Every course in the archive — roads you haven&apos;t walked yet.
+            Every course in the archive, including roads you haven&apos;t walked yet.
           </p>
-          <SearchField
-            value={archiveQuery}
-            onChange={setArchiveQuery}
-            placeholder="Search all courses..."
-            label="Search all courses"
-            className="max-w-md"
-          />
-
           {booting ? (
             <CourseGridSkeleton label="Loading the archive" count={6} />
           ) : archiveTotal === 0 ? (
@@ -407,7 +419,7 @@ export default function HomePage() {
                 if (entries.length === 0) return null;
                 const meta = LEVEL_META[lvl];
                 return (
-                  <section key={lvl} className={`border-l-4 ${meta.accent} pl-4 md:pl-6`}>
+                  <section key={lvl}>
                     <Reveal>
                       {/* Header leads its grid in the reveal cascade. */}
                       <div style={rise(0)} className="praxis-rise mb-4 flex items-center gap-3">
@@ -418,21 +430,18 @@ export default function HomePage() {
                           loading="lazy"
                           className={cn('squircle h-9 w-9 rounded-xl object-cover object-top ring-2', meta.ring)}
                         />
-                        <div>
-                          <h2 className={cn('text-lg font-semibold', meta.text)}>{meta.label}</h2>
-                          <p className="text-sm text-muted-foreground">
-                            {entries.length} {entries.length === 1 ? 'course' : 'courses'}
-                          </p>
-                        </div>
+                        <h2 className={cn('min-w-0 text-lg font-semibold', meta.text)}>{meta.label}</h2>
+                        <p className="ml-auto shrink-0 rounded-md bg-white px-2.5 py-1 text-sm font-medium tabular-nums text-[#1c2433]">
+                          {entries.length} {entries.length === 1 ? 'course' : 'courses'}
+                        </p>
                       </div>
                       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                        {entries.map((course, i) => (
+                        {entries.map((course) => (
                           <CourseCard
                             key={course.key}
                             course={course}
                             enrolled={enrolled.has(course.key)}
                             onToggleEnroll={handleToggleEnroll}
-                            revealIndex={i + 1}
                           />
                         ))}
                       </div>

@@ -12,8 +12,6 @@ interface CourseCardProps {
    *  Companions tiles omit it and stay clean — enrollment is managed via the
    *  "Edit courses" selector there. */
   onToggleEnroll?: (course: CatalogueEntry) => void;
-  /** Position within its grid — drives the staggered entrance cascade. */
-  revealIndex?: number;
 }
 
 const prefersReducedMotion = () =>
@@ -23,11 +21,9 @@ const prefersReducedMotion = () =>
 /** One framing for every tile so a character's face sits at the same height across a row. */
 const ART_POSITION = '50% 18%';
 
-export function CourseCard({ course, enrolled = false, onToggleEnroll, revealIndex = 0 }: CourseCardProps) {
+export function CourseCard({ course, enrolled = false, onToggleEnroll }: CourseCardProps) {
   const meta = LEVEL_META[course.level];
   const ref = useRef<HTMLDivElement>(null);
-  // Cap the cascade index so long lists don't wait on an ever-growing delay.
-  const riseIndex = Math.min(revealIndex, 7);
 
   // Playful pointer parallax/tilt: write pointer offset to CSS vars the inner
   // plane (rotate) and the art layer (translate) read. Gated on reduced-motion.
@@ -60,8 +56,7 @@ export function CourseCard({ course, enrolled = false, onToggleEnroll, revealInd
       ref={ref}
       onMouseMove={handleMove}
       onMouseLeave={reset}
-      style={{ '--rise-i': riseIndex } as React.CSSProperties}
-      className="praxis-rise group relative transition-transform duration-200 ease-out will-change-transform [perspective:1000px] motion-safe:hover:-translate-y-1"
+      className="group relative transition-transform duration-200 ease-out will-change-transform [perspective:1000px] motion-safe:hover:-translate-y-1"
     >
       <div
         className={cn(

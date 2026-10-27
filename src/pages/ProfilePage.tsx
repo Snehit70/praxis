@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useAuth, useUser } from '@clerk/clerk-react';
-import { ArrowLeft, ArrowRight, Check, Edit3, Loader2, UserRound } from 'lucide-react';
+import { useAuth, useClerk, useUser } from '@clerk/clerk-react';
+import { ArrowLeft, ArrowRight, Check, Edit3, Loader2, LogOut, UserRound } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogClose } from '@/components/ui/dialog';
@@ -17,21 +17,7 @@ import { formatPaperName } from '@/lib/paperUtils';
 import { logger } from '@/lib/logger';
 
 import editArt from '@/assets/profile-edit-desk.webp';
-import lawineImage from '@/assets/Lawine.jpeg';
-import ubelImage from '@/assets/Übel.jpeg';
-import seinImage from '@/assets/Sein.jpeg';
-import serieImage from '@/assets/Serie.jpeg';
-import flammeImage from '@/assets/Flamme.jpeg';
-import himmelImage from '@/assets/𝖧𝗂𝗆𝗆𝖾𝗅.jpeg';
-
-const AVATARS = [
-  { key: 'lawine', label: 'Lawine', src: lawineImage },
-  { key: 'ubel', label: 'Übel', src: ubelImage },
-  { key: 'sein', label: 'Sein', src: seinImage },
-  { key: 'serie', label: 'Serie', src: serieImage },
-  { key: 'flamme', label: 'Flamme', src: flammeImage },
-  { key: 'himmel', label: 'Himmel', src: himmelImage },
-] as const;
+import { AVATARS } from '@/lib/avatars';
 
 function initials(name: string | null | undefined, email: string | null | undefined) {
   const value = name?.trim() || email?.split('@')[0]?.trim() || 'P';
@@ -50,12 +36,16 @@ function paperHref(item: UserProfile['recentViews'][number]) {
 
 export default function ProfilePage() {
   const { getToken } = useAuth();
+  const { signOut } = useClerk();
   const { user } = useUser();
   const courses = useEnrolledCourses();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [catalogue, setCatalogue] = useState<ReturnType<typeof buildCatalogue> | null>(null);
   const [failed, setFailed] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [confirmSignOut, setConfirmSignOut] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+  const [signOutFailed, setSignOutFailed] = useState(false);
   const [courseEditorOpen, setCourseEditorOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -112,6 +102,7 @@ export default function ProfilePage() {
         getToken,
       );
       setProfile(next);
+      window.dispatchEvent(new Event('praxis:profile-updated'));
       setEditing(false);
       setSaved(true);
     } catch (error) {
@@ -136,7 +127,9 @@ export default function ProfilePage() {
           <div className="h-[72px] w-full sm:h-[clamp(200px,28vh,280px)]" />
           <div className="relative -mt-10 sm:absolute sm:inset-x-0 sm:bottom-0 sm:mt-0">
             <div className="mx-auto flex max-w-6xl flex-col gap-5 px-4 sm:flex-row sm:items-end sm:justify-between sm:pb-6 md:px-8">
-              <div className="flex items-end gap-4 md:gap-5">
+              <div className="min-w-0">
+                <Skeleton className="mb-4 h-5 w-32 rounded-md" />
+                <div className="flex items-end gap-4 md:gap-5">
                 <Skeleton className="squircle size-20 shrink-0 rounded-[1.75rem] md:size-24" />
                 <div className="space-y-2.5 pb-0.5">
                   <Skeleton className="h-10 w-56 rounded-lg md:h-12 md:w-72" />
@@ -144,7 +137,11 @@ export default function ProfilePage() {
                   <Skeleton className="h-3 w-48 rounded-full" />
                 </div>
               </div>
-              <Skeleton className="squircle h-9 w-32 shrink-0 rounded-2xl" />
+              </div>
+              <div className="flex gap-2">
+                <Skeleton className="h-9 w-32 rounded-xl" />
+                <Skeleton className="h-9 w-28 rounded-xl" />
+              </div>
             </div>
           </div>
         </section>
@@ -159,7 +156,7 @@ export default function ProfilePage() {
                 <Skeleton className="h-8 w-24 rounded-xl" />
               </div>
               <div className="mt-4 space-y-1 border-t border-white/10 pt-2">
-                {[0, 1, 2].map((row) => (
+                {Array.from({ length: panel === 0 ? 4 : 2 }, (_, row) => (
                   <div key={row} className="flex items-center gap-4 py-3">
                     <Skeleton className="squircle size-11 shrink-0 rounded-xl" />
                     <div className="flex-1 space-y-2">
@@ -190,7 +187,9 @@ export default function ProfilePage() {
           <div className="mx-auto flex max-w-6xl flex-col gap-5 px-4 sm:pb-6 sm:flex-row sm:items-end sm:justify-between md:px-8">
             <div className="min-w-0">
             <Link
-              to="/"
+              to="/home"
+              onMouseEnter={() => { void import('@/pages/HomePage'); }}
+              onFocus={() => { void import('@/pages/HomePage'); }}
               className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-white/90 transition-colors [text-shadow:0_1px_10px_rgba(0,0,0,0.5)] hover:text-white"
             >
               <ArrowLeft className="h-4 w-4" />
@@ -207,16 +206,15 @@ export default function ProfilePage() {
                 <p className="mt-1 max-w-xl text-sm text-white/85 [text-shadow:0_1px_10px_rgba(0,0,0,0.5)] md:text-base">
                   {profile.bio || 'Choose your road and make this archive yours.'}
                 </p>
-                <p className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-white/75 [text-shadow:0_1px_8px_rgba(0,0,0,0.5)]">
-                  <span>{profile.level || 'No program yet'}</span>
-                  <span aria-hidden="true">·</span>
-                  <span>{selectedCourses.length} {selectedCourses.length === 1 ? 'course' : 'courses'}</span>
-                  <span aria-hidden="true">·</span>
-                  <span>{profile.viewedPaperCount} {profile.viewedPaperCount === 1 ? 'paper' : 'papers'} viewed</span>
+                <p className="mt-3 flex flex-wrap items-center gap-2 text-xs font-medium text-[#1c2433]">
+                  <span className="rounded-md bg-white px-2.5 py-1">{profile.level || 'No program yet'}</span>
+                  <span className="rounded-md bg-white px-2.5 py-1 tabular-nums">{selectedCourses.length} {selectedCourses.length === 1 ? 'course' : 'courses'}</span>
+                  <span className="rounded-md bg-white px-2.5 py-1 tabular-nums">{profile.viewedPaperCount} {profile.viewedPaperCount === 1 ? 'paper' : 'papers'} viewed</span>
                 </p>
               </div>
             </div>
             </div>
+            <div className="flex flex-wrap gap-2 self-start sm:self-auto">
             <Button
               variant="outline"
               className="squircle shrink-0 self-start rounded-2xl border-white/25 bg-black/30 text-white backdrop-blur-md hover:bg-black/45 sm:self-auto"
@@ -224,6 +222,10 @@ export default function ProfilePage() {
             >
               <Edit3 /> Edit profile
             </Button>
+            <Button variant="outline" className="squircle rounded-2xl border-white/25 bg-black/30 text-white hover:bg-black/45" onClick={() => { setSignOutFailed(false); setConfirmSignOut(true); }}>
+              <LogOut /> Sign out
+            </Button>
+            </div>
           </div>
         </div>
       </section>
@@ -236,6 +238,41 @@ export default function ProfilePage() {
         )}
 
         <div className="grid items-start gap-6 lg:grid-cols-2">
+          {/* Recently viewed */}
+          <section className={card}>
+            <div className="flex items-end justify-between gap-4">
+              <div>
+                <p className={kicker}>Paper view</p>
+                <h2 className="mt-1.5 font-display text-2xl font-normal tracking-tight">Recently viewed</h2>
+              </div>
+              <p className="pb-1 text-sm text-white/50">{profile.viewedPaperCount} total</p>
+            </div>
+            {profile.recentViews.length === 0 ? (
+              <div className="mt-5 flex flex-col items-center border-t border-white/10 px-4 py-10 text-center">
+                <UserRound className="size-6 text-white/40" />
+                <p className="mt-3 font-medium">Your paper trail starts here.</p>
+                <p className="mt-1 text-sm text-white/55">Open a paper and it will appear here.</p>
+                <Button asChild variant="outline" size="sm" className="squircle mt-5 rounded-xl">
+                  <Link to="/search">Browse papers <ArrowRight /></Link>
+                </Button>
+              </div>
+            ) : (
+              <ul tabIndex={profile.recentViews.length > 4 ? 0 : undefined} aria-label="Recently viewed papers" className="mt-4 max-h-[17rem] space-y-0.5 overflow-y-auto border-t border-white/10 pt-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50">
+                {profile.recentViews.map((item, index) => (
+                  <li key={item.id}>
+                    <Link to={paperHref(item)} className={rowLink}>
+                      <span className="w-7 font-display text-xl tabular-nums text-white/25">{String(index + 1).padStart(2, '0')}</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate font-medium text-white/90">{formatPaperName(item.paperName, item.year ?? undefined)}</span>
+                        <span className="mt-0.5 block truncate text-xs text-white/45">{item.courseName} · {item.examName}</span>
+                      </span>
+                      <ArrowRight className="size-4 text-white/30 transition group-hover:translate-x-0.5 group-hover:text-white/70" />
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
           {/* Study setup */}
           <section className={card}>
             <div className="flex items-end justify-between gap-4">
@@ -248,7 +285,7 @@ export default function ProfilePage() {
               </Button>
             </div>
             {selectedCourses.length > 0 ? (
-              <ul className="mt-4 space-y-0.5 border-t border-white/10 pt-2">
+              <ul tabIndex={selectedCourses.length > 2 ? 0 : undefined} aria-label="Your courses" className="mt-4 max-h-36 space-y-0.5 overflow-y-auto border-t border-white/10 pt-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50">
                 {selectedCourses.map((course) => (
                   <li key={course.key}>
                     <Link to={courseHref(course)} className={rowLink}>
@@ -271,44 +308,28 @@ export default function ProfilePage() {
             ) : (
               <p className="mt-6 text-sm text-white/55">Choose the courses you want waiting on your road.</p>
             )}
-          </section>
-
-          {/* Recently viewed */}
-          <section className={card}>
-            <div className="flex items-end justify-between gap-4">
-              <div>
-                <p className={kicker}>Paper view</p>
-                <h2 className="mt-1.5 font-display text-2xl font-normal tracking-tight">Recently viewed</h2>
-              </div>
-              <p className="pb-1 text-sm text-white/50">{profile.viewedPaperCount} total</p>
-            </div>
-            {profile.recentViews.length === 0 ? (
-              <div className="mt-5 flex flex-col items-center border-t border-white/10 px-4 py-10 text-center">
-                <UserRound className="size-6 text-white/40" />
-                <p className="mt-3 font-medium">Your paper trail starts here.</p>
-                <p className="mt-1 text-sm text-white/55">Open a paper and it will appear here.</p>
-                <Button asChild variant="outline" size="sm" className="squircle mt-5 rounded-xl">
-                  <Link to="/search">Browse papers <ArrowRight /></Link>
-                </Button>
-              </div>
-            ) : (
-              <ul className="mt-4 space-y-0.5 border-t border-white/10 pt-2">
-                {profile.recentViews.map((item, index) => (
-                  <li key={item.id}>
-                    <Link to={paperHref(item)} className={rowLink}>
-                      <span className="w-7 font-display text-xl tabular-nums text-white/25">{String(index + 1).padStart(2, '0')}</span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate font-medium text-white/90">{formatPaperName(item.paperName, item.year ?? undefined)}</span>
-                        <span className="mt-0.5 block truncate text-xs text-white/45">{item.courseName} · {item.examName}</span>
-                      </span>
-                      <ArrowRight className="size-4 text-white/30 transition group-hover:translate-x-0.5 group-hover:text-white/70" />
-                    </Link>
-                  </li>
-                ))}
-              </ul>
+            {selectedCourses.length > 2 && (
+              <p className="mt-2 text-xs text-white/65">Scroll to see all {selectedCourses.length} courses</p>
             )}
           </section>
         </div>
+
+        <Dialog open={confirmSignOut} onOpenChange={setConfirmSignOut} labelledBy="sign-out-title" dismissable={!signingOut} className="border-white/10 bg-[#0d1220] sm:max-w-md">
+          <div className="p-6 sm:p-8">
+            <h2 id="sign-out-title" className="font-display text-3xl text-white">Sign out of Praxis?</h2>
+            <p className="mt-3 text-sm leading-relaxed text-white/70">You can sign back in whenever you&rsquo;re ready.</p>
+            {signOutFailed && <p role="alert" className="mt-3 text-sm text-red-300">Couldn&rsquo;t sign out. Please try again.</p>}
+            <div className="mt-6 flex flex-wrap justify-end gap-3">
+              <Button variant="outline" disabled={signingOut} onClick={() => setConfirmSignOut(false)}>Cancel</Button>
+              <Button disabled={signingOut} onClick={async () => {
+                setSigningOut(true);
+                setSignOutFailed(false);
+                try { await signOut({ redirectUrl: '/' }); }
+                catch (error) { logger.error('Failed to sign out', error); setSignOutFailed(true); setSigningOut(false); }
+              }}>{signingOut ? 'Signing out...' : 'Sign out'}</Button>
+            </div>
+          </div>
+        </Dialog>
 
         <Dialog open={editing} onOpenChange={setEditing} labelledBy="edit-profile-title" className="border-white/10 bg-[#0d1220] sm:max-w-2xl">
           {/* Writing desk: the calm left wall carries the title, the window

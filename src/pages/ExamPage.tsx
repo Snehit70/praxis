@@ -88,7 +88,7 @@ function LoadingSkeleton({ examName }: { examName: string | null }) {
     <SkeletonRegion label="Loading exam courses" className="space-y-8">
       <header className="space-y-4">
         <Button variant="ghost" size="sm" asChild className="gap-1.5 -ml-2 text-muted-foreground">
-          <Link to="/">
+          <Link to="/home">
             <ArrowLeft className="h-4 w-4" />
             Home
           </Link>
@@ -216,7 +216,7 @@ export default function ExamPage() {
         description={`"${examId}" is not a valid exam type.`}
         actions={(
           <Button asChild variant="outline">
-            <Link to="/">Go home</Link>
+            <Link to="/home">Go home</Link>
           </Button>
         )}
         announce
@@ -246,7 +246,7 @@ export default function ExamPage() {
               Retry
             </Button>
             <Button asChild variant="outline">
-              <Link to="/">Go home</Link>
+              <Link to="/home">Go home</Link>
             </Button>
           </>
         )}
@@ -268,7 +268,7 @@ export default function ExamPage() {
         description={`No courses available for ${examName}.`}
         actions={(
           <Button asChild variant="outline">
-            <Link to="/">Go home</Link>
+            <Link to="/home">Go home</Link>
           </Button>
         )}
         announce
@@ -281,7 +281,7 @@ export default function ExamPage() {
       {/* Header */}
       <header className="space-y-4">
         <Button variant="ghost" size="sm" asChild className="gap-1.5 -ml-2 text-muted-foreground">
-          <Link to="/">
+          <Link to="/home">
             <ArrowLeft className="h-4 w-4" />
             Home
           </Link>

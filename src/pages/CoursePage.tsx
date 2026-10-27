@@ -154,6 +154,10 @@ function PaperVariantCard({
 }) {
   const navigate = useNavigate();
   const [charging, setCharging] = useState(false);
+  const navigationTimer = useRef<number | null>(null);
+  useEffect(() => () => {
+    if (navigationTimer.current !== null) window.clearTimeout(navigationTimer.current);
+  }, []);
   const to = `/paper/${paper.uuid}?course=${courseId}&exam=${examId}`;
   const { patina, fresh } = ageOf(paper.year, newestYear);
   const seed = useMemo(() => hashString(paper.uuid), [paper.uuid]);
@@ -168,7 +172,7 @@ function PaperVariantCard({
       return;
     }
     setCharging(true);
-    window.setTimeout(() => navigate(to), 700);
+    navigationTimer.current = window.setTimeout(() => navigate(to), 200);
   };
 
   const track = (e: React.PointerEvent<HTMLAnchorElement>) => {
@@ -596,7 +600,7 @@ export default function CoursePage() {
         description="Course not found."
         actions={(
           <Button asChild variant="outline">
-            <Link to="/">Go home</Link>
+            <Link to="/home">Go home</Link>
           </Button>
         )}
         announce

@@ -1,44 +1,37 @@
-import { UserButton } from '@clerk/clerk-react';
+import { useEffect, useState } from 'react';
+import { useAuth, useUser } from '@clerk/clerk-react';
+import { Link } from 'react-router-dom';
+import { UserRound } from 'lucide-react';
+import { getProfile } from '@/lib/api';
+import { AVATARS } from '@/lib/avatars';
 
-/** Clerk's account menu, themed to the Praxis palette so its popover sits in the frame. */
-const appearance = {
-  variables: {
-    colorBackground: '#0E1530',
-    colorText: '#F1EAD9',
-    colorTextSecondary: 'rgba(241,234,217,0.65)',
-    colorPrimary: '#7AA7E6',
-    colorNeutral: '#F1EAD9',
-    borderRadius: '0.75rem',
-    fontFamily: '"Geist Variable", "Inter", sans-serif',
-  },
-  // Style objects, not classes: Clerk's CSS is unlayered and would beat Tailwind's.
-  elements: {
-    userButtonPopoverCard: {
-      border: '1px solid rgba(255,255,255,0.15)',
-      backgroundColor: 'rgba(14,21,48,0.92)',
-      boxShadow: '0 24px 48px -12px rgba(0,0,0,0.55)',
-      backdropFilter: 'blur(16px)',
-    },
-    userButtonPopoverActionButton: { '&:hover': { backgroundColor: 'rgba(255,255,255,0.08)' } },
-    userButtonPopoverActionButtonText: { color: '#F1EAD9' },
-    userButtonPopoverActionButtonIcon: { color: 'rgba(241,234,217,0.7)' },
-    userPreviewMainIdentifier: { color: '#F1EAD9', fontWeight: 500 },
-    userPreviewSecondaryIdentifier: { color: 'rgba(241,234,217,0.65)' },
-    userButtonPopoverFooter: {
-      backgroundImage: 'none',
-      backgroundColor: 'transparent',
-      borderTop: '1px solid rgba(255,255,255,0.1)',
-    },
-  },
-};
-
+/** Open the Praxis profile using its selected avatar. */
 export function AccountButton() {
+  const { getToken } = useAuth();
+  const { user } = useUser();
+  const [avatarKey, setAvatarKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    const refresh = () => {
+      void getProfile(getToken).then((profile) => {
+        if (active) setAvatarKey(profile.avatarKey);
+      }).catch(() => {
+        if (active) setAvatarKey(null);
+      });
+    };
+    refresh();
+    window.addEventListener('praxis:profile-updated', refresh);
+    return () => {
+      active = false;
+      window.removeEventListener('praxis:profile-updated', refresh);
+    };
+  }, [getToken, user?.id]);
+
+  const avatar = AVATARS.find((item) => item.key === avatarKey);
   return (
-    <UserButton
-      afterSignOutUrl="/"
-      userProfileMode="navigation"
-      userProfileUrl="/profile"
-      appearance={appearance}
-    />
+    <Link to="/profile" aria-label="Your profile" className="flex size-9 items-center justify-center overflow-hidden rounded-xl border border-white/30 bg-black/30 text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">
+      {avatar ? <img src={avatar.src} alt="" className="h-full w-full object-cover object-top" /> : <UserRound className="size-5" aria-hidden="true" />}
+    </Link>
   );
 }

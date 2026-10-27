@@ -2209,7 +2209,7 @@ export default function PaperPage() {
     if (location.key !== 'default') {
       navigate(-1);
     } else {
-      navigate(examSlug && paper ? `/exam/${examSlug}/course/${paper.courseUuid}` : '/');
+      navigate(examSlug && paper ? `/exam/${examSlug}/course/${paper.courseUuid}` : '/home');
     }
   };
 
@@ -2413,7 +2413,7 @@ export default function PaperPage() {
         description="Paper ID not provided."
         actions={(
           <Button asChild variant="outline">
-            <Link to="/">Go home</Link>
+            <Link to="/home">Go home</Link>
           </Button>
         )}
         announce
@@ -2444,7 +2444,7 @@ export default function PaperPage() {
               Retry
             </Button>
             <Button asChild variant="outline">
-              <Link to={examSlug ? `/exam/${examSlug}` : '/'}>Go back</Link>
+              <Link to={examSlug ? `/exam/${examSlug}` : '/home'}>Go back</Link>
             </Button>
           </>
         )}

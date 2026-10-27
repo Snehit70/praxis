@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
 import LandingPage from './pages/LandingPage';
 import NotFoundPage from './pages/NotFoundPage';
 
@@ -16,6 +16,18 @@ import RootLayout from '@/components/layout/RootLayout';
 import RequireAuth from '@/components/RequireAuth';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { BOOKMARKS_ENABLED } from '@/lib/featureFlags';
+import { PageLoading } from '@/components/ui/page-loading';
+
+function RouteLoading() {
+  const { pathname } = useLocation();
+  const label = pathname === '/home' ? 'Loading your courses'
+    : pathname === '/profile' ? 'Loading your profile'
+    : pathname === '/search' ? 'Loading search'
+    : pathname.startsWith('/paper/') ? 'Loading paper'
+    : pathname.includes('/course/') ? 'Loading papers'
+    : 'Loading page';
+  return <PageLoading label={label} />;
+}
 
 function App() {
   return (
@@ -31,7 +43,7 @@ function App() {
             <Route path="sign-in/*" element={<LandingPage />} />
             <Route path="sign-up/*" element={<LandingPage />} />
             {/* Everything else requires a signed-in user. */}
-            <Route element={<Suspense fallback={null}><RequireAuth /></Suspense>}>
+            <Route element={<Suspense fallback={<RouteLoading />}><RequireAuth /></Suspense>}>
               <Route path="home" element={<HomePage />} />
               <Route path="search" element={<SearchPage />} />
               <Route path="profile" element={<ProfilePage />} />

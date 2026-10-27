@@ -6,6 +6,7 @@ import { SignInTrigger } from "@/components/auth/AuthDialog";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { PraxisBrand } from "@/components/PraxisBrand";
+import { PageLoading } from "@/components/ui/page-loading";
 
 /**
  * Hero: a single painted Frieren-style scene (Himmel + flower field at sunset)
@@ -98,7 +99,8 @@ export default function LandingPage() {
 
   // Signed-in users have no use for the marketing hero — send them straight to
   // their dashboard. (Wait until Clerk has resolved to avoid a flicker.)
-  if (isLoaded && isSignedIn) {
+  if (!isLoaded) return <PageLoading label="Checking your session" />;
+  if (isSignedIn) {
     return <Navigate to="/home" replace />;
   }
 

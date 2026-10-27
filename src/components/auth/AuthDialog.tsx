@@ -57,6 +57,14 @@ const COPY: Record<Mode, { title: string; subtitle: string }> = {
   },
 };
 
+function AuthFormLoading() {
+  return (
+    <div role="status" className="flex min-h-72 items-center justify-center text-sm text-muted-foreground">
+      Loading sign-in options...
+    </div>
+  );
+}
+
 function AuthDialog({
   open,
   onOpenChange,
@@ -81,7 +89,7 @@ function AuthDialog({
       open={open}
       onOpenChange={onOpenChange}
       labelledBy="auth-title"
-      className="sm:max-w-3xl"
+      className="overflow-y-auto sm:max-w-3xl"
     >
       <DialogClose onClose={() => onOpenChange(false)} />
 
@@ -128,16 +136,18 @@ function AuthDialog({
 
           {/* Both forms stay mounted; toggling is a show/hide, so switching is
               instant instead of waiting on Clerk to re-initialise. */}
-          <div hidden={mode !== "sign-in"} className={mode === "sign-in" ? "animate-tab-in" : undefined}>
+          <div hidden={mode !== "sign-in"} className={mode === "sign-in" ? "animate-tab-in min-h-72" : undefined}>
             <SignIn
               routing="virtual"
+              fallback={<AuthFormLoading />}
               fallbackRedirectUrl="/home"
               appearance={embeddedAppearance}
             />
           </div>
-          <div hidden={mode !== "sign-up"} className={mode === "sign-up" ? "animate-tab-in" : undefined}>
+          <div hidden={mode !== "sign-up"} className={mode === "sign-up" ? "animate-tab-in min-h-72" : undefined}>
             <SignUp
               routing="virtual"
+              fallback={<AuthFormLoading />}
               fallbackRedirectUrl="/home"
               appearance={embeddedAppearance}
             />

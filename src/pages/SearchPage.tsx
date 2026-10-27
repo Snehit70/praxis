@@ -108,6 +108,7 @@ export default function SearchPage() {
   const [courses, setCourses] = useState<SearchCourseResult[]>([]);
   const [papers, setPapers] = useState<SearchPaperResult[]>([]);
   const [loading, setLoading] = useState(false);
+  const [settledQuery, setSettledQuery] = useState('');
   const [loadFailed, setLoadFailed] = useState(false);
   const [retryNonce, setRetryNonce] = useState(0);
 
@@ -123,6 +124,7 @@ export default function SearchPage() {
       setCourses([]);
       setPapers([]);
       setLoadFailed(false);
+      setSettledQuery('');
       setLoading(false);
       return () => {
         active = false;
@@ -148,7 +150,10 @@ export default function SearchPage() {
         setPapers([]);
       })
       .finally(() => {
-        if (active) setLoading(false);
+        if (active) {
+          setSettledQuery(query);
+          setLoading(false);
+        }
       });
 
     return () => {
@@ -157,6 +162,7 @@ export default function SearchPage() {
     };
   }, [query, retryNonce]);
 
+  const pending = Boolean(query) && (loading || settledQuery !== query);
   const totalResults = useMemo(() => courses.length + papers.length, [courses.length, papers.length]);
 
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
@@ -169,7 +175,7 @@ export default function SearchPage() {
     <div className="space-y-8">
       <header className="space-y-4">
         <Button variant="ghost" size="sm" asChild className="gap-1.5 -ml-2 text-muted-foreground">
-          <Link to="/">
+          <Link to="/home">
             <ArrowLeft className="h-4 w-4" />
             Home
           </Link>
@@ -195,7 +201,7 @@ export default function SearchPage() {
           />
         </form>
 
-        {query && !loading && !loadFailed && (
+        {query && !pending && !loadFailed && (
           <p className="text-sm text-muted-foreground">
             {totalResults} result{totalResults === 1 ? '' : 's'} for "{query}"
           </p>
@@ -210,7 +216,7 @@ export default function SearchPage() {
           description="Try a course name like Computational Thinking, a code like CT, or a paper title."
           announce
         />
-      ) : loading ? (
+      ) : pending ? (
         <SearchSkeleton />
       ) : loadFailed ? (
         <StatePanel

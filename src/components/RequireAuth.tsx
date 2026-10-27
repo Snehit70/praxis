@@ -1,6 +1,6 @@
 import { Outlet, Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@clerk/clerk-react';
-import { Loader2 } from 'lucide-react';
+import { PageLoading } from '@/components/ui/page-loading';
 
 /**
  * Route guard for everything except the public landing page. While Clerk is
@@ -14,16 +14,7 @@ export default function RequireAuth() {
   const location = useLocation();
 
   if (!isLoaded) {
-    return (
-      <div
-        className="flex min-h-[60vh] items-center justify-center"
-        role="status"
-        aria-live="polite"
-        aria-label="Checking your session"
-      >
-        <Loader2 className="delayed-in h-6 w-6 animate-spin text-muted-foreground motion-reduce:animate-none" />
-      </div>
-    );
+    return <PageLoading label="Checking your session" />;
   }
 
   if (!isSignedIn) {
