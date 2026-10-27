@@ -417,7 +417,7 @@ export default function HomePage() {
                 if (entries.length === 0) return null;
                 const meta = LEVEL_META[lvl];
                 return (
-                  <section key={lvl} className={`border-l-4 ${meta.accent} pl-4 md:pl-6`}>
+                  <section key={lvl}>
                     <Reveal>
                       {/* Header leads its grid in the reveal cascade. */}
                       <div style={rise(0)} className="praxis-rise mb-4 flex items-center gap-3">
