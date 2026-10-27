@@ -389,8 +389,8 @@ export default function HomePage() {
               ) : (
                 <Reveal className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   {/* Companions tiles are clean — no per-tile toggle; manage via the Companions button. */}
-                  {enrolledCourses.map((course, i) => (
-                    <CourseCard key={course.key} course={course} enrolled revealIndex={i} />
+                  {enrolledCourses.map((course) => (
+                    <CourseCard key={course.key} course={course} enrolled />
                   ))}
                 </Reveal>
               )}
@@ -430,21 +430,18 @@ export default function HomePage() {
                           loading="lazy"
                           className={cn('squircle h-9 w-9 rounded-xl object-cover object-top ring-2', meta.ring)}
                         />
-                        <div>
-                          <h2 className={cn('text-lg font-semibold', meta.text)}>{meta.label}</h2>
-                          <p className="text-sm text-muted-foreground">
-                            {entries.length} {entries.length === 1 ? 'course' : 'courses'}
-                          </p>
-                        </div>
+                        <h2 className={cn('min-w-0 text-lg font-semibold', meta.text)}>{meta.label}</h2>
+                        <p className="ml-auto shrink-0 rounded-md bg-white px-2.5 py-1 text-sm font-medium tabular-nums text-[#1c2433]">
+                          {entries.length} {entries.length === 1 ? 'course' : 'courses'}
+                        </p>
                       </div>
                       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                        {entries.map((course, i) => (
+                        {entries.map((course) => (
                           <CourseCard
                             key={course.key}
                             course={course}
                             enrolled={enrolled.has(course.key)}
                             onToggleEnroll={handleToggleEnroll}
-                            revealIndex={i + 1}
                           />
                         ))}
                       </div>
