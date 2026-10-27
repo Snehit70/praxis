@@ -391,7 +391,7 @@ export default function HomePage() {
         {/* The World — every course in the archive; roads not yet walked. */}
         <TabsContent value="archive" className="space-y-6">
           <p className="text-sm text-muted-foreground">
-            Every course in the archive — roads you haven&apos;t walked yet.
+            Every course in the archive, including roads you haven&apos;t walked yet.
           </p>
           <SearchField
             value={archiveQuery}
