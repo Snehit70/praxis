@@ -114,6 +114,7 @@ export default function HomePage() {
   const [selectorOpen, setSelectorOpen] = useState(false);
   const [autoOpened, setAutoOpened] = useState(false);
   const [archiveQuery, setArchiveQuery] = useState('');
+  const [activeTab, setActiveTab] = useState('mine');
   const [resume, setResume] = useState<HistoryItem | null>(null);
   const pendingEnrolled = useRef(new Set<string>());
   // Slow scroll-parallax on the fixed page backdrop (desktop, motion-safe only).
@@ -279,7 +280,7 @@ export default function HomePage() {
         </div>
       </header>
 
-      <Tabs defaultValue="mine">
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         {/* ── Hero: the greeting on the open sky of the page scene. ── */}
         <section className="relative w-full">
           <div className="relative h-[clamp(244px,calc(40vh-56px),384px)] w-full">
@@ -318,7 +319,7 @@ export default function HomePage() {
 
         {/* ── Content below the hero ── */}
         <div className={cn(column, 'py-6 md:py-8')}>
-          <div className="mb-6 flex items-center justify-between gap-4">
+          <div className="mb-6 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
           <TabsList className={SEGMENTED_LIST}>
             <TabsTrigger
               value="mine"
@@ -341,6 +342,15 @@ export default function HomePage() {
               The World
             </TabsTrigger>
           </TabsList>
+          {activeTab === 'archive' && (
+            <SearchField
+              value={archiveQuery}
+              onChange={setArchiveQuery}
+              placeholder="Search all courses..."
+              label="Search all courses"
+              className="w-full sm:max-w-md"
+            />
+          )}
           </div>
 
         {/* Companions — the courses you travel with this term. */}
@@ -393,14 +403,6 @@ export default function HomePage() {
           <p className="text-sm text-muted-foreground">
             Every course in the archive, including roads you haven&apos;t walked yet.
           </p>
-          <SearchField
-            value={archiveQuery}
-            onChange={setArchiveQuery}
-            placeholder="Search all courses..."
-            label="Search all courses"
-            className="max-w-md"
-          />
-
           {booting ? (
             <CourseGridSkeleton label="Loading the archive" count={6} />
           ) : archiveTotal === 0 ? (
