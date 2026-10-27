@@ -209,9 +209,8 @@ export default function HomePage() {
         </header>
         <section role="status" aria-live="polite" className="flex flex-1 items-end px-6 pb-16 pt-48 md:items-center md:px-12 md:pb-24 md:pt-12 lg:px-20">
           <div className="max-w-lg">
-            <p className="text-sm font-medium tracking-wide text-white/75">A moment&rsquo;s rest</p>
-            <h1 className="mt-4 font-display text-5xl leading-[1.05] tracking-tight sm:text-6xl">The road is quiet<br /><em>for now.</em></h1>
-            <p className="mt-6 max-w-md text-base leading-relaxed text-white/80 sm:text-lg">We couldn&rsquo;t load your courses. Please try again in a moment.</p>
+            <h1 className="font-display text-5xl leading-[1.05] tracking-tight sm:text-6xl">We couldn&rsquo;t load<br /><em>your courses.</em></h1>
+            <p className="mt-6 max-w-sm text-base leading-relaxed text-white/80 sm:text-lg">Something got in the way. Give it another try when you&rsquo;re ready.</p>
             <Button onClick={() => window.location.reload()} className="mt-8 h-12 gap-2 rounded-2xl px-6">
               <RotateCw aria-hidden="true" className="size-4" /> Try again
             </Button>
