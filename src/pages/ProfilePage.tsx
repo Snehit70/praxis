@@ -207,12 +207,10 @@ export default function ProfilePage() {
                 <p className="mt-1 max-w-xl text-sm text-white/85 [text-shadow:0_1px_10px_rgba(0,0,0,0.5)] md:text-base">
                   {profile.bio || 'Choose your road and make this archive yours.'}
                 </p>
-                <p className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-white/75 [text-shadow:0_1px_8px_rgba(0,0,0,0.5)]">
-                  <span>{profile.level || 'No program yet'}</span>
-                  <span aria-hidden="true">·</span>
-                  <span>{selectedCourses.length} {selectedCourses.length === 1 ? 'course' : 'courses'}</span>
-                  <span aria-hidden="true">·</span>
-                  <span>{profile.viewedPaperCount} {profile.viewedPaperCount === 1 ? 'paper' : 'papers'} viewed</span>
+                <p className="mt-3 flex flex-wrap items-center gap-2 text-xs font-medium text-[#1c2433]">
+                  <span className="rounded-md bg-white px-2.5 py-1">{profile.level || 'No program yet'}</span>
+                  <span className="rounded-md bg-white px-2.5 py-1 tabular-nums">{selectedCourses.length} {selectedCourses.length === 1 ? 'course' : 'courses'}</span>
+                  <span className="rounded-md bg-white px-2.5 py-1 tabular-nums">{profile.viewedPaperCount} {profile.viewedPaperCount === 1 ? 'paper' : 'papers'} viewed</span>
                 </p>
               </div>
             </div>
@@ -236,6 +234,41 @@ export default function ProfilePage() {
         )}
 
         <div className="grid items-start gap-6 lg:grid-cols-2">
+          {/* Recently viewed */}
+          <section className={card}>
+            <div className="flex items-end justify-between gap-4">
+              <div>
+                <p className={kicker}>Paper view</p>
+                <h2 className="mt-1.5 font-display text-2xl font-normal tracking-tight">Recently viewed</h2>
+              </div>
+              <p className="pb-1 text-sm text-white/50">{profile.viewedPaperCount} total</p>
+            </div>
+            {profile.recentViews.length === 0 ? (
+              <div className="mt-5 flex flex-col items-center border-t border-white/10 px-4 py-10 text-center">
+                <UserRound className="size-6 text-white/40" />
+                <p className="mt-3 font-medium">Your paper trail starts here.</p>
+                <p className="mt-1 text-sm text-white/55">Open a paper and it will appear here.</p>
+                <Button asChild variant="outline" size="sm" className="squircle mt-5 rounded-xl">
+                  <Link to="/search">Browse papers <ArrowRight /></Link>
+                </Button>
+              </div>
+            ) : (
+              <ul tabIndex={profile.recentViews.length > 4 ? 0 : undefined} aria-label="Recently viewed papers" className="mt-4 max-h-[17rem] space-y-0.5 overflow-y-auto border-t border-white/10 pt-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50">
+                {profile.recentViews.map((item, index) => (
+                  <li key={item.id}>
+                    <Link to={paperHref(item)} className={rowLink}>
+                      <span className="w-7 font-display text-xl tabular-nums text-white/25">{String(index + 1).padStart(2, '0')}</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate font-medium text-white/90">{formatPaperName(item.paperName, item.year ?? undefined)}</span>
+                        <span className="mt-0.5 block truncate text-xs text-white/45">{item.courseName} · {item.examName}</span>
+                      </span>
+                      <ArrowRight className="size-4 text-white/30 transition group-hover:translate-x-0.5 group-hover:text-white/70" />
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
           {/* Study setup */}
           <section className={card}>
             <div className="flex items-end justify-between gap-4">
@@ -248,7 +281,7 @@ export default function ProfilePage() {
               </Button>
             </div>
             {selectedCourses.length > 0 ? (
-              <ul className="mt-4 space-y-0.5 border-t border-white/10 pt-2">
+              <ul tabIndex={selectedCourses.length > 2 ? 0 : undefined} aria-label="Your courses" className="mt-4 max-h-36 space-y-0.5 overflow-y-auto border-t border-white/10 pt-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50">
                 {selectedCourses.map((course) => (
                   <li key={course.key}>
                     <Link to={courseHref(course)} className={rowLink}>
@@ -270,42 +303,6 @@ export default function ProfilePage() {
               </ul>
             ) : (
               <p className="mt-6 text-sm text-white/55">Choose the courses you want waiting on your road.</p>
-            )}
-          </section>
-
-          {/* Recently viewed */}
-          <section className={card}>
-            <div className="flex items-end justify-between gap-4">
-              <div>
-                <p className={kicker}>Paper view</p>
-                <h2 className="mt-1.5 font-display text-2xl font-normal tracking-tight">Recently viewed</h2>
-              </div>
-              <p className="pb-1 text-sm text-white/50">{profile.viewedPaperCount} total</p>
-            </div>
-            {profile.recentViews.length === 0 ? (
-              <div className="mt-5 flex flex-col items-center border-t border-white/10 px-4 py-10 text-center">
-                <UserRound className="size-6 text-white/40" />
-                <p className="mt-3 font-medium">Your paper trail starts here.</p>
-                <p className="mt-1 text-sm text-white/55">Open a paper and it will appear here.</p>
-                <Button asChild variant="outline" size="sm" className="squircle mt-5 rounded-xl">
-                  <Link to="/search">Browse papers <ArrowRight /></Link>
-                </Button>
-              </div>
-            ) : (
-              <ul className="mt-4 space-y-0.5 border-t border-white/10 pt-2">
-                {profile.recentViews.map((item, index) => (
-                  <li key={item.id}>
-                    <Link to={paperHref(item)} className={rowLink}>
-                      <span className="w-7 font-display text-xl tabular-nums text-white/25">{String(index + 1).padStart(2, '0')}</span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate font-medium text-white/90">{formatPaperName(item.paperName, item.year ?? undefined)}</span>
-                        <span className="mt-0.5 block truncate text-xs text-white/45">{item.courseName} · {item.examName}</span>
-                      </span>
-                      <ArrowRight className="size-4 text-white/30 transition group-hover:translate-x-0.5 group-hover:text-white/70" />
-                    </Link>
-                  </li>
-                ))}
-              </ul>
             )}
           </section>
         </div>
