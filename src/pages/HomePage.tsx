@@ -23,7 +23,7 @@ import { getExamSlugFromUuid } from '@/lib/examMapping';
 import { cn } from '@/lib/utils';
 import { logger } from '@/lib/logger';
 import { BOOKMARKS_ENABLED } from '@/lib/featureFlags';
-import courseErrorScene from '@/assets/course-error-scene.webp';
+import courseErrorScene from '@/assets/course-error-scene-v2.webp';
 
 /**
  * Frieren's voice, keyed to the local clock — the measured, slightly dry-warm
