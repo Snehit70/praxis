@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth, useUser } from '@clerk/clerk-react';
-import { ArrowRight, BookMarked, Clock, Pencil, Plus, Search, UserRound } from 'lucide-react';
+import { ArrowRight, BookMarked, Clock, Pencil, Plus, RotateCw, Search, UserRound } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Skeleton, SkeletonRegion } from '@/components/ui/skeleton';
@@ -23,6 +23,7 @@ import { getExamSlugFromUuid } from '@/lib/examMapping';
 import { cn } from '@/lib/utils';
 import { logger } from '@/lib/logger';
 import { BOOKMARKS_ENABLED } from '@/lib/featureFlags';
+import courseErrorScene from '@/assets/course-error-scene.webp';
 
 /**
  * Frieren's voice, keyed to the local clock — the measured, slightly dry-warm
@@ -198,15 +199,25 @@ export default function HomePage() {
 
   if (catalogueFailed) {
     return (
-      <div className="container mx-auto px-4 py-10 md:px-8">
-        <StatePanel
-          tone="error"
-          title="Couldn't load courses"
-          description="We couldn't reach the course catalogue. Please try again in a moment."
-          actions={<Button onClick={() => window.location.reload()}>Reload</Button>}
-          announce
-        />
-      </div>
+      <main className="relative isolate flex min-h-[100svh] flex-col overflow-hidden bg-[#171e26] text-white">
+        <img src={courseErrorScene} alt="" aria-hidden="true" className="absolute inset-0 -z-20 h-full w-full object-cover object-[65%_center] md:object-center" />
+        <div aria-hidden="true" className="absolute inset-0 -z-10 bg-gradient-to-t from-[#101720] via-[#101720]/75 to-[#101720]/25 md:bg-gradient-to-r md:from-[#101720]/95 md:via-[#101720]/75 md:to-transparent" />
+        <header className="px-6 py-6 md:px-12">
+          <Link to="/" aria-label="Praxis home" className="inline-flex rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">
+            <PraxisBrand className="h-12 text-[#f1ead9]" />
+          </Link>
+        </header>
+        <section role="status" aria-live="polite" className="flex flex-1 items-end px-6 pb-16 pt-48 md:items-center md:px-12 md:pb-24 md:pt-12 lg:px-20">
+          <div className="max-w-lg">
+            <p className="text-sm font-medium tracking-wide text-white/75">A moment&rsquo;s rest</p>
+            <h1 className="mt-4 font-display text-5xl leading-[1.05] tracking-tight sm:text-6xl">The road is quiet<br /><em>for now.</em></h1>
+            <p className="mt-6 max-w-md text-base leading-relaxed text-white/80 sm:text-lg">We couldn&rsquo;t load your courses. Please try again in a moment.</p>
+            <Button onClick={() => window.location.reload()} className="mt-8 h-12 gap-2 rounded-2xl px-6">
+              <RotateCw aria-hidden="true" className="size-4" /> Try again
+            </Button>
+          </div>
+        </section>
+      </main>
     );
   }
 
