@@ -27,7 +27,8 @@ export default function RootLayout() {
   // Profile keeps the global header but draws its own edge-to-edge banner.
   const flush = pathname === "/profile";
   // Course and paper pages draw their own fixed scene, so the header turns to
-  // glass over it and the footer drops its painted field, like the profile.
+  // glass over it. Paper pages also drop the footer so it doesn't sit under
+  // the exam chrome.
   const glass = flush || fullBleed || pathname.includes("/course/");
 
   useEffect(() => {
@@ -141,7 +142,7 @@ export default function RootLayout() {
         )}
       </main>
 
-      {!bare && (
+      {!bare && !fullBleed && (
         <footer className="relative isolate overflow-hidden">
           {/* The road ends in a flower field at dusk, rising out of the page.
               Scene pages already end on their own ground. */}
