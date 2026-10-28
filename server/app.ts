@@ -186,6 +186,37 @@ export function createApiFetchHandler(sql: DbClient, options: ApiHandlerOptions 
   const checkIp = createIpLimiter();
   const admitContent = createContentGuard(sql, options.contentChallenge === undefined ? readTurnstileChallenge() : options.contentChallenge);
   let nextContentCleanup = 0;
+
+  // Catalogue course pages pass the primary course uuid while some papers are
+  // stored on a sibling row that shares canonical_name. Exact course match
+  // still wins; a sibling is only used when that pair is missing.
+  function matchingPaperFilters(
+    paperUuid: string,
+    courseUuid: string | null,
+    examUuid: string | null,
+  ) {
+    return sql`
+      WHERE p.source_uuid = ${paperUuid}
+        ${examUuid ? sql`AND p.exam_uuid = ${examUuid}` : sql``}
+        ${courseUuid ? sql`AND (
+          p.course_uuid = ${courseUuid}
+          OR EXISTS (
+            SELECT 1
+            FROM courses requested
+            JOIN courses sibling ON sibling.canonical_name = requested.canonical_name
+            WHERE requested.source_uuid = ${courseUuid}
+              AND sibling.source_uuid = p.course_uuid
+          )
+        )` : sql``}
+    `;
+  }
+
+  function matchingPaperOrder(courseUuid: string | null) {
+    return courseUuid
+      ? sql`ORDER BY (p.course_uuid = ${courseUuid}) DESC, p.year DESC, p.created_at DESC NULLS LAST`
+      : sql`ORDER BY p.year DESC, p.created_at DESC NULLS LAST`;
+  }
+
   async function resolvePaperVariantId(
     paperUuid: string,
     courseUuid: string | null,
@@ -196,12 +227,10 @@ export function createApiFetchHandler(sql: DbClient, options: ApiHandlerOptions 
         id: string;
       }>
     >`
-      SELECT id
-      FROM paper_variants
-      WHERE source_uuid = ${paperUuid}
-        ${courseUuid ? sql`AND course_uuid = ${courseUuid}` : sql``}
-        ${examUuid ? sql`AND exam_uuid = ${examUuid}` : sql``}
-      ORDER BY year DESC, created_at DESC NULLS LAST
+      SELECT p.id
+      FROM paper_variants p
+      ${matchingPaperFilters(paperUuid, courseUuid, examUuid)}
+      ${matchingPaperOrder(courseUuid)}
       LIMIT 1
     `;
 
@@ -1015,10 +1044,8 @@ export function createApiFetchHandler(sql: DbClient, options: ApiHandlerOptions 
           FROM paper_variants p
           JOIN exams e ON e.source_uuid = p.exam_uuid
           JOIN courses c ON c.source_uuid = p.course_uuid
-          WHERE p.source_uuid = ${paperUuid}
-            ${courseUuid ? sql`AND p.course_uuid = ${courseUuid}` : sql``}
-            ${examUuid ? sql`AND p.exam_uuid = ${examUuid}` : sql``}
-          ORDER BY p.year DESC, p.created_at DESC NULLS LAST
+          ${matchingPaperFilters(paperUuid, courseUuid, examUuid)}
+          ${matchingPaperOrder(courseUuid)}
           LIMIT 1
         `;
 
@@ -1124,10 +1151,8 @@ export function createApiFetchHandler(sql: DbClient, options: ApiHandlerOptions 
           FROM paper_variants p
           JOIN exams e ON e.source_uuid = p.exam_uuid
           JOIN courses c ON c.source_uuid = p.course_uuid
-          WHERE p.source_uuid = ${paperUuid}
-            ${courseUuid ? sql`AND p.course_uuid = ${courseUuid}` : sql``}
-            ${examUuid ? sql`AND p.exam_uuid = ${examUuid}` : sql``}
-          ORDER BY p.year DESC, p.created_at DESC NULLS LAST
+          ${matchingPaperFilters(paperUuid, courseUuid, examUuid)}
+          ${matchingPaperOrder(courseUuid)}
           LIMIT 1
         `;
 

@@ -299,6 +299,43 @@ describe('Praxis API integration', () => {
     expect(missing.json).toEqual({ error: 'Paper not found' });
   });
 
+  test('loads a paper stored on a canonical sibling course', async () => {
+    await seedAliasCourseFixture(context.database.sql);
+
+    const { response, json } = await getAuthedJson(
+      '/api/papers/paper-2023?courseUuid=course-1&examUuid=exam-1',
+    );
+
+    expect(response.status).toBe(200);
+    expect(json).toMatchObject({
+      uuid: 'paper-2023',
+      examUuid: 'exam-1',
+      courseUuid: 'course-2',
+      courseName: 'Computational Thinking (New)',
+    });
+
+    const questions = await getAuthedJson<Array<{ uuid: string }>>(
+      '/api/papers/paper-2023/questions?courseUuid=course-1&examUuid=exam-1',
+    );
+    expect(questions.response.status).toBe(200);
+    expect(questions.json.map((question) => question.uuid)).toEqual(['q-alias']);
+  });
+
+  test('does not load a paper from a course with a different canonical name', async () => {
+    await seedAliasCourseFixture(context.database.sql);
+    await context.database.sql`
+      INSERT INTO courses (source_uuid, course_name, course_code, program_id, label, canonical_name)
+      VALUES ('course-maths', 'Mathematics I', 'Maths1', 1, 'Foundation', 'Mathematics for Data Science I')
+    `;
+
+    const { response, json } = await getAuthedJson(
+      '/api/papers/paper-2023?courseUuid=course-maths&examUuid=exam-1',
+    );
+
+    expect(response.status).toBe(404);
+    expect(json).toEqual({ error: 'Paper not found' });
+  });
+
   test('returns paper questions with ordered options and parent linkage', async () => {
     const { response, json } = await getAuthedJson<Array<Record<string, unknown>>>(
       '/api/papers/paper-2025/questions?courseUuid=course-1&examUuid=exam-1',
