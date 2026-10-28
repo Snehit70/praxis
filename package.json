@@ -1,6 +1,6 @@
 {
   "name": "quiz",
-  "version": "0.14.1",
+  "version": "0.14.2",
   "module": "index.ts",
   "scripts": {
     "dev": "vite",
