@@ -40,6 +40,10 @@ export function DownloadPdfButton({
   const [busy, setBusy] = useState(false);
   const startedAtRef = useRef<number | null>(null);
   const runningRef = useRef(false);
+  const abortRef = useRef<AbortController | null>(null);
+
+  // Leaving the page drops any build still in flight.
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   useEffect(() => {
     if (!open || phase !== 'working') return;
@@ -67,6 +71,8 @@ export function DownloadPdfButton({
       return;
     }
     runningRef.current = true;
+    const controller = new AbortController();
+    abortRef.current = controller;
     setBusy(true);
     startedAtRef.current = Date.now();
     setOpen(true);
@@ -81,6 +87,7 @@ export function DownloadPdfButton({
         courseUuid,
         examUuid,
         answers,
+        signal: controller.signal,
       });
       triggerDownload(file.blob, file.filename);
       setFilename(file.filename);
@@ -88,6 +95,10 @@ export function DownloadPdfButton({
       setPhase('success');
       setOpen(true);
     } catch (caught) {
+      if (controller.signal.aborted) {
+        logger.info('PDF download cancelled', { paperUuid, answers });
+        return;
+      }
       logger.error('Failed to download paper PDF', caught);
       setElapsedMs(Date.now() - (startedAtRef.current ?? Date.now()));
       if (caught instanceof PdfDownloadError) {
@@ -99,10 +110,16 @@ export function DownloadPdfButton({
       setPhase('error');
       setOpen(true);
     } finally {
+      if (abortRef.current === controller) abortRef.current = null;
       runningRef.current = false;
       setBusy(false);
     }
   }, [answers, courseUuid, examUuid, getToken, paperUuid]);
+
+  const cancelDownload = useCallback(() => {
+    abortRef.current?.abort();
+    setOpen(false);
+  }, []);
 
   return (
     <span className="inline-flex flex-col items-start gap-1">
@@ -136,6 +153,7 @@ export function DownloadPdfButton({
         retryAfterSeconds={retryAfterSeconds}
         onRetry={() => void startDownload()}
         onHide={() => setOpen(false)}
+        onCancel={cancelDownload}
       />
     </span>
   );

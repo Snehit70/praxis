@@ -2,8 +2,9 @@ import { expect, mock, test } from 'bun:test';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { PdfDownloadDialog } from './PdfDownloadDialog';
 
-test('working dialog shows progress state and a hide control', () => {
+test('working dialog shows progress, elapsed time, and hide or cancel controls', () => {
   const onHide = mock(() => {});
+  const onCancel = mock(() => {});
   render(
     <PdfDownloadDialog
       open
@@ -13,13 +14,17 @@ test('working dialog shows progress state and a hide control', () => {
       elapsedMs={8_000}
       onRetry={() => {}}
       onHide={onHide}
+      onCancel={onCancel}
     />,
   );
 
   expect(screen.getByRole('dialog', { name: /preparing your question paper/i })).toBeTruthy();
-  expect(screen.getByLabelText('Preparing PDF')).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: 'Hide' }));
+  expect(screen.getByRole('progressbar', { name: 'Preparing question paper' })).toBeTruthy();
+  expect(screen.getByText('0:08')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Keep in background' }));
   expect(onHide).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+  expect(onCancel).toHaveBeenCalledTimes(1);
 });
 
 test('error dialog surfaces the server message and retry', () => {
@@ -35,6 +40,7 @@ test('error dialog surfaces the server message and retry', () => {
       retryAfterSeconds={12}
       onRetry={onRetry}
       onHide={() => {}}
+      onCancel={() => {}}
     />,
   );
 
