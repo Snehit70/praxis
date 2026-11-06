@@ -1,5 +1,5 @@
 import type { DbClient } from './db';
-import type { QuizQuestion } from '../src/lib/dataTransforms';
+import { cleanAnswerValue, type QuizQuestion } from '../src/lib/dataTransforms';
 
 export async function loadQuizQuestions(
   sql: DbClient,
@@ -129,8 +129,8 @@ export async function loadQuizQuestions(
     questionImage10: question.questionImage10 ?? undefined,
     answerType: question.answerType ?? undefined,
     responseType: question.responseType ?? undefined,
-    valueStart: question.valueStart ?? undefined,
-    valueEnd: question.valueEnd ?? undefined,
+    valueStart: cleanAnswerValue(question.valueStart) ?? undefined,
+    valueEnd: cleanAnswerValue(question.valueEnd) ?? undefined,
     parentQuestionUuid: question.parentQuestionUuid ?? undefined,
     isMarkdown: question.isMarkdown,
     haveAnswers: question.haveAnswers,

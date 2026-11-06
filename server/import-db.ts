@@ -3,7 +3,7 @@ import path from 'node:path';
 import { createDbClient } from './db';
 import { ensureSchema, resetSchema } from './schema';
 import { getCanonicalCourseName } from '../src/lib/courseMapping';
-import { shouldIncludeQuestion, type RawExamMetadata, type RawPaperFile } from '../src/lib/dataTransforms';
+import { cleanAnswerValue, shouldIncludeQuestion, type RawExamMetadata, type RawPaperFile } from '../src/lib/dataTransforms';
 import { EXAM_UUID_TO_SLUG } from '../src/lib/examMapping';
 
 interface ExamRow {
@@ -125,6 +125,7 @@ export function collectImportRows(dataDir = DATA_DIR) {
   const questions: QuestionRow[] = [];
   const options: OptionRow[] = [];
   const skippedPaperPaths: string[] = [];
+  const scrubbedAnswerValues: { questionId: string; field: 'value_start' | 'value_end'; value: string }[] = [];
   let skippedCourseResolutionCount = 0;
 
   for (const metadataPath of readdirSync(dataDir)) {
@@ -296,6 +297,13 @@ export function collectImportRows(dataDir = DATA_DIR) {
 
             const rowQuestionId = questionId(variantId, rawQuestion.uuid);
 
+            for (const field of ['value_start', 'value_end'] as const) {
+              const raw = rawQuestion[field];
+              if (raw != null && raw !== '' && cleanAnswerValue(raw) === null) {
+                scrubbedAnswerValues.push({ questionId: rowQuestionId, field, value: raw });
+              }
+            }
+
             questions.push({
               id: rowQuestionId,
               source_uuid: rawQuestion.uuid,
@@ -322,8 +330,8 @@ export function collectImportRows(dataDir = DATA_DIR) {
               question_image_10: rawQuestion.question_image_10 ?? null,
               answer_type: rawQuestion.answer_type ?? null,
               response_type: rawQuestion.response_type ?? null,
-              value_start: rawQuestion.value_start ?? null,
-              value_end: rawQuestion.value_end ?? null,
+              value_start: cleanAnswerValue(rawQuestion.value_start),
+              value_end: cleanAnswerValue(rawQuestion.value_end),
               parent_question_uuid: rawQuestion.parent_question?.uuid ?? null,
               is_markdown: rawQuestion.is_markdown ?? 0,
               have_answers: rawQuestion.have_answers ?? 0,
@@ -363,6 +371,7 @@ export function collectImportRows(dataDir = DATA_DIR) {
     questions,
     options,
     skippedPaperPaths,
+    scrubbedAnswerValues,
     skippedCourseResolutionCount,
   };
 }
@@ -424,12 +433,20 @@ async function main() {
           questions: rows.questions.length,
           options: rows.options.length,
           skippedPaperPaths: rows.skippedPaperPaths.length,
+          scrubbedAnswerValues: rows.scrubbedAnswerValues.length,
           skippedCourseResolutionCount: rows.skippedCourseResolutionCount,
         },
         null,
         2,
       ),
     );
+
+    if (rows.scrubbedAnswerValues.length > 0) {
+      // Scrape labels ("Number of Rows :") stored as answers are dropped, not imported.
+      const byValue = new Map<string, number>();
+      rows.scrubbedAnswerValues.forEach(({ value }) => byValue.set(value.trim() || '<blank>', (byValue.get(value.trim() || '<blank>') ?? 0) + 1));
+      console.warn('Dropped scraped labels stored as answer values:', Object.fromEntries(byValue));
+    }
 
     if (rows.skippedPaperPaths.length > 0) {
       console.warn('Skipped missing paper files:');
