@@ -33,6 +33,7 @@ import {
   clearPracticeRunSession,
   describeShortAnswerKey,
   gradePracticeRun,
+  isEssayQuestion,
   isPracticeRunQuestionCorrect,
   getPracticeRunPageStates,
   getPracticeRunReviewStates,
@@ -382,13 +383,15 @@ const QUESTION_TYPE_META: Record<string, { label: string; accent: string }> = {
   MSQ: { label: 'MSQ', accent: '#a78bfa' },
   COMPREHENSION: { label: 'Passage', accent: '#62aef0' },
   SA: { label: 'Short Answer', accent: '#f0b462' },
+  ESSAY: { label: 'Essay', accent: '#e8919b' },
   OPPE: { label: 'OPPE', accent: '#2dd4bf' },
   MCQ: { label: 'MCQ', accent: '#d6b26e' },
 };
 
 /** A single, theme-aligned chip: a quiet gold-tinted pill that carries the
  *  question type's semantic colour as a soft accent (no loud default pills). */
-function QuestionTypeBadge({ type }: { type: string }) {
+function QuestionTypeBadge({ question }: { question: QuizQuestion }) {
+  const type = isEssayQuestion(question) ? 'ESSAY' : question.questionType;
   const meta = QUESTION_TYPE_META[type] ?? { label: 'MCQ', accent: '#d6b26e' };
   return (
     <span
@@ -901,6 +904,7 @@ function ShortAnswerField({
   onChange: (next: string) => void;
 }) {
   const key = describeShortAnswerKey(question);
+  const essay = isEssayQuestion(question);
   const answered = value.trim() !== '';
   const correct = showResults && key !== null && isPracticeRunQuestionCorrect(question, value);
   const inputClass = cn(
@@ -924,7 +928,11 @@ function ShortAnswerField({
             <span className="font-semibold tabular-nums text-emerald-400">{key}</span>
           </p>
         ) : (
-          <p className="text-xs italic text-muted-foreground">Not auto-graded: check it against your notes or the answer PDF.</p>
+          <p className="text-xs italic text-muted-foreground">
+            {essay
+              ? 'Essay question: there is no single correct answer, so it isn’t auto-graded.'
+              : 'Not auto-graded: check it against your notes or the answer PDF.'}
+          </p>
         )}
       </div>
     );
@@ -932,19 +940,31 @@ function ShortAnswerField({
 
   return (
     <div className="space-y-3 px-1">
-      <input
-        aria-label={numeric ? 'Numeric answer' : 'Short answer'}
-        type="text"
-        inputMode={numeric ? 'decimal' : 'text'}
-        value={value}
-        disabled={disabled}
-        onChange={(event) =>
-          onChange(numeric ? sanitizeNumeric(event.target.value) : event.target.value)
-        }
-        placeholder={numeric ? 'Enter numeric answer' : 'Enter your answer'}
-        className={inputClass}
-      />
-      {numeric && !disabled && <NumericKeypad value={value} onChange={onChange} />}
+      {essay ? (
+        <textarea
+          aria-label="Essay answer"
+          value={value}
+          disabled={disabled}
+          rows={5}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder="Write your answer"
+          className={cn(inputClass, 'resize-y leading-relaxed')}
+        />
+      ) : (
+        <input
+          aria-label={numeric ? 'Numeric answer' : 'Short answer'}
+          type="text"
+          inputMode={numeric ? 'decimal' : 'text'}
+          value={value}
+          disabled={disabled}
+          onChange={(event) =>
+            onChange(numeric ? sanitizeNumeric(event.target.value) : event.target.value)
+          }
+          placeholder={numeric ? 'Enter numeric answer' : 'Enter your answer'}
+          className={inputClass}
+        />
+      )}
+      {numeric && !essay && !disabled && <NumericKeypad value={value} onChange={onChange} />}
       {showResults ? (
         key !== null ? (
           <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
@@ -959,11 +979,19 @@ function ShortAnswerField({
             </span>
           </p>
         ) : (
-          <p className="text-xs italic text-muted-foreground">Not auto-graded: check it against your notes or the answer PDF.</p>
+          <p className="text-xs italic text-muted-foreground">
+            {essay
+              ? 'Essay question: there is no single correct answer, so it isn’t auto-graded. Compare your answer with your notes.'
+              : 'Not auto-graded: check it against your notes or the answer PDF.'}
+          </p>
         )
       ) : (
         <p className="text-xs text-muted-foreground">
-          {key !== null ? 'Checked against the answer key when you hand in.' : 'Not auto-graded.'}
+          {key !== null
+            ? 'Checked against the answer key when you hand in.'
+            : essay
+              ? 'Essay question: written answer, not auto-graded.'
+              : 'Not auto-graded.'}
         </p>
       )}
     </div>
@@ -1136,7 +1164,7 @@ function QuestionCard({
             <div className="flex items-start justify-between gap-3">
               <div className="space-y-2 flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <QuestionTypeBadge type={question.questionType} />
+                  <QuestionTypeBadge question={question} />
                   {marks > 0 && (
                     <span className="text-xs text-muted-foreground">
                       {marks} {marks === 1 ? 'mark' : 'marks'}
@@ -1184,7 +1212,7 @@ function QuestionCard({
             {isComprehension && !passage ? 'Passage' : 'Question'}{' '}
             <span className="tabular-nums text-[#d6b26e]">{index + 1}</span>
           </h2>
-          {!isComprehension && <QuestionTypeBadge type={question.questionType} />}
+          {!isComprehension && <QuestionTypeBadge question={question} />}
           {passage ? (
             <span className="text-xs text-muted-foreground">
               Passage {passage.number}

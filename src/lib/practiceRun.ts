@@ -217,6 +217,18 @@ export function describeShortAnswerKey(question: QuizQuestion): string | null {
   return key.values.join(' or ');
 }
 
+/**
+ * Essay / descriptive questions: written answers with no single correct value.
+ * The source marks them `answer_type: "Yes"` (evaluation required), or leaves a
+ * text response with no answer type at all. Keyless numeric/Range questions are
+ * not essays: their key is missing, not inapplicable.
+ */
+export function isEssayQuestion(question: QuizQuestion) {
+  if (question.questionType !== 'SA' || getShortAnswerKey(question) !== null) return false;
+  if (question.answerType === 'Yes') return true;
+  return !question.answerType && question.responseType === 'Alphanumeric';
+}
+
 /** Manual-eval: OPPE, and short answers the key can't grade. */
 export function isManualEvalQuestion(question: QuizQuestion) {
   if (question.questionType === 'OPPE') return true;

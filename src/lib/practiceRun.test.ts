@@ -5,6 +5,7 @@ import {
   getPracticeRunReviewStates,
   gradePracticeRun,
   groupPracticeRunQuestions,
+  isEssayQuestion,
   isManualEvalQuestion,
   isPracticeRunQuestionCorrect,
   parseSavedPracticeRunSession,
@@ -261,4 +262,15 @@ test('parseSavedPracticeRunSession reveals results when a running timer expired 
     flaggedIds: [],
     runMode: null,
   });
+});
+
+test('isEssayQuestion flags written-answer questions, not keyless numeric ones', () => {
+  const sa = (overrides: Partial<QuizQuestion>) => quizQuestion({ questionType: 'SA', options: [], ...overrides });
+  expect(isEssayQuestion(sa({ answerType: 'Yes', responseType: 'Alphanumeric' }))).toBe(true);
+  expect(isEssayQuestion(sa({ responseType: 'Alphanumeric' }))).toBe(true);
+  // A Range or numeric question that lost its key is missing data, not an essay.
+  expect(isEssayQuestion(sa({ answerType: 'Range', responseType: 'Alphanumeric' }))).toBe(false);
+  expect(isEssayQuestion(sa({}))).toBe(false);
+  expect(isEssayQuestion(sa({ answerType: 'Equal', responseType: 'Numeric', valueStart: '0' }))).toBe(false);
+  expect(isEssayQuestion(quizQuestion({}))).toBe(false);
 });
