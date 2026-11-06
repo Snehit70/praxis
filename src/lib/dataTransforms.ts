@@ -177,6 +177,21 @@ export function shouldIncludeQuestion(question: RawQuestion): boolean {
   return !isInstructionalQuestion(question);
 }
 
+/**
+ * Field labels the scraper sometimes captured in place of the answer, e.g.
+ * "Number of Rows :" on essay questions or "Sub-Section Number :". A value
+ * that is only a label ("Words :") or the bare heading "Answers" is not an answer.
+ */
+const SCRAPED_LABEL_PATTERN = /^(?:[A-Za-z][A-Za-z -]*\s*:|answers)$/i;
+
+/** An answer-key value with scrape debris (labels, lone NBSPs) treated as missing. */
+export function cleanAnswerValue(value: string | null | undefined): string | null {
+  if (value == null) return null;
+  const trimmed = value.trim();
+  if (trimmed === '' || SCRAPED_LABEL_PATTERN.test(trimmed)) return null;
+  return value;
+}
+
 export function transformRawQuestion(question: RawQuestion): QuizQuestion {
   const options = [...(question.options ?? [])]
     .sort((left, right) => (left.option_number ?? 0) - (right.option_number ?? 0))
@@ -211,8 +226,8 @@ export function transformRawQuestion(question: RawQuestion): QuizQuestion {
     questionImage10: question.question_image_10 ?? undefined,
     answerType: question.answer_type ?? undefined,
     responseType: question.response_type ?? undefined,
-    valueStart: question.value_start ?? undefined,
-    valueEnd: question.value_end ?? undefined,
+    valueStart: cleanAnswerValue(question.value_start) ?? undefined,
+    valueEnd: cleanAnswerValue(question.value_end) ?? undefined,
     parentQuestionUuid: question.parent_question?.uuid ?? undefined,
     isMarkdown: question.is_markdown,
     haveAnswers: question.have_answers,

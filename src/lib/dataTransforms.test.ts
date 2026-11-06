@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test';
 import {
+  cleanAnswerValue,
   getQuestionStats,
   transformRawQuestions,
   type RawQuestion,
@@ -106,4 +107,13 @@ test('transformRawQuestions preserves comprehension parent linkage', () => {
   expect(comprehension).toBeDefined();
   expect(childQuestion).toBeDefined();
   expect(childQuestion?.questionType).toBe('MCQ');
+});
+
+test('cleanAnswerValue drops scraped labels and blank values but keeps real answers', () => {
+  for (const junk of ['Number of Rows : ', 'Sub-Section Number :', 'Possible Answers :', 'Answers', '\u00a0', '   ', null, undefined]) {
+    expect(cleanAnswerValue(junk)).toBeNull();
+  }
+  for (const real of ['0', 'no', '-1.5', 'E,L,D,F', '["8", "8000"]', 'thick']) {
+    expect(cleanAnswerValue(real)).toBe(real);
+  }
 });
