@@ -903,6 +903,32 @@ function ShortAnswerField({
   const key = describeShortAnswerKey(question);
   const answered = value.trim() !== '';
   const correct = showResults && key !== null && isPracticeRunQuestionCorrect(question, value);
+  const inputClass = cn(
+    'w-full rounded-md border bg-black/25 px-3 py-2 text-sm text-foreground outline-none backdrop-blur-sm focus:border-[color-mix(in_srgb,var(--lvl,#62aef0)_55%,transparent)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--lvl,#62aef0)_40%,transparent)]',
+    showResults && key !== null && answered
+      ? correct
+        ? 'border-emerald-500/60 bg-emerald-500/10'
+        : 'border-red-500/60 bg-red-500/10'
+      : 'border-[rgba(214,178,110,0.22)]',
+  );
+
+  // Review of a skipped question: no empty input reading "No answer given"
+  // (it looked like the key was missing) — say it was skipped, lead with the key.
+  if (showResults && !answered) {
+    return (
+      <div className="space-y-2 px-1">
+        <p className="text-sm text-muted-foreground">You skipped this question.</p>
+        {key !== null ? (
+          <p className="text-base">
+            <span className="text-muted-foreground">Correct answer: </span>
+            <span className="font-semibold tabular-nums text-emerald-400">{key}</span>
+          </p>
+        ) : (
+          <p className="text-xs italic text-muted-foreground">Not auto-graded: check it against your notes or the answer PDF.</p>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-3 px-1">
@@ -915,15 +941,8 @@ function ShortAnswerField({
         onChange={(event) =>
           onChange(numeric ? sanitizeNumeric(event.target.value) : event.target.value)
         }
-        placeholder={showResults ? 'No answer given' : numeric ? 'Enter numeric answer' : 'Enter your answer'}
-        className={cn(
-          'w-full rounded-md border bg-black/25 px-3 py-2 text-sm text-foreground outline-none backdrop-blur-sm focus:border-[color-mix(in_srgb,var(--lvl,#62aef0)_55%,transparent)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--lvl,#62aef0)_40%,transparent)]',
-          showResults && key !== null && answered
-            ? correct
-              ? 'border-emerald-500/60 bg-emerald-500/10'
-              : 'border-red-500/60 bg-red-500/10'
-            : 'border-[rgba(214,178,110,0.22)]',
-        )}
+        placeholder={numeric ? 'Enter numeric answer' : 'Enter your answer'}
+        className={inputClass}
       />
       {numeric && !disabled && <NumericKeypad value={value} onChange={onChange} />}
       {showResults ? (
