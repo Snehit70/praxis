@@ -1,6 +1,6 @@
 import { useParams, Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, FileText, Play, Layers, Clock, ListChecks, Trophy, Sparkles } from 'lucide-react';
+import { ArrowLeft, FileText, Play, Layers, Clock, ListChecks, Trophy, Sparkles, CheckCircle2, Hourglass, Eye, RotateCcw } from 'lucide-react';
 import { logger } from '@/lib/logger';
 import { getExamUuidFromSlug, getExamNameFromSlug, getExamDurationMinutes } from '@/lib/examMapping';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -13,15 +13,21 @@ import {
   type PaperBundle,
   type PaperSummary,
 } from '@/lib/api';
-import { Skeleton, SkeletonRegion } from '@/components/ui/skeleton';
+import { SkeletonRegion } from '@/components/ui/skeleton';
 import { StatePanel } from '@/components/ui/state-panel';
 import { SearchField } from '@/components/ui/search-field';
 import { SEGMENTED_LIST, segmentedItem } from '@/components/ui/segmented';
 import { cn } from '@/lib/utils';
 import { ArcaneSigil } from '@/components/ArcaneSigil';
 import { LEVEL_META } from '@/lib/courseCatalogue';
-import examHall from '@/assets/exam-hall.webp';
+import {
+  clearPracticeRunSession,
+  getPracticeRunStorageKey,
+  hasMeaningfulAnswer,
+  readPracticeRunSession,
+} from '@/lib/practiceRun';
 import cardBg from '@/assets/10273905393555527.jpeg';
+import { BundlesSkeleton, CourseLoadingSkeleton, ExamHallBackdrop } from '@/components/skeletons/route-skeletons';
 
 const prefersReducedMotion = () =>
   typeof window !== 'undefined' &&
@@ -46,21 +52,6 @@ function ageOf(year: number | null, newestYear: number): { patina: number; fresh
   if (year === null) return { patina: 0.45, fresh: false };
   const step = Math.max(0, newestYear - year);
   return { patina: Math.min(step * 0.1, 0.4), fresh: step === 0 };
-}
-
-/**
- * Page scene: the Mage Association hall on exam day, held still behind the page.
- * The hall and sky stay clear up top; scrims only darken where text sits.
- */
-function ExamHallBackdrop() {
-  return (
-    <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 overflow-hidden bg-background">
-      <img src={examHall} alt="" fetchPriority="high" className="h-full w-full object-cover object-[65%_30%]" />
-      <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-black/45 to-transparent" />
-      <div className="absolute inset-0 bg-gradient-to-r from-black/45 via-black/10 to-transparent" />
-      <div className="absolute inset-0 bg-gradient-to-b from-transparent from-30% via-background/55 via-55% to-background/85" />
-    </div>
-  );
 }
 
 const EXAM_TABS = [
@@ -109,6 +100,29 @@ function ExamTypeSwitcher({
       })}
     </div>
   );
+}
+
+type RunState =
+  | { state: 'fresh' }
+  | { state: 'started'; answered: number }
+  | { state: 'done' };
+
+/**
+ * Where this browser left the paper: handed in, mid-run, or untouched. Read
+ * from the same saved session PaperPage restores, so the card's action matches
+ * what opening the paper will show.
+ */
+function readRunState(storageKey: string): RunState {
+  try {
+    const session = readPracticeRunSession(storageKey, 0);
+    if (!session) return { state: 'fresh' };
+    if (session.showResults) return { state: 'done' };
+    const answered = Object.values(session.selectedAnswers).filter(hasMeaningfulAnswer).length;
+    if (session.runMode || answered > 0) return { state: 'started', answered };
+    return { state: 'fresh' };
+  } catch {
+    return { state: 'fresh' };
+  }
 }
 
 /** One stat in the card's stat block. */
@@ -161,11 +175,10 @@ function PaperVariantCard({
   const to = `/paper/${paper.uuid}?course=${courseId}&exam=${examId}`;
   const { patina, fresh } = ageOf(paper.year, newestYear);
   const seed = useMemo(() => hashString(paper.uuid), [paper.uuid]);
+  const storageKey = getPracticeRunStorageKey(paper.uuid, courseId, examId);
+  const [run] = useState(() => readRunState(storageKey));
 
-  const activate = (e: React.MouseEvent) => {
-    // Let modified clicks / middle-click open normally (new tab etc.).
-    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
-    e.preventDefault();
+  const summon = () => {
     if (charging) return;
     if (!motion) {
       navigate(to);
@@ -175,7 +188,24 @@ function PaperVariantCard({
     navigationTimer.current = window.setTimeout(() => navigate(to), 200);
   };
 
-  const track = (e: React.PointerEvent<HTMLAnchorElement>) => {
+  const activate = (e: React.MouseEvent) => {
+    // Let modified clicks / middle-click open normally (new tab etc.).
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+    e.preventDefault();
+    summon();
+  };
+
+  const retake = () => {
+    if (charging) return;
+    logger.info('Retaking paper from course page', { paperId: paper.uuid, courseId, examId });
+    clearPracticeRunSession(storageKey);
+    summon();
+  };
+
+  const primaryLabel = run.state === 'done' ? 'Review' : run.state === 'started' ? 'Continue' : 'Take test';
+  const paperTitle = formatPaperName(paper.paperName, paper.year ?? undefined);
+
+  const track = (e: React.PointerEvent<HTMLDivElement>) => {
     const r = e.currentTarget.getBoundingClientRect();
     e.currentTarget.style.setProperty('--gx', `${((e.clientX - r.left) / r.width) * 100}%`);
     e.currentTarget.style.setProperty('--gy', `${((e.clientY - r.top) / r.height) * 100}%`);
@@ -187,11 +217,9 @@ function PaperVariantCard({
       data-charging={charging}
       style={{ ['--lvl' as string]: levelColor, animationDelay: `${dealIndex * 70}ms` }}
     >
-      <a
-        href={to}
-        onClick={activate}
+      <div
         onPointerMove={track}
-        className="tcard relative isolate flex aspect-[5/7] flex-col overflow-hidden rounded-2xl border border-[rgba(214,178,110,0.45)] bg-[#15120c] transition-[border-color] group-hover:border-[rgba(214,178,110,0.8)] text-left shadow-[0_18px_40px_-18px_rgba(0,0,0,0.7),inset_0_0_0_1px_rgba(214,178,110,0.14)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+        className="tcard relative isolate flex aspect-[5/7] flex-col overflow-hidden rounded-2xl border border-[rgba(214,178,110,0.45)] bg-[#15120c] transition-[border-color] group-hover:border-[rgba(214,178,110,0.8)] text-left shadow-[0_18px_40px_-18px_rgba(0,0,0,0.7),inset_0_0_0_1px_rgba(214,178,110,0.14)] has-[a:focus-visible]:ring-2 has-[a:focus-visible]:ring-white/60"
       >
         {/* Card art: the party portrait, framed a little differently per paper so
             sets in one bundle don't look identical. */}
@@ -224,8 +252,17 @@ function PaperVariantCard({
         />
         <div className="tcard-foil" aria-hidden="true" />
 
+        {/* The whole card is the primary link (stretched under the content);
+            content sits above it click-through, so only real buttons catch clicks. */}
+        <a
+          href={to}
+          onClick={activate}
+          aria-label={`${primaryLabel}: ${paperTitle}`}
+          className="absolute inset-0 z-[5] rounded-2xl focus-visible:outline-none"
+        />
+
         {/* Top row: set + year chips. */}
-        <div className="relative z-10 flex items-start justify-between gap-2 p-4">
+        <div className="pointer-events-none relative z-10 flex items-start justify-between gap-2 p-4">
           {variantCount > 1 ? (
             <span className="rounded-full bg-black/45 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-[color-mix(in_srgb,var(--lvl)_75%,white)] backdrop-blur-sm">
               Set {variantIndex + 1} of {variantCount}
@@ -248,14 +285,29 @@ function PaperVariantCard({
         <div className="flex-1" />
 
         {/* Reading panel: name, the three facts that matter, then the action. */}
-        <div className="relative z-10 px-4 pb-4">
+        <div className="pointer-events-none relative z-10 px-4 pb-4">
           <h3 className="line-clamp-2 font-display text-[1.2rem] font-normal leading-snug tracking-tight text-white [text-shadow:0_1px_8px_rgba(0,0,0,0.6)]">
-            {formatPaperName(paper.paperName, paper.year ?? undefined)}
+            {paperTitle}
           </h3>
-          {paper.isNew === 1 && (
-            <span className="paper-new mt-1.5 inline-flex items-center gap-1 rounded-full bg-amber-300/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-200">
-              <Sparkles className="h-3 w-3" /> New
-            </span>
+          {(paper.isNew === 1 || run.state !== 'fresh') && (
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {run.state === 'done' && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-400/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-emerald-200">
+                  <CheckCircle2 className="h-3 w-3" aria-hidden="true" /> Completed
+                </span>
+              )}
+              {run.state === 'started' && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-sky-400/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-sky-200">
+                  <Hourglass className="h-3 w-3" aria-hidden="true" /> In progress
+                  {run.answered > 0 && <span className="normal-case tracking-normal">· {run.answered} answered</span>}
+                </span>
+              )}
+              {paper.isNew === 1 && (
+                <span className="paper-new inline-flex items-center gap-1 rounded-full bg-amber-300/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-200">
+                  <Sparkles className="h-3 w-3" aria-hidden="true" /> New
+                </span>
+              )}
+            </div>
           )}
 
           <dl className="mt-3 grid grid-cols-3 gap-1.5">
@@ -264,10 +316,29 @@ function PaperVariantCard({
             <Stat icon={<Trophy className="h-3.5 w-3.5" />} value={`${paper.calculatedTotalMarks || paper.totalScore || '—'}`} label="Marks" />
           </dl>
 
-          <span className="mt-3 inline-flex h-9 w-full items-center justify-center gap-2 rounded-lg border border-[rgba(214,178,110,0.45)] bg-[rgba(214,178,110,0.12)] text-sm font-medium text-amber-50 transition-colors group-hover:bg-[rgba(214,178,110,0.24)]">
-            <Play className="h-3.5 w-3.5" aria-hidden="true" />
-            {charging ? 'Summoning…' : 'Take test'}
-          </span>
+          {run.state === 'done' ? (
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              {/* Visual only: a click here lands on the stretched link (Review). */}
+              <span className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-[rgba(214,178,110,0.45)] bg-[rgba(214,178,110,0.12)] text-sm font-medium text-amber-50 transition-colors group-hover:bg-[rgba(214,178,110,0.24)]">
+                <Eye className="h-3.5 w-3.5" aria-hidden="true" />
+                {charging ? 'Summoning…' : 'Review'}
+              </span>
+              <button
+                type="button"
+                onClick={retake}
+                aria-label={`Retake ${paperTitle}`}
+                className="pointer-events-auto inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-white/20 bg-black/40 text-sm font-medium text-white/90 transition-colors hover:border-white/40 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+              >
+                <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
+                Retake
+              </button>
+            </div>
+          ) : (
+            <span className="mt-3 inline-flex h-9 w-full items-center justify-center gap-2 rounded-lg border border-[rgba(214,178,110,0.45)] bg-[rgba(214,178,110,0.12)] text-sm font-medium text-amber-50 transition-colors group-hover:bg-[rgba(214,178,110,0.24)]">
+              <Play className="h-3.5 w-3.5" aria-hidden="true" />
+              {charging ? 'Summoning…' : primaryLabel}
+            </span>
+          )}
         </div>
 
         {/* Ornate gold frame (not the level tint), corner brackets, summon overlays. */}
@@ -283,7 +354,7 @@ function PaperVariantCard({
         <div className="charge-ring" aria-hidden="true" />
         <div className="charge-flare" aria-hidden="true" />
         <div className="summon-burst" aria-hidden="true" />
-      </a>
+      </div>
     </div>
   );
 }
@@ -332,7 +403,7 @@ function BundleCard({
             {bundle.termLabel ? ` · ${bundle.termLabel}` : ''}
           </span>
         </div>
-        <span className="shrink-0 text-xs font-medium uppercase tracking-wider text-white/60">
+        <span className="squircle inline-flex h-7 shrink-0 items-center rounded-xl border border-white/25 bg-[#0E1530]/75 px-3 text-xs font-semibold uppercase tracking-wider text-white shadow-lg shadow-black/25 backdrop-blur-md [text-shadow:none]">
           {bundle.variantCount} {bundle.variantCount === 1 ? 'set' : 'sets'}
         </span>
       </div>
@@ -358,80 +429,8 @@ function BundleCard({
 }
 
 /** A face-down paper card: same gold frame and proportions as the real deck. */
-function PaperCardSkeleton() {
-  return (
-    <div className="relative flex aspect-[5/7] flex-col overflow-hidden rounded-2xl border border-[rgba(214,178,110,0.3)] bg-[#15120c]/80 p-4 shadow-[0_18px_40px_-18px_rgba(0,0,0,0.7),inset_0_0_0_1px_rgba(214,178,110,0.1)]">
-      <div className="flex justify-between">
-        <Skeleton className="h-5 w-20 rounded-full" />
-        <Skeleton className="h-5 w-12 rounded-full" />
-      </div>
-      <div className="flex-1" />
-      <Skeleton className="h-5 w-4/5 rounded-md" />
-      <Skeleton className="mt-2 h-5 w-1/2 rounded-md" />
-      <div className="mt-3 grid grid-cols-3 gap-1.5">
-        {[0, 1, 2].map((i) => (
-          <Skeleton key={i} className="h-12 rounded-lg" />
-        ))}
-      </div>
-      <Skeleton className="mt-3 h-9 w-full rounded-lg" />
-    </div>
-  );
-}
 
 /** Two bundle rows of face-down cards. */
-function BundlesSkeleton() {
-  return (
-    <div className="space-y-12">
-      {[4, 3].map((cards, section) => (
-        <section key={section} className="space-y-4">
-          <div className="flex items-end justify-between gap-4 border-b border-white/15 pb-2">
-            <Skeleton className="h-7 w-48 rounded-md" />
-            <Skeleton className="h-3 w-12 rounded-full" />
-          </div>
-          <div className="grid grid-cols-1 gap-5 min-[480px]:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5">
-            {Array.from({ length: cards }, (_, i) => (
-              <PaperCardSkeleton key={i} />
-            ))}
-          </div>
-        </section>
-      ))}
-    </div>
-  );
-}
-
-function LoadingSkeleton({ onBack }: { onBack: () => void }) {
-  return (
-    <SkeletonRegion label="Loading paper bundles" tone="glass" className="relative isolate space-y-8">
-      <ExamHallBackdrop />
-      <header className="space-y-4">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onBack}
-          className="gap-1.5 -ml-2 text-white/75 hover:bg-white/10 hover:text-white"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back
-        </Button>
-        <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-          <div className="space-y-3">
-            <div className="flex items-center gap-3.5">
-              <Skeleton className="hidden h-14 w-14 shrink-0 rounded-2xl sm:block" />
-              <div className="space-y-2">
-                <Skeleton className="h-3 w-24 rounded-full" />
-                <Skeleton className="h-10 w-64 rounded-lg sm:h-12 sm:w-80" />
-                <Skeleton className="h-3.5 w-40 rounded-full" />
-              </div>
-            </div>
-            <Skeleton className="h-11 w-56 rounded-xl" />
-          </div>
-          <Skeleton className="h-11 w-full rounded-xl md:w-72" />
-        </div>
-      </header>
-      <BundlesSkeleton />
-    </SkeletonRegion>
-  );
-}
 
 export default function CoursePage() {
   const { examId, courseId } = useParams();
@@ -612,7 +611,7 @@ export default function CoursePage() {
   // course, exam-type switches keep the chrome (backdrop, header, tabs) mounted
   // and only the list region below reloads — see the list switch in the return.
   if (loading && !course) {
-    return <LoadingSkeleton onBack={goBack} />;
+    return <CourseLoadingSkeleton onBack={goBack} />;
   }
 
   if (loadFailed && !course) {

@@ -12,7 +12,14 @@
     <meta name="description" content="Practice IITM BS exam papers the way you will sit them: timed, reviewed, and tracked across attempts." />
   </head>
   <body>
-    <div id="root"><div role="status" style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#1c1b1a;color:#c5c2be;font:14px system-ui,sans-serif">Loading Praxis...</div></div>
+    <style>
+      /* Pre-JS paint: only the app background, no guessed layout. index.html
+         serves every route, so a fake page shape would be wrong for most of
+         them. Each route's own skeleton appears once React mounts. */
+      html, body { margin: 0; background: #1f1d1b; color-scheme: dark; }
+      #boot { min-height: 100vh; }
+    </style>
+    <div id="root"><div id="boot" role="status" aria-busy="true" aria-label="Loading Praxis"></div></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
