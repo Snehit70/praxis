@@ -13,9 +13,9 @@ import {
   type DeduplicatedCourse,
 } from '@/lib/courseMapping';
 import { getExamCourses, type CourseSummary } from '@/lib/api';
-import { Skeleton, SkeletonRegion } from '@/components/ui/skeleton';
 import { StatePanel } from '@/components/ui/state-panel';
 import { SearchField } from '@/components/ui/search-field';
+import { ExamLoadingSkeleton } from '@/components/skeletons/route-skeletons';
 
 const LEVEL_INFO: Record<CourseLevel, { label: string; accent: string }> = {
   'Foundation': { label: 'Foundation Level', accent: 'border-l-blue-500' },
@@ -80,47 +80,6 @@ function LevelSection({
         ))}
       </div>
     </section>
-  );
-}
-
-function LoadingSkeleton({ examName }: { examName: string | null }) {
-  return (
-    <SkeletonRegion label="Loading exam courses" className="space-y-8">
-      <header className="space-y-4">
-        <Button variant="ghost" size="sm" asChild className="gap-1.5 -ml-2 text-muted-foreground">
-          <Link to="/home">
-            <ArrowLeft className="h-4 w-4" />
-            Home
-          </Link>
-        </Button>
-        <div>
-          <p className="text-sm font-medium text-primary">{examName}</p>
-          <h1 className="text-3xl font-bold tracking-tight mt-1">Courses</h1>
-        </div>
-      </header>
-
-      <div className="space-y-8">
-        {[1, 2, 3].map((i) => (
-          <div key={i} className="border-l-4 border-l-muted pl-4 md:pl-6">
-            <Skeleton className="h-6 w-48 mb-2" />
-            <Skeleton className="h-4 w-24 mb-4" />
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {[1, 2, 3].map((j) => (
-                <div key={j} className="rounded-lg border border-border bg-card p-4">
-                  <div className="flex items-center gap-3">
-                    <Skeleton className="h-10 w-10 rounded-lg" />
-                    <div className="flex-1">
-                      <Skeleton className="h-4 w-full mb-2" />
-                      <Skeleton className="h-3 w-16" />
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-    </SkeletonRegion>
   );
 }
 
@@ -225,7 +184,7 @@ export default function ExamPage() {
   }
 
   if (loading) {
-    return <LoadingSkeleton examName={examName} />;
+    return <ExamLoadingSkeleton examName={examName} />;
   }
 
   if (loadFailed) {

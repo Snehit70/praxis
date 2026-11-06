@@ -1,6 +1,6 @@
 import { Outlet, Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@clerk/clerk-react';
-import { PageLoading } from '@/components/ui/page-loading';
+import { RouteSkeleton } from '@/components/skeletons/route-skeletons';
 
 /**
  * Route guard for everything except the public landing page. While Clerk is
@@ -14,7 +14,7 @@ export default function RequireAuth() {
   const location = useLocation();
 
   if (!isLoaded) {
-    return <PageLoading label="Checking your session" />;
+    return <RouteSkeleton label="Checking your session" />;
   }
 
   if (!isSignedIn) {

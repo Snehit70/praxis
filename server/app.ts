@@ -116,6 +116,9 @@ function corsHeaders(): Record<string, string> {
     'content-type': 'application/json',
     'access-control-allow-origin': allowedOrigin,
     'access-control-allow-methods': 'GET,POST,PATCH,DELETE,OPTIONS',
+    // Let browsers reuse the preflight for 2h instead of re-checking it on
+    // nearly every cross-origin call (Chrome caps this at 2h).
+    'access-control-max-age': '7200',
     'access-control-allow-headers': 'content-type, authorization, x-turnstile-token',
     // Cross-origin fetch from the Vercel app cannot read Content-Disposition
     // unless it is listed here. Without this, the client saves paper.pdf.

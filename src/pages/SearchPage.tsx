@@ -3,7 +3,6 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, FileSearch } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
-import { Skeleton, SkeletonRegion } from '@/components/ui/skeleton';
 import { StatePanel } from '@/components/ui/state-panel';
 import { SearchField } from '@/components/ui/search-field';
 import {
@@ -15,6 +14,7 @@ import { getDisplayCourseName } from '@/lib/courseMapping';
 import { isSupportedExamSlug } from '@/lib/examMapping';
 import { logger } from '@/lib/logger';
 import { formatPaperName } from '@/lib/paperUtils';
+import { SearchSkeleton } from '@/components/skeletons/route-skeletons';
 
 function SearchSection({
   title,
@@ -76,27 +76,6 @@ function PaperResultCard({ paper }: { paper: SearchPaperResult }) {
       </div>
       <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-primary group-hover:translate-x-0.5 transition-all flex-shrink-0" />
     </Link>
-  );
-}
-
-function SearchSkeleton() {
-  return (
-    <SkeletonRegion label="Loading search results" className="space-y-8">
-      {[1, 2].map((section) => (
-        <div key={section} className="space-y-4">
-          <Skeleton className="h-4 w-24" />
-          <div className="grid gap-3">
-            {[1, 2, 3].map((item) => (
-              <div key={item} className="rounded-xl border border-border bg-card p-4">
-                <Skeleton className="h-5 w-3/4 mb-2" />
-                <Skeleton className="h-4 w-1/2 mb-2" />
-                <Skeleton className="h-4 w-1/3" />
-              </div>
-            ))}
-          </div>
-        </div>
-      ))}
-    </SkeletonRegion>
   );
 }
 

@@ -4,13 +4,12 @@ import { useAuth, useUser } from '@clerk/clerk-react';
 import { ArrowRight, BookMarked, Clock, Pencil, Plus, RotateCw, Search, UserRound } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
-import { Skeleton, SkeletonRegion } from '@/components/ui/skeleton';
 import { StatePanel } from '@/components/ui/state-panel';
 import { SearchField } from '@/components/ui/search-field';
 import { SEGMENTED_LIST, SEGMENTED_TRIGGER } from '@/components/ui/segmented';
 import { AccountButton } from '@/components/auth/AccountButton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { CourseCard, CourseCardSkeleton } from '@/components/CourseCard';
+import { CourseCard } from '@/components/CourseCard';
 import { PraxisBrand } from '@/components/PraxisBrand';
 import { CourseSelector } from '@/components/CourseSelector';
 import { Reveal } from '@/components/Reveal';
@@ -24,6 +23,7 @@ import { cn } from '@/lib/utils';
 import { logger } from '@/lib/logger';
 import { BOOKMARKS_ENABLED } from '@/lib/featureFlags';
 import courseErrorScene from '@/assets/course-error-scene-v2.webp';
+import { CourseGridSkeleton } from '@/components/skeletons/route-skeletons';
 
 /**
  * Frieren's voice, keyed to the local clock — the measured, slightly dry-warm
@@ -82,18 +82,6 @@ const rise = (i: number) => ({ '--rise-i': i }) as React.CSSProperties;
 
 /** Card grid stand-in while the catalogue and enrollments load; the scene,
  *  header and greeting are already real by then. */
-function CourseGridSkeleton({ label, count = 3 }: { label: string; count?: number }) {
-  return (
-    <SkeletonRegion label={label} tone="glass" className="space-y-5">
-      <Skeleton className="h-4 w-56 rounded-full" />
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {Array.from({ length: count }, (_, i) => (
-          <CourseCardSkeleton key={i} />
-        ))}
-      </div>
-    </SkeletonRegion>
-  );
-}
 
 export default function HomePage() {
   const { user } = useUser();

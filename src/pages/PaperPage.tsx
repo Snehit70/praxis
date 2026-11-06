@@ -7,8 +7,7 @@ import { Dialog } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import { formatPaperName } from '@/lib/paperUtils';
 import { getExamSlugFromUuid, getExamUuidFromSlug, getExamDurationMinutes } from '@/lib/examMapping';
-import { getDisplayCourseName, getCourseLevel } from '@/lib/courseMapping';
-import { LEVEL_META } from '@/lib/courseCatalogue';
+import { getDisplayCourseName } from '@/lib/courseMapping';
 import { ArcaneSigil } from '@/components/ArcaneSigil';
 import { PaperVerification } from '@/components/PaperVerification';
 import { logger } from '@/lib/logger';
@@ -49,13 +48,11 @@ import {
   type SavedPracticeRunSession,
   type SelectedAnswers,
 } from '@/lib/practiceRun';
-import { Skeleton, SkeletonRegion } from '@/components/ui/skeleton';
 import { StatePanel } from '@/components/ui/state-panel';
 import { SaveButton } from '@/components/SaveButton';
 import { DownloadPdfButton } from '@/components/DownloadPdfButton';
 import { BOOKMARKS_ENABLED } from '@/lib/featureFlags';
 import { useAuth } from '@clerk/clerk-react';
-import examHall from '@/assets/exam-hall.webp';
 import handInHall from '@/assets/hand-in-hall.webp';
 import coverArt from '@/assets/paper-cover.webp';
 import { ImageZoomProvider, useImageZoom } from '@/components/exam/ImageLightbox';
@@ -66,6 +63,7 @@ import {
   type AttemptSaveState,
   type ReviewFilter,
 } from '@/components/exam/AttemptReport';
+import { HallBackdrop, PaperLoadingSkeleton, PaperReportSkeleton } from '@/components/skeletons/route-skeletons';
 
 const OPTION_LABELS = ['A', 'B', 'C', 'D', 'E', 'F'];
 const TEXT_SCALES = [0.9, 1, 1.12, 1.25, 1.4];
@@ -73,26 +71,6 @@ const TEXT_SCALE_KEY = 'praxis.exam.textScale';
 // Stored per-paper `duration` values are placeholders, so the timed attempt is
 // driven by the exam type instead (see getExamDurationMinutes): 60m for the
 // quizzes, 90m for the End Term.
-
-/**
- * The Mage Association hall from the course page, carried into the paper so
- * the walk in feels continuous. `dim` softens it further while a run is open.
- */
-function HallBackdrop({ dim = false }: { dim?: boolean }) {
-  return (
-    <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 overflow-hidden bg-background">
-      <img
-        src={examHall}
-        alt=""
-        fetchPriority="high"
-        className={cn('h-full w-full object-cover object-[65%_30%]', dim && 'scale-105 blur-[3px]')}
-      />
-      <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-black/45 to-transparent" />
-      <div className={cn('absolute inset-0', dim ? 'bg-[#0d0f14]/72' : 'bg-[#0d0f14]/35')} />
-      <div className="absolute inset-0 bg-gradient-to-b from-transparent from-40% to-[#0d0f14]/80" />
-    </div>
-  );
-}
 
 function prefersReducedMotion() {
   return typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -103,57 +81,6 @@ function formatRemainingTime(totalSeconds: number | null) {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-}
-
-/**
- * Stand-in for the cover briefing (the page a paper opens on): the same hall,
- * the same two-page tome, with the briefing and the run choice still blank.
- */
-function LoadingSkeleton({ onBack }: { onBack: () => void }) {
-  return (
-    <SkeletonRegion label="Loading paper" tone="glass" className="relative isolate flex min-h-[calc(100vh-14rem)] w-full flex-col">
-      <HallBackdrop />
-      <button
-        type="button"
-        onClick={onBack}
-        className="inline-flex w-fit items-center gap-1.5 rounded-md px-2 py-1 text-sm text-white/75 transition-colors [text-shadow:0_1px_8px_rgba(0,0,0,0.6)] hover:bg-white/10 hover:text-white"
-      >
-        <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-        Back to papers
-      </button>
-      <div className="flex flex-1 items-center justify-center py-6">
-        <div className="exam-tome relative isolate grid w-full max-w-4xl overflow-hidden rounded-2xl border border-[rgba(214,178,110,0.24)] backdrop-blur-sm lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
-          <div aria-hidden="true" className="hidden min-h-[26rem] bg-black/25 lg:block" />
-          <div className="relative z-10 flex flex-col px-6 py-8 sm:px-10 sm:py-10">
-            <Skeleton className="h-3 w-40 rounded-full" />
-            <Skeleton className="mt-2.5 h-3.5 w-28 rounded-full" />
-            <Skeleton className="mt-3 h-10 w-4/5 rounded-lg sm:h-12" />
-            <div className="mt-7 flex gap-8">
-              {[0, 1, 2].map((i) => (
-                <div key={i} className="space-y-2">
-                  <Skeleton className="h-8 w-10 rounded-md" />
-                  <Skeleton className="h-3 w-16 rounded-full" />
-                </div>
-              ))}
-            </div>
-            <div className="mt-8 space-y-3">
-              <Skeleton className="h-[74px] w-full rounded-xl" />
-              <Skeleton className="h-[74px] w-full rounded-xl" />
-            </div>
-            <div className="mt-5 flex gap-2">
-              <Skeleton className="h-9 w-28 rounded-lg" />
-              <Skeleton className="h-9 w-36 rounded-lg" />
-            </div>
-          </div>
-          <div className="tcard-frame" aria-hidden="true" />
-          <span className="tcard-corner tcard-corner-tl" aria-hidden="true" />
-          <span className="tcard-corner tcard-corner-tr" aria-hidden="true" />
-          <span className="tcard-corner tcard-corner-bl" aria-hidden="true" />
-          <span className="tcard-corner tcard-corner-br" aria-hidden="true" />
-        </div>
-      </div>
-    </SkeletonRegion>
-  );
 }
 
 /**
@@ -202,7 +129,7 @@ function CompactTimer({
       }
       className={cn(
         'exam-clock exam-panel flex shrink-0 items-center gap-2 rounded-lg px-2.5 py-1.5 backdrop-blur-sm',
-        expired ? 'border-destructive/40 bg-destructive/10' : 'bg-[#14161b]/75',
+        expired ? 'border-destructive/40 bg-destructive/10' : 'bg-[#121a30]/75',
       )}
     >
       <Timer
@@ -295,7 +222,7 @@ export function ResultsSummary({
   const hasBreakdown = stats.gradableTotal > 0;
 
   return (
-    <div className={`exam-verdict rounded-2xl border p-5 ring-1 ring-inset ring-[rgba(214,178,110,0.16)] sm:p-6 ${bgColor}`}>
+    <div className={`exam-verdict rounded-2xl border p-5 ring-1 ring-inset ring-[rgb(var(--ex-line)/0.16)] sm:p-6 ${bgColor}`}>
       <div className="flex flex-col sm:flex-row sm:items-center gap-5">
         <div className="flex items-center gap-4 flex-1">
           <div className={`flex-shrink-0 w-14 h-14 rounded-full ${isGood ? 'bg-green-500/15' : isOkay ? 'bg-yellow-500/15' : 'bg-red-500/15'} flex items-center justify-center`}>
@@ -385,14 +312,14 @@ const QUESTION_TYPE_META: Record<string, { label: string; accent: string }> = {
   SA: { label: 'Short Answer', accent: '#f0b462' },
   ESSAY: { label: 'Essay', accent: '#e8919b' },
   OPPE: { label: 'OPPE', accent: '#2dd4bf' },
-  MCQ: { label: 'MCQ', accent: '#d6b26e' },
+  MCQ: { label: 'MCQ', accent: 'rgb(var(--ex-accent))' },
 };
 
 /** A single, theme-aligned chip: a quiet gold-tinted pill that carries the
  *  question type's semantic colour as a soft accent (no loud default pills). */
 function QuestionTypeBadge({ question }: { question: QuizQuestion }) {
   const type = isEssayQuestion(question) ? 'ESSAY' : question.questionType;
-  const meta = QUESTION_TYPE_META[type] ?? { label: 'MCQ', accent: '#d6b26e' };
+  const meta = QUESTION_TYPE_META[type] ?? { label: 'MCQ', accent: 'rgb(var(--ex-accent))' };
   return (
     <span
       className="inline-flex items-center rounded px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
@@ -653,7 +580,7 @@ function FlowImage({ src, alt, inOption = false }: { src: string; alt: string; i
           block
             ? cn(
                 'block max-h-80 max-w-full rounded-lg bg-white object-contain p-1.5 shadow-md shadow-black/40 ring-1 ring-white/10',
-                zoomable && !inOption && 'cursor-zoom-in transition-shadow hover:ring-[#d6b26e]/60',
+                zoomable && !inOption && 'cursor-zoom-in transition-shadow hover:ring-[rgb(var(--ex-accent))]/60',
               )
             : 'mx-[0.15em] inline-block h-[1.3em] w-auto max-w-full align-middle invert mix-blend-screen'
         }
@@ -668,10 +595,9 @@ function FlowImage({ src, alt, inOption = false }: { src: string; alt: string; i
           onKeyDown={(event) => {
             if (event.key === 'Enter' || event.key === ' ') open(event);
           }}
-          className="absolute right-2 top-2 inline-flex items-center gap-1 rounded-md bg-black/75 px-1.5 py-1 text-[11px] font-medium text-white opacity-70 shadow transition-opacity hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 group-hover/fig:opacity-100"
+          className="absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-md bg-black/75 text-white opacity-70 shadow transition-opacity hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 group-hover/fig:opacity-100"
         >
           <Maximize2 className="h-3.5 w-3.5" aria-hidden="true" />
-          <span className="hidden sm:inline">Enlarge</span>
         </span>
       )}
     </span>
@@ -730,7 +656,7 @@ export function OptionButton({
   const hasOptionImage = Boolean(option.optionImage);
 
   let containerClass =
-    'w-full flex items-start gap-3 px-4 py-3 rounded-lg border-2 transition-all text-left cursor-pointer ';
+    'w-full flex items-start gap-3 py-3 pl-4 rounded-lg border-2 transition-all text-left cursor-pointer ';
   let indicatorClass =
     'flex-shrink-0 w-7 h-7 rounded-md flex items-center justify-center text-sm font-bold transition-colors ';
 
@@ -754,7 +680,7 @@ export function OptionButton({
     indicatorClass += 'bg-[var(--lvl,#62aef0)] text-white';
   } else {
     containerClass +=
-      'border-[rgba(214,178,110,0.18)] bg-black/15 hover:border-[color-mix(in_srgb,var(--lvl,#62aef0)_45%,transparent)] hover:bg-[color-mix(in_srgb,var(--lvl,#62aef0)_8%,transparent)] active:bg-black/25';
+      'border-[rgb(var(--ex-line)/0.18)] bg-black/15 hover:border-[color-mix(in_srgb,var(--lvl,#62aef0)_45%,transparent)] hover:bg-[color-mix(in_srgb,var(--lvl,#62aef0)_8%,transparent)] active:bg-black/25';
     indicatorClass += 'bg-muted text-muted-foreground group-hover:text-foreground';
   }
 
@@ -765,7 +691,7 @@ export function OptionButton({
       disabled={showResults}
       aria-pressed={!showResults ? isSelected : undefined}
       aria-label={`Option ${label}${isSelected ? ', selected' : ''}${eliminated && !showResults ? ', crossed out' : ''}${showResults ? isCorrect ? ', correct' : isSelected ? ', incorrect' : '' : ''}`}
-      className={`group ${containerClass}`}
+      className={cn('group', containerClass, onToggleEliminate && !showResults ? 'pr-14' : 'pr-4')}
     >
       <div className={`mt-0.5 ${indicatorClass}`}>
         {showResults ? (
@@ -796,9 +722,20 @@ export function OptionButton({
   );
 
   if (!onToggleEliminate || showResults) return button;
+  // The cross-out control sits inside the card's right edge (a sibling, not a
+  // nested button), so options use the column's full width. At rest that spot
+  // shows the option's number key.
   return (
-    <div className="group/opt flex items-stretch gap-1.5">
+    <div className="group/opt relative">
       {button}
+      {optionIndex < 9 && !eliminated && (
+        <kbd
+          aria-hidden="true"
+          className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 rounded border border-white/10 px-1.5 py-px font-sans text-[10px] tabular-nums text-muted-foreground/60 transition-opacity group-focus-within/opt:opacity-0 group-hover/opt:opacity-0 [@media(hover:none)]:hidden"
+        >
+          {optionIndex + 1}
+        </kbd>
+      )}
       <button
         type="button"
         onClick={onToggleEliminate}
@@ -806,7 +743,7 @@ export function OptionButton({
         aria-label={eliminated ? `Restore option ${label}` : `Cross out option ${label}`}
         title={eliminated ? 'Restore option' : 'Cross out (rule this option out)'}
         className={cn(
-          'flex w-9 shrink-0 items-center justify-center rounded-lg border text-xs font-semibold transition-all focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50',
+          'absolute right-2 top-1/2 flex h-8 w-9 -translate-y-1/2 items-center justify-center rounded-md border text-xs font-semibold transition-all focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50',
           eliminated
             ? 'border-white/15 text-foreground/80 hover:bg-white/10'
             : 'border-transparent text-muted-foreground opacity-0 hover:border-white/10 hover:bg-white/5 hover:text-foreground group-hover/opt:opacity-100 [@media(hover:none)]:opacity-60',
@@ -853,7 +790,7 @@ function NumericKeypad({
   };
 
   const keyClass =
-    'rounded-md border border-[rgba(214,178,110,0.2)] bg-black/25 py-1.5 text-sm font-medium text-foreground backdrop-blur-sm transition-colors hover:border-[color-mix(in_srgb,var(--lvl,#62aef0)_50%,transparent)] hover:bg-[color-mix(in_srgb,var(--lvl,#62aef0)_12%,transparent)] active:bg-black/40';
+    'rounded-md border border-[rgb(var(--ex-line)/0.2)] bg-black/25 py-1.5 text-sm font-medium text-foreground backdrop-blur-sm transition-colors hover:border-[color-mix(in_srgb,var(--lvl,#62aef0)_50%,transparent)] hover:bg-[color-mix(in_srgb,var(--lvl,#62aef0)_12%,transparent)] active:bg-black/40';
 
   return (
     <div className="max-w-[210px]">
@@ -913,7 +850,7 @@ function ShortAnswerField({
       ? correct
         ? 'border-emerald-500/60 bg-emerald-500/10'
         : 'border-red-500/60 bg-red-500/10'
-      : 'border-[rgba(214,178,110,0.22)]',
+      : 'border-[rgb(var(--ex-line)/0.22)]',
   );
 
   // Review of a skipped question: no empty input reading "No answer given"
@@ -1033,6 +970,7 @@ function QuestionCard({
   onShortAnswerChange,
   isSubQuestion = false,
   isFlagged = false,
+  part,
   passage,
   tools,
 }: {
@@ -1046,6 +984,9 @@ function QuestionCard({
   onShortAnswerChange: (questionId: string, answer: string) => void;
   isSubQuestion?: boolean;
   isFlagged?: boolean;
+  /** A passage page's sub-question rendered as the answer column: its stem
+   *  above its options, beside the passage. */
+  part?: 'answer';
 }) {
   const selectedAnswer = selectedAnswers[question.uuid];
   // Comprehension passages can be collapsed to reclaim room for the sub-questions.
@@ -1151,9 +1092,36 @@ function QuestionCard({
     </div>
   );
 
+  // Answer column: what kind of question, its weight, then the response.
+  const answerColumn = (
+    <div className="flex min-h-0 flex-1 flex-col gap-4">
+      <div className="flex min-h-7 flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-[rgb(var(--ex-line)/0.14)] pb-3">
+        <QuestionTypeBadge question={question} />
+        {marks > 0 && (
+          <span className="text-xs font-medium tabular-nums text-muted-foreground">
+            {marks} {marks === 1 ? 'mark' : 'marks'}
+          </span>
+        )}
+        {clearButton && <span className="ml-auto">{clearButton}</span>}
+      </div>
+      <div className="exam-scroll space-y-5 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pr-1" style={scaleStyle}>
+        {part === 'answer' && (
+          // A passage's question reads right above its options; the passage
+          // stays on the left as reference.
+          <div className="text-[15.5px] leading-[1.72] sm:text-[16px]">
+            <QuestionMedia texts={questionTexts} images={questionImages} altPrefix="Question image" />
+          </div>
+        )}
+        {answerArea}
+      </div>
+    </div>
+  );
+
+  if (isSubQuestion && part === 'answer') return answerColumn;
+
   if (isSubQuestion) {
     return (
-      <div className="exam-q-enter rounded-lg border border-[rgba(214,178,110,0.16)] bg-black/20 p-4 xl:flex-1" style={scaleStyle}>
+      <div className="exam-q-enter rounded-lg border border-[rgb(var(--ex-line)/0.16)] bg-black/20 p-4" style={scaleStyle}>
         <div className="flex gap-3">
           {index >= 0 && (
             <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md border border-[color-mix(in_srgb,var(--lvl,#62aef0)_40%,transparent)] bg-[color-mix(in_srgb,var(--lvl,#62aef0)_14%,transparent)] text-xs font-bold text-[color-mix(in_srgb,var(--lvl,#62aef0)_92%,white)]">
@@ -1161,24 +1129,20 @@ function QuestionCard({
             </div>
           )}
           <div className="flex-1 min-w-0 space-y-3">
-            <div className="flex items-start justify-between gap-3">
-              <div className="space-y-2 flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <QuestionTypeBadge question={question} />
-                  {marks > 0 && (
-                    <span className="text-xs text-muted-foreground">
-                      {marks} {marks === 1 ? 'mark' : 'marks'}
-                    </span>
-                  )}
-                  {clearButton && <span className="ml-auto">{clearButton}</span>}
-                </div>
-                <QuestionMedia
-                  texts={questionTexts}
-                  images={questionImages}
-                  altPrefix={`Question ${index + 1} image`}
-                />
-              </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <QuestionTypeBadge question={question} />
+              {marks > 0 && (
+                <span className="text-xs text-muted-foreground">
+                  {marks} {marks === 1 ? 'mark' : 'marks'}
+                </span>
+              )}
+              {clearButton && <span className="ml-auto">{clearButton}</span>}
             </div>
+            <QuestionMedia
+              texts={questionTexts}
+              images={questionImages}
+              altPrefix={`Question ${index + 1} image`}
+            />
             {!isComprehension && answerArea}
           </div>
         </div>
@@ -1194,127 +1158,135 @@ function QuestionCard({
     />
   );
 
-  return (
-    // The card fills the space between the exam bar and the pager. On wide
-    // screens a passage page is a fixed split view: passage and question each
-    // scroll on their own, as in the real exam software.
-    <div
-      className={cn(
-        'exam-tome relative isolate flex flex-col overflow-clip rounded-2xl border border-[rgba(214,178,110,0.24)] px-4 pb-5 pt-4 backdrop-blur-sm sm:px-6 sm:pb-6 sm:pt-5',
-        'lg:min-h-[calc(100dvh-var(--exam-chrome))]',
-        isComprehension && 'xl:h-[calc(100dvh-var(--exam-chrome))]',
-      )}
-    >
-      <div className="relative z-10 flex min-h-0 flex-1 flex-col gap-4">
-        {/* Header: which question, its type and weight — the flag lives in the pager. */}
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-[rgba(214,178,110,0.14)] pb-3">
-          <h2 className="font-display text-xl font-normal tracking-tight">
-            {isComprehension && !passage ? 'Passage' : 'Question'}{' '}
-            <span className="tabular-nums text-[#d6b26e]">{index + 1}</span>
-          </h2>
-          {!isComprehension && <QuestionTypeBadge question={question} />}
-          {passage ? (
-            <span className="text-xs text-muted-foreground">
-              Passage {passage.number}
-              {passage.parts > 1 && (
-                <>
-                  {' · '}
-                  <span className="tabular-nums text-foreground/80">
-                    part {passage.part + 1} of {passage.parts}
-                  </span>
-                </>
-              )}
-            </span>
-          ) : (
-            isComprehension && question.subQuestions && (
-              <span className="text-xs text-muted-foreground">
-                {question.subQuestions.length} {question.subQuestions.length === 1 ? 'question' : 'questions'}
-              </span>
-            )
-          )}
-          {marks > 0 && !passage && (
-            <span className="text-xs font-medium tabular-nums text-muted-foreground">
-              {marks} {marks === 1 ? 'mark' : 'marks'}
-            </span>
-          )}
-          <span className="ml-auto flex items-center gap-3">
-            {clearButton}
-            {isFlagged && !showResults && (
-              <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-300">
-                <Flag className="h-3.5 w-3.5 fill-amber-400/80" aria-hidden="true" />
-                Flagged
-              </span>
-            )}
-          </span>
-        </div>
+  const subQuestions = question.subQuestions ?? [];
+  // A passage page carries exactly one sub-question: its stem joins the
+  // passage on the left and its response gets the answer column.
+  const splitSub = passage && subQuestions.length === 1 ? subQuestions[0] : null;
+  const subProps = {
+    tools,
+    selectedAnswers,
+    showResults,
+    onSelectAnswer,
+    onShortAnswerChange,
+    isSubQuestion: true,
+  };
 
-        {isComprehension ? (
-          // Wide screens read like a real exam: the passage stays put on the
-          // left while its questions scroll on the right.
-          <div className="grid gap-5 xl:min-h-0 xl:flex-1 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-            <section
-              aria-label="Passage"
-              className="exam-passage rounded-xl p-4 xl:flex xl:min-h-0 xl:flex-col"
-            >
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  Read the passage
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setPassageOpen((open) => !open)}
-                  aria-expanded={passageOpen}
-                  className="rounded px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground xl:hidden"
-                >
-                  {passageOpen ? 'Hide' : 'Show'}
-                </button>
-              </div>
-              <div
-                className={cn(
-                  'exam-scroll space-y-3 text-[15.5px] leading-[1.72] sm:text-[16px] xl:block xl:min-h-0 xl:flex-1 xl:overflow-y-auto xl:pr-2',
-                  passageOpen ? 'max-h-[45vh] overflow-y-auto pr-1 xl:max-h-none' : 'hidden',
-                )}
-                style={scaleStyle}
-              >
-                {passageBody}
-              </div>
-            </section>
-
-            {question.subQuestions && question.subQuestions.length > 0 && (
-              <div className="exam-scroll space-y-3 xl:flex xl:min-h-0 xl:flex-col xl:overflow-y-auto xl:pr-1">
-                {question.subQuestions.map((subQuestion, subIndex) => (
-                  <QuestionCard
-                    key={subQuestion.uuid}
-                    question={subQuestion}
-                    // A split passage page has one question, already numbered in the header.
-                    index={passage ? -1 : subIndex}
-                    tools={tools}
-                    selectedAnswers={selectedAnswers}
-                    showResults={showResults}
-                    onSelectAnswer={onSelectAnswer}
-                    onShortAnswerChange={onShortAnswerChange}
-                    isSubQuestion
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        ) : (
-          <>
-            <div className="exam-measure space-y-4" style={scaleStyle}>
-              <div className="space-y-3 text-[15.5px] leading-[1.72] sm:text-[16.5px]">{passageBody}</div>
-              <div className="pt-1">{answerArea}</div>
-            </div>
-          </>
-        )}
-      </div>
-
+  const panelClass =
+    'exam-tome relative isolate flex flex-col overflow-clip rounded-2xl border border-[rgb(var(--ex-line)/0.24)] px-4 pb-5 pt-4 backdrop-blur-sm sm:px-6 sm:pb-6 sm:pt-5 lg:h-[calc(100dvh-var(--exam-chrome))]';
+  const frame = (
+    <>
       {/* Ornate frame + corner brackets — the deck language, kept calm (no foil). */}
       <div className="tcard-frame" aria-hidden="true" />
       <span className="tcard-corner tcard-corner-tl" aria-hidden="true" />
       <span className="tcard-corner tcard-corner-tr" aria-hidden="true" />
       <span className="tcard-corner tcard-corner-bl" aria-hidden="true" />
       <span className="tcard-corner tcard-corner-br" aria-hidden="true" />
+    </>
+  );
+
+  return (
+    // Two panels, each filling the height between the exam bar and the page
+    // foot and scrolling on its own: the question (and any passage) on the
+    // left, the response always in view beside it.
+    <div className="grid gap-5 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
+      <section aria-label="Question" className={panelClass}>
+        <div className="relative z-10 flex min-h-0 flex-1 flex-col gap-4">
+          <div className="flex min-h-7 flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-[rgb(var(--ex-line)/0.14)] pb-3">
+            <h2 className="font-display text-xl font-normal tracking-tight">
+              {isComprehension && !passage ? 'Passage' : 'Question'}{' '}
+              <span className="tabular-nums text-[rgb(var(--ex-accent))]">{index + 1}</span>
+            </h2>
+            {passage ? (
+              <span className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+                Passage {passage.number}
+                {passage.parts > 1 && (
+                  <span
+                    className="inline-flex items-center gap-1"
+                    role="img"
+                    aria-label={`Part ${passage.part + 1} of ${passage.parts}`}
+                    title={`Part ${passage.part + 1} of ${passage.parts}`}
+                  >
+                    {Array.from({ length: passage.parts }, (_, i) => (
+                      <span
+                        key={i}
+                        className={cn(
+                          'h-1.5 rounded-full transition-all',
+                          i === passage.part ? 'w-4 bg-[rgb(var(--ex-accent))]' : 'w-1.5 bg-white/20',
+                        )}
+                      />
+                    ))}
+                  </span>
+                )}
+              </span>
+            ) : (
+              isComprehension && subQuestions.length > 0 && (
+                <span className="text-xs text-muted-foreground">
+                  {subQuestions.length} {subQuestions.length === 1 ? 'question' : 'questions'}
+                </span>
+              )
+            )}
+            {isFlagged && !showResults && (
+              <span className="ml-auto inline-flex items-center gap-1 text-xs font-medium text-amber-300">
+                <Flag className="h-3.5 w-3.5 fill-amber-400/80" aria-hidden="true" />
+                Flagged
+              </span>
+            )}
+          </div>
+
+          {isComprehension ? (
+            <div className="exam-scroll lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pr-2">
+              <div className="exam-passage rounded-xl p-4">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Read the passage
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setPassageOpen((open) => !open)}
+                    aria-expanded={passageOpen}
+                    className="rounded px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground lg:hidden"
+                  >
+                    {passageOpen ? 'Hide' : 'Show'}
+                  </button>
+                </div>
+                <div
+                  className={cn(
+                    'exam-scroll space-y-3 text-[15.5px] leading-[1.72] sm:text-[16px] lg:block',
+                    passageOpen ? 'max-h-[45vh] overflow-y-auto pr-1 lg:max-h-none lg:overflow-visible lg:pr-0' : 'hidden',
+                  )}
+                  style={scaleStyle}
+                >
+                  {passageBody}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="exam-scroll lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pr-2">
+              <div className="exam-measure space-y-3 text-[15.5px] leading-[1.72] sm:text-[16.5px]" style={scaleStyle}>
+                {passageBody}
+              </div>
+            </div>
+          )}
+        </div>
+        {frame}
+      </section>
+
+      <section aria-label="Your answer" className={panelClass}>
+        <div className="relative z-10 flex min-h-0 flex-1 flex-col">
+          {!isComprehension ? (
+            answerColumn
+          ) : splitSub ? (
+            <QuestionCard key={splitSub.uuid} question={splitSub} index={-1} part="answer" {...subProps} />
+          ) : (
+            <div className="exam-scroll space-y-3 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pr-1">
+              {subQuestions.map((subQuestion, subIndex) => (
+                <QuestionCard key={subQuestion.uuid} question={subQuestion} index={subIndex} {...subProps} />
+              ))}
+            </div>
+          )}
+        </div>
+        {frame}
+      </section>
     </div>
   );
 }
@@ -1404,7 +1376,7 @@ export function QuestionNavigator({
                 review === 'incorrect' && 'border-red-500/45 bg-red-500/15 text-red-300',
                 review === 'unanswered' && 'border-border bg-black/20 text-muted-foreground',
                 review === 'manual' &&
-                  'border-[rgba(214,178,110,0.4)] bg-[rgba(214,178,110,0.12)] text-[#d6b26e]',
+                  'border-[rgb(var(--ex-line)/0.4)] bg-[rgb(var(--ex-line)/0.12)] text-[rgb(var(--ex-accent))]',
                 // Run mode: colour by answer progress.
                 !reviewMode &&
                   state === 'done' &&
@@ -1414,8 +1386,8 @@ export function QuestionNavigator({
                   'border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400',
                 !reviewMode &&
                   state === 'none' &&
-                  'border-[rgba(214,178,110,0.16)] bg-black/20 text-muted-foreground hover:border-[color-mix(in_srgb,var(--lvl,#62aef0)_45%,transparent)] hover:text-foreground',
-                isCurrent && 'ring-2 ring-[#d6b26e] ring-offset-1 ring-offset-background',
+                  'border-[rgb(var(--ex-line)/0.16)] bg-black/20 text-muted-foreground hover:border-[color-mix(in_srgb,var(--lvl,#62aef0)_45%,transparent)] hover:text-foreground',
+                isCurrent && 'ring-2 ring-[rgb(var(--ex-accent))] ring-offset-1 ring-offset-background',
               )}
             >
               {index + 1}
@@ -1452,7 +1424,7 @@ export function QuestionNavigator({
           Next flagged ({flaggedCount})
         </button>
       )}
-      <div className="relative z-10 mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+      <div className="relative z-10 mt-4 grid grid-cols-2 gap-x-3 gap-y-1.5 text-[11px] text-muted-foreground">
         {reviewMode ? (
           <>
             <span className="flex items-center gap-1">
@@ -1469,7 +1441,7 @@ export function QuestionNavigator({
             </span>
             {reviewStates?.includes('manual') && (
               <span className="flex items-center gap-1">
-                <span className="h-2.5 w-2.5 rounded-sm bg-[rgba(214,178,110,0.4)]" aria-hidden="true" />
+                <span className="h-2.5 w-2.5 rounded-sm bg-[rgb(var(--ex-line)/0.4)]" aria-hidden="true" />
                 Manual
               </span>
             )}
@@ -1534,7 +1506,6 @@ function RunCoverPlate({
   examName,
   paperName,
   courseName,
-  levelColor,
   totalQuestions,
   totalMarks,
   durationMinutes,
@@ -1548,7 +1519,6 @@ function RunCoverPlate({
   examName: string;
   paperName: string;
   courseName: string;
-  levelColor: string | null;
   totalQuestions: number;
   totalMarks: number;
   durationMinutes: number;
@@ -1562,7 +1532,7 @@ function RunCoverPlate({
   return (
     <div
       className="relative isolate flex min-h-[calc(100vh-14rem)] w-full flex-col"
-      style={{ ['--ring' as string]: '#d6b26e' }}
+      style={{ ['--ring' as string]: 'rgb(var(--ex-accent))' }}
     >
       <HallBackdrop />
 
@@ -1576,7 +1546,7 @@ function RunCoverPlate({
       </button>
 
       <div className="flex flex-1 items-center justify-center py-6">
-        <div className="exam-tome exam-cover exam-q-enter relative isolate grid w-full max-w-4xl overflow-hidden rounded-2xl border border-[rgba(214,178,110,0.24)] backdrop-blur-sm lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+        <div className="exam-tome exam-cover exam-q-enter relative isolate grid w-full max-w-4xl overflow-hidden rounded-2xl border border-[rgb(var(--ex-line)/0.24)] backdrop-blur-sm lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
           {/* Art panel: fades into the card on the reading side. */}
           <div aria-hidden="true" className="relative hidden min-h-[26rem] lg:block">
             <img
@@ -1590,7 +1560,7 @@ function RunCoverPlate({
 
           <div className="relative z-10 flex flex-col px-6 py-8 sm:px-10 sm:py-10">
             {courseName && (
-              <p className="text-xs font-medium uppercase tracking-[0.18em]" style={{ color: levelColor ?? undefined }}>
+              <p className="text-xs font-medium uppercase tracking-[0.18em] text-[rgb(var(--ex-accent))]">
                 {courseName}
               </p>
             )}
@@ -1599,7 +1569,7 @@ function RunCoverPlate({
               {paperName}
             </h1>
 
-            <div className="mt-7 flex items-stretch divide-x divide-[rgba(214,178,110,0.18)]">
+            <div className="mt-7 flex items-stretch divide-x divide-[rgb(var(--ex-line)/0.18)]">
               <CoverStat value={String(totalQuestions)} label={totalQuestions === 1 ? 'question' : 'questions'} />
               {totalMarks > 0 && <CoverStat value={String(totalMarks)} label="marks" />}
               <CoverStat value={`${durationMinutes}m`} label="duration" />
@@ -1609,22 +1579,22 @@ function RunCoverPlate({
               <button
                 type="button"
                 onClick={onBeginTimed}
-                className="exam-cover-cta group flex w-full items-center justify-between gap-3 rounded-xl border border-[rgba(214,178,110,0.5)] bg-[rgba(214,178,110,0.12)] px-5 py-4 text-left transition-colors hover:border-[rgba(214,178,110,0.8)] hover:bg-[rgba(214,178,110,0.2)]"
+                className="exam-cover-cta group flex w-full items-center justify-between gap-3 rounded-xl border border-[rgb(var(--ex-line)/0.5)] bg-[rgb(var(--ex-line)/0.12)] px-5 py-4 text-left transition-colors hover:border-[rgb(var(--ex-line)/0.8)] hover:bg-[rgb(var(--ex-line)/0.2)]"
               >
                 <span className="flex items-center gap-3.5">
-                  <Timer className="h-5 w-5 shrink-0 text-[#e6c88a]" aria-hidden="true" />
+                  <Timer className="h-5 w-5 shrink-0 text-[rgb(var(--ex-accent-soft))]" aria-hidden="true" />
                   <span>
-                    <span className="block font-medium text-amber-50">Timed run</span>
+                    <span className="block font-medium text-white">Timed run</span>
                     <span className="block text-xs text-muted-foreground">{durationMinutes} minutes</span>
                   </span>
                 </span>
-                <ChevronRight className="h-4 w-4 shrink-0 text-[#e6c88a] transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+                <ChevronRight className="h-4 w-4 shrink-0 text-[rgb(var(--ex-accent-soft))] transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
               </button>
 
               <button
                 type="button"
                 onClick={onBeginOpen}
-                className="group flex w-full items-center justify-between gap-3 rounded-xl border border-[rgba(214,178,110,0.22)] bg-black/20 px-5 py-4 text-left transition-colors hover:border-[rgba(214,178,110,0.4)] hover:bg-black/30"
+                className="group flex w-full items-center justify-between gap-3 rounded-xl border border-[rgb(var(--ex-line)/0.22)] bg-black/20 px-5 py-4 text-left transition-colors hover:border-[rgb(var(--ex-line)/0.4)] hover:bg-black/30"
               >
                 <span className="flex items-center gap-3.5">
                   <BookOpen className="h-5 w-5 shrink-0 text-muted-foreground" aria-hidden="true" />
@@ -1912,13 +1882,6 @@ export default function PaperPage() {
     return getDisplayCourseName(paper.courseName);
   }, [paper?.courseName]);
 
-  // Course-level accent — carries the deck's per-level colour into the exam so
-  // the page reads as the "inside" of the card the user summoned.
-  const levelColor = useMemo(() => {
-    if (!paper?.courseName) return null;
-    return LEVEL_META[getCourseLevel(paper.courseName)]?.color ?? null;
-  }, [paper?.courseName]);
-
   const displayPaperName = useMemo(() => {
     if (!paper?.paperName) return '';
     return formatPaperName(paper.paperName, paper.year ?? undefined);
@@ -2105,7 +2068,8 @@ export default function PaperPage() {
       setReviewFilter(filter);
       setResultsView('review');
       setCurrentIndex(Math.max(0, start));
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      // The view swaps instantly; a smooth scroll after it reads as a lurch.
+      window.scrollTo({ top: 0, behavior: 'instant' });
     },
     [pages, reviewStates],
   );
@@ -2119,7 +2083,7 @@ export default function PaperPage() {
 
   const showReport = () => {
     setResultsView('report');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    window.scrollTo({ top: 0, behavior: 'instant' });
   };
 
   // Flagged-for-review overlay, aligned to the navigator pages.
@@ -2469,7 +2433,10 @@ export default function PaperPage() {
   }
 
   if (loading) {
-    return <LoadingSkeleton onBack={goBack} />;
+    if (storageKey && readPracticeRunSession(storageKey, 0)?.showResults) {
+      return <PaperReportSkeleton onBack={goBack} />;
+    }
+    return <PaperLoadingSkeleton onBack={goBack} />;
   }
 
   if (loadFailed || !paper) {
@@ -2524,7 +2491,6 @@ export default function PaperPage() {
         examName={paper.examName}
         paperName={displayPaperName}
         courseName={displayCourseName}
-        levelColor={levelColor}
         totalQuestions={stats.totalQuestions}
         totalMarks={stats.totalMarks}
         durationMinutes={durationMinutes}
@@ -2567,19 +2533,63 @@ export default function PaperPage() {
     onToggleEliminate: handleToggleEliminate,
     onClear: handleClearAnswer,
   };
+  // Pager controls, shared by the desktop rail and the phone pager.
+  const prevButton = (
+    <Button variant="outline" size="sm" onClick={goPrev} disabled={prevIndex < 0} className="gap-1">
+      <ChevronLeft className="h-4 w-4" />
+      <span className="hidden sm:inline">Previous</span>
+    </Button>
+  );
+  const nextButton =
+    isLastPage && !showResults ? (
+      <Button
+        size="sm"
+        onClick={handleSubmit}
+        disabled={stats.answered === 0 || summoning}
+        className={cn('gap-1', allAnswered ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-[rgb(var(--ex-primary))] text-[rgb(var(--ex-ink))] hover:bg-white')}
+      >
+        {summoning ? 'Summoning…' : submitLabel}
+      </Button>
+    ) : nextIndex >= 0 ? (
+      <Button size="sm" onClick={goNext} className="gap-1 bg-[rgb(var(--ex-primary))] text-[rgb(var(--ex-ink))] hover:bg-white">
+        <span className="hidden sm:inline">Next</span>
+        <ChevronRight className="h-4 w-4" />
+      </Button>
+    ) : (
+      <Button size="sm" variant="outline" onClick={showReport} className="gap-1">
+        <span className="hidden sm:inline">Back to</span> report
+      </Button>
+    );
+  const flagButton = !showResults && currentPage && (
+    <button
+      type="button"
+      onClick={() => toggleFlag(currentPage.id)}
+      aria-pressed={currentFlagged}
+      title="Flag for review (F)"
+      className={cn(
+        'inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm transition-colors',
+        currentFlagged
+          ? 'border-amber-500/50 bg-amber-500/15 text-amber-300'
+          : 'border-[rgb(var(--ex-line)/0.22)] text-muted-foreground hover:border-amber-500/40 hover:text-foreground',
+      )}
+    >
+      <Flag className={cn('h-4 w-4', currentFlagged && 'fill-amber-400/80')} aria-hidden="true" />
+      <span className="hidden sm:inline">{currentFlagged ? 'Flagged' : 'Flag'}</span>
+    </button>
+  );
   const toolButton =
     'inline-flex h-8 items-center justify-center gap-1.5 rounded-md px-2 text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground disabled:pointer-events-none disabled:opacity-35';
 
   return (
     <ImageZoomProvider>
     <div
-      className="relative isolate w-full lg:-mb-6"
+      className="ex-theme relative isolate w-full lg:-mb-6"
       // The level colour stays a small label accent; selections and progress
       // keep the calm default blue so a red course never reads as "wrong".
-      // --exam-chrome: site header + exam bar + pager + page padding, what the
-      // question card leaves free so the whole exam fits one screen.
-      // In review the filter bar above the card takes another ~6.5rem.
-      style={{ ['--ring' as string]: '#d6b26e', ['--exam-chrome' as string]: reviewing ? '21.5rem' : '15rem' }}
+      // --exam-chrome: site header + exam bar + page padding, what the question
+      // and answer panels leave free so the whole exam fits one screen (the
+      // pager lives in the rail). In review the filter bar takes ~7.5rem more.
+      style={{ ['--ring' as string]: 'rgb(var(--ex-accent))', ['--exam-chrome' as string]: reviewing ? '18.5rem' : '11rem' }}
     >
       {/* Page backdrop — the exam hall, dimmed and softened so the question
           and navigator stay legible through a long sitting. */}
@@ -2587,7 +2597,7 @@ export default function PaperPage() {
 
       {/* Exam bar — everything the sitting needs at a glance, pinned under the
           site header: where you are, how far along, the clock, and Submit. */}
-      <header className="sticky top-14 z-40 -mx-4 -mt-8 mb-6 border-b border-[rgba(214,178,110,0.16)] bg-[#0f1116]/85 backdrop-blur-md md:-mx-8 md:-mt-10">
+      <header className="sticky top-14 z-40 -mx-4 -mt-8 mb-6 border-b border-[rgb(var(--ex-line)/0.16)] bg-[#0d1325]/85 backdrop-blur-md md:-mx-8 md:-mt-10">
         <div className="px-4 md:px-8">
         <div className="mx-auto flex max-w-[1500px] items-center gap-2 py-2.5 sm:gap-3">
           <Button
@@ -2602,7 +2612,7 @@ export default function PaperPage() {
           </Button>
           <div className="min-w-0 flex-1">
             <p className="truncate text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-              <span style={{ color: levelColor ?? undefined }}>{displayCourseName || paper.examName}</span>
+              <span className="text-[rgb(var(--ex-accent))]">{displayCourseName || paper.examName}</span>
               {displayCourseName && <span className="hidden sm:inline"> · {paper.examName}</span>}
             </p>
             <h1 className="truncate font-display text-base font-normal leading-tight tracking-tight sm:text-lg" title={displayPaperName}>
@@ -2638,7 +2648,7 @@ export default function PaperPage() {
           )}
 
           {/* Reading size and calculator — the aids the real exam software offers. */}
-          <div className="exam-panel hidden shrink-0 items-center rounded-lg bg-[#14161b]/75 p-0.5 sm:flex">
+          <div className="exam-panel hidden shrink-0 items-center rounded-lg bg-[#121a30]/75 p-0.5 sm:flex">
             <button
               type="button"
               onClick={() => stepTextScale(-1)}
@@ -2702,7 +2712,7 @@ export default function PaperPage() {
           )}
           {showResults ? (
             <div className="flex shrink-0 items-center gap-2">
-              <div className="exam-panel flex rounded-lg bg-[#14161b]/75 p-0.5" role="tablist" aria-label="Results view">
+              <div className="exam-panel flex rounded-lg bg-[#121a30]/75 p-0.5" role="tablist" aria-label="Results view">
                 {(['report', 'review'] as const).map((view) => (
                   <button
                     key={view}
@@ -2713,7 +2723,7 @@ export default function PaperPage() {
                     className={cn(
                       'rounded-md px-2.5 py-1 text-xs font-medium capitalize transition-colors',
                       resultsView === view
-                        ? 'bg-[#d6b26e]/15 text-[#f3dca6]'
+                        ? 'bg-[rgb(var(--ex-primary))] text-[rgb(var(--ex-ink))]'
                         : 'text-muted-foreground hover:text-foreground',
                     )}
                   >
@@ -2729,10 +2739,6 @@ export default function PaperPage() {
                   answers
                 />
               </span>
-              <Button variant="outline" size="sm" onClick={handleTryAgain} className="gap-1.5">
-                <RotateCcw className="h-4 w-4" />
-                <span className="hidden sm:inline">Try again</span>
-              </Button>
             </div>
           ) : (
             <Button
@@ -2742,7 +2748,7 @@ export default function PaperPage() {
               title={stats.answered === 0 ? 'Answer at least one question to submit' : undefined}
               className={cn(
                 'shrink-0',
-                allAnswered && 'bg-green-600 text-white hover:bg-green-700',
+                allAnswered ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-[rgb(var(--ex-primary))] text-[rgb(var(--ex-ink))] hover:bg-white',
               )}
             >
               {summoning ? 'Summoning…' : 'Submit'}
@@ -2783,8 +2789,8 @@ export default function PaperPage() {
           />
         </div>
       ) : (
-      <div className="mx-auto grid max-w-[1500px] gap-6 lg:grid-cols-[minmax(0,1fr)_288px] xl:grid-cols-[minmax(0,1fr)_312px]">
-        <div className="min-w-0 space-y-5">
+      <div className="mx-auto grid max-w-[1500px] gap-5 lg:grid-cols-[minmax(0,1fr)_272px] xl:grid-cols-[minmax(0,1fr)_300px]">
+        <div className="min-w-0 space-y-4">
           {reviewing && currentPage && (
             <ReviewBar
               filter={reviewFilter}
@@ -2799,10 +2805,11 @@ export default function PaperPage() {
               compareNumber={compare?.number}
               onFilter={changeReviewFilter}
               onBackToReport={showReport}
+              onTryAgain={handleTryAgain}
             />
           )}
 
-          {/* One question per page */}
+          {/* One question per page: question | answer. */}
           {currentPage && currentQuestion && (
             // Parts of one passage share a key, so the passage (and its scroll)
             // stays put while only the question beside it changes.
@@ -2821,108 +2828,72 @@ export default function PaperPage() {
             </div>
           )}
 
-          {/* Sticky pager — Prev · position · Next (Submit on the last page). ← / → also page. */}
-          <div className="sticky bottom-4 z-30">
-            <div className="exam-panel flex items-center justify-between gap-2 rounded-xl bg-[#14161b]/95 px-3 py-2.5 shadow-[0_-12px_32px_-12px_rgba(0,0,0,0.7)] backdrop-blur sm:px-4">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={goPrev}
-                disabled={prevIndex < 0}
-                className="gap-1"
-              >
-                <ChevronLeft className="h-4 w-4" />
-                <span className="hidden sm:inline">Previous</span>
-              </Button>
-
+          {/* Phone/tablet pager, pinned to the bottom — Prev · list · flag · Next. */}
+          <div className="sticky bottom-4 z-30 lg:hidden">
+            <div className="exam-panel flex items-center justify-between gap-2 rounded-xl bg-[#121a30]/95 px-3 py-2.5 shadow-[0_-12px_32px_-12px_rgba(0,0,0,0.7)] backdrop-blur sm:px-4">
+              {prevButton}
               <div className="flex items-center gap-1.5 sm:gap-3">
                 <button
                   type="button"
                   onClick={() => setNavOpen(true)}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-[rgba(214,178,110,0.22)] px-2.5 py-1.5 text-sm tabular-nums text-foreground transition-colors hover:bg-white/5 lg:hidden"
+                  className="inline-flex items-center gap-1.5 rounded-md border border-[rgb(var(--ex-line)/0.22)] px-2.5 py-1.5 text-sm tabular-nums text-foreground transition-colors hover:bg-white/5"
                   aria-label={`Question ${safeIndex + 1} of ${pageCount}. Open question list`}
                 >
                   <LayoutGrid className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
                   {safeIndex + 1}
                   <span className="text-muted-foreground">/ {pageCount}</span>
                 </button>
-                <span className="hidden flex-col items-center leading-tight lg:flex">
-                  <span className="text-sm tabular-nums text-muted-foreground">
-                    Question <span className="font-medium text-foreground">{safeIndex + 1}</span> of {pageCount}
-                  </span>
-                  <span className="flex items-center gap-1 text-[10px] text-muted-foreground/60">
-                    <kbd className="rounded border border-border px-1 py-px font-sans text-[9px]">←</kbd>
-                    <kbd className="rounded border border-border px-1 py-px font-sans text-[9px]">→</kbd>
-                    move
-                    {!showResults && (<>
-                    <kbd className="ml-1 rounded border border-border px-1 py-px font-sans text-[9px]">F</kbd>
-                    flag
-                    <kbd className="ml-1 rounded border border-border px-1 py-px font-sans text-[9px]">1–4</kbd>
-                    answer
-                    </>)}
-                  </span>
-                </span>
-                {!showResults && currentPage && (
-                  <button
-                    type="button"
-                    onClick={() => toggleFlag(currentPage.id)}
-                    aria-pressed={currentFlagged}
-                    title="Flag for review (F)"
-                    className={cn(
-                      'inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm transition-colors',
-                      currentFlagged
-                        ? 'border-amber-500/50 bg-amber-500/15 text-amber-300'
-                        : 'border-[rgba(214,178,110,0.22)] text-muted-foreground hover:border-amber-500/40 hover:text-foreground',
-                    )}
-                  >
-                    <Flag
-                      className={cn('h-4 w-4', currentFlagged && 'fill-amber-400/80')}
-                      aria-hidden="true"
-                    />
-                    <span className="hidden sm:inline">
-                      {currentFlagged ? 'Flagged' : 'Flag'}
-                    </span>
-                  </button>
-                )}
+                {flagButton}
               </div>
-
-              {isLastPage && !showResults ? (
-                <Button
-                  size="sm"
-                  onClick={handleSubmit}
-                  disabled={stats.answered === 0 || summoning}
-                  className={cn('gap-1', allAnswered && 'bg-green-600 text-white hover:bg-green-700')}
-                >
-                  {summoning ? 'Summoning…' : submitLabel}
-                </Button>
-              ) : nextIndex >= 0 ? (
-                <Button size="sm" onClick={goNext} className="gap-1">
-                  <span className="hidden sm:inline">Next</span>
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              ) : (
-                <Button size="sm" variant="outline" onClick={showReport} className="gap-1">
-                  <span className="hidden sm:inline">Back to</span> report
-                </Button>
-              )}
+              {nextButton}
             </div>
           </div>
         </div>
 
+        {/* Rail: where you are, how to move, the whole paper at a glance. */}
         <aside className="hidden lg:block">
-          <div className="sticky top-[8.5rem] space-y-3">
-            <QuestionNavigator
-              states={pageStates}
-              reviewStates={showResults ? reviewStates : null}
-              flagged={flaggedPages}
-              flaggedCount={flaggedCount}
-              incorrectCount={incorrectCount}
-              currentIndex={safeIndex}
-              onJump={goTo}
-              onJumpNextFlagged={goNextFlagged}
-              onJumpNextIncorrect={goNextIncorrect}
-            />
-            <div className="flex flex-wrap items-center gap-2">
+          <div className="sticky top-[8.5rem] flex max-h-[calc(100dvh-10rem)] flex-col gap-3">
+            <div className="exam-panel shrink-0 rounded-2xl bg-[#121a30]/90 p-3 backdrop-blur-sm">
+              <div className="flex items-center justify-between gap-2 px-1">
+                <span className="text-sm tabular-nums text-muted-foreground">
+                  Question <span className="font-medium text-foreground">{safeIndex + 1}</span> of {pageCount}
+                </span>
+                {flagButton}
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                {prevButton}
+                {nextButton}
+              </div>
+              <p className="mt-2.5 flex flex-wrap items-center justify-center gap-1 text-[10px] text-muted-foreground/80">
+                <kbd className="rounded border border-border px-1 py-px font-sans text-[9px]">←</kbd>
+                <kbd className="rounded border border-border px-1 py-px font-sans text-[9px]">→</kbd>
+                move
+                {!showResults && (
+                  <>
+                    <kbd className="ml-1 rounded border border-border px-1 py-px font-sans text-[9px]">F</kbd>
+                    flag
+                    <kbd className="ml-1 rounded border border-border px-1 py-px font-sans text-[9px]">1–4</kbd>
+                    answer
+                  </>
+                )}
+              </p>
+            </div>
+            <div className="exam-scroll min-h-0 overflow-y-auto rounded-2xl">
+              <QuestionNavigator
+                states={pageStates}
+                reviewStates={showResults ? reviewStates : null}
+                flagged={flaggedPages}
+                flaggedCount={flaggedCount}
+                incorrectCount={incorrectCount}
+                currentIndex={safeIndex}
+                onJump={goTo}
+                onJumpNextFlagged={goNextFlagged}
+                onJumpNextIncorrect={goNextIncorrect}
+              />
+            </div>
+            {/* Mid timed run the paper is on screen already; downloading waits for the report. */}
+            {!(runMode === 'timed' && !showResults) && (
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
               <DownloadPdfButton
                 paperUuid={paper.uuid}
                 courseUuid={paper.courseUuid}
@@ -2930,6 +2901,7 @@ export default function PaperPage() {
               />
               {BOOKMARKS_ENABLED && <SaveButton paperId={paper._id} />}
             </div>
+            )}
           </div>
         </aside>
       </div>
@@ -2975,15 +2947,15 @@ export default function PaperPage() {
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
         labelledBy="submit-confirm-title"
-        className="border-transparent bg-[#111318] sm:max-w-[31rem]"
+        className="border-transparent bg-[#0f1529] sm:max-w-[31rem]"
       >
         {/* Frieren and Fern at the exam hall's door at day's end; fades into the panel. */}
         <div className="relative h-40 shrink-0 overflow-hidden sm:h-44" aria-hidden="true">
           <img src={handInHall} alt="" className="h-full w-full object-cover object-[50%_55%]" />
-          <div className="absolute inset-0 bg-gradient-to-b from-[#111318]/30 via-transparent to-[#111318]" />
+          <div className="absolute inset-0 bg-gradient-to-b from-[#0f1529]/30 via-transparent to-[#0f1529]" />
         </div>
         <div className="relative -mt-6 px-6 pb-6 sm:px-8">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#d6b26e]/80">End of paper</p>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[rgb(var(--ex-accent))]/80">End of paper</p>
           <h2 id="submit-confirm-title" className="mt-1.5 font-display text-[1.65rem] font-normal leading-tight tracking-tight">
             {blankCount === 0 ? 'Hand in your paper?' : `Hand in with ${blankCount} left blank?`}
           </h2>
@@ -3005,7 +2977,7 @@ export default function PaperPage() {
               </span>
               {partialCount > 0 && (
                 <span className="inline-flex items-center gap-1.5">
-                  <span className="h-2.5 w-2.5 rounded-[3px] border border-[#d6b26e]/70 bg-[#d6b26e]/25" aria-hidden="true" />
+                  <span className="h-2.5 w-2.5 rounded-[3px] border border-[rgb(var(--ex-accent))]/70 bg-[rgb(var(--ex-accent))]/25" aria-hidden="true" />
                   {partialCount} partial
                 </span>
               )}
@@ -3031,18 +3003,18 @@ export default function PaperPage() {
                     }}
                     aria-label={`Question ${index + 1}: ${state === 'done' ? 'answered' : state === 'partial' ? 'partly answered' : 'blank'}${flaggedPages[index] ? ', flagged' : ''}`}
                     className={cn(
-                      'relative flex aspect-square w-full items-center justify-center rounded-[5px] text-[10px] font-medium tabular-nums transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d6b26e]/70',
+                      'relative flex aspect-square w-full items-center justify-center rounded-[5px] text-[10px] font-medium tabular-nums transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--ex-accent))]/70',
                       state === 'done'
                         ? 'bg-[#62aef0]/85 text-[#0b1622] hover:bg-[#62aef0]'
                         : state === 'partial'
-                        ? 'border border-[#d6b26e]/60 bg-[#d6b26e]/15 text-[#e7c98d] hover:bg-[#d6b26e]/25'
-                        : 'border border-dashed border-white/20 text-muted-foreground hover:border-[#d6b26e]/60 hover:text-[#e7c98d]',
-                      index === safeIndex && 'ring-1 ring-white/60 ring-offset-1 ring-offset-[#111318]',
+                        ? 'border border-[rgb(var(--ex-accent))]/60 bg-[rgb(var(--ex-accent))]/15 text-[rgb(var(--ex-accent-soft))] hover:bg-[rgb(var(--ex-accent))]/25'
+                        : 'border border-dashed border-white/20 text-muted-foreground hover:border-[rgb(var(--ex-accent))]/60 hover:text-[rgb(var(--ex-accent-soft))]',
+                      index === safeIndex && 'ring-1 ring-white/60 ring-offset-1 ring-offset-[#0f1529]',
                     )}
                   >
                     {index + 1}
                     {flaggedPages[index] && (
-                      <span className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-amber-400 ring-2 ring-[#111318]" aria-hidden="true" />
+                      <span className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-amber-400 ring-2 ring-[#0f1529]" aria-hidden="true" />
                     )}
                   </button>
                 </li>
@@ -3056,7 +3028,7 @@ export default function PaperPage() {
                   <button
                     type="button"
                     onClick={handleConfirmReviewUnanswered}
-                    className="font-medium text-[#e7c98d] underline-offset-4 hover:underline"
+                    className="font-medium text-[rgb(var(--ex-accent-soft))] underline-offset-4 hover:underline"
                   >
                     First blank: Q{firstIncompleteIndex + 1} →
                   </button>
@@ -3075,8 +3047,8 @@ export default function PaperPage() {
               className={cn(
                 'px-5',
                 blankCount === 0
-                  ? 'bg-[#d6b26e] text-[#16130c] hover:bg-[#e2c084]'
-                  : 'border border-[#d6b26e]/45 bg-[#d6b26e]/10 text-[#ecd3a0] hover:bg-[#d6b26e]/20',
+                  ? 'bg-[rgb(var(--ex-primary))] text-[rgb(var(--ex-ink))] hover:bg-white'
+                  : 'border border-[rgb(var(--ex-accent))]/45 bg-[rgb(var(--ex-accent))]/10 text-[rgb(var(--ex-accent-soft))] hover:bg-[rgb(var(--ex-accent))]/20',
               )}
             >
               Hand in paper
@@ -3085,7 +3057,7 @@ export default function PaperPage() {
         </div>
 
         {/* Same frame as the question card: the paper's own edge. */}
-        <div className="tcard-frame rounded-[19px] [--lvl:#d6b26e]" aria-hidden="true" />
+        <div className="tcard-frame rounded-[19px] [--lvl:rgb(var(--ex-accent))]" aria-hidden="true" />
         <span className="tcard-corner tcard-corner-tl" aria-hidden="true" />
         <span className="tcard-corner tcard-corner-tr" aria-hidden="true" />
         <span className="tcard-corner tcard-corner-bl" aria-hidden="true" />

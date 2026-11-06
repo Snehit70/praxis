@@ -6,20 +6,17 @@ import {
   ArrowUpRight,
   CheckCircle2,
   CircleDashed,
-  Clock,
-  Hourglass,
+  Layers,
   ListChecks,
   Loader2,
   LogIn,
   Minus,
   PenLine,
   RotateCcw,
-  Target,
   Timer,
   TrendingUp,
   XCircle,
 } from 'lucide-react';
-import { Skeleton, SkeletonRegion } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { SignInTrigger } from '@/components/auth/AuthDialog';
 import { cn } from '@/lib/utils';
@@ -50,19 +47,19 @@ const OUTCOME_META: Record<
   correct: {
     label: 'Correct',
     text: 'text-emerald-300',
-    cell: 'border-emerald-400/45 bg-emerald-500/20 text-emerald-100',
+    cell: 'border-emerald-300/55 bg-emerald-400/[0.09] text-emerald-100',
     Icon: CheckCircle2,
   },
   incorrect: {
     label: 'Incorrect',
     text: 'text-rose-300',
-    cell: 'border-rose-400/45 bg-rose-500/20 text-rose-100',
+    cell: 'border-rose-300/55 bg-rose-400/[0.09] text-rose-100',
     Icon: XCircle,
   },
   unanswered: {
     label: 'Skipped',
     text: 'text-slate-300',
-    cell: 'border-dashed border-slate-400/40 bg-white/[0.03] text-slate-300',
+    cell: 'border-transparent bg-white/[0.045] text-slate-400',
     Icon: CircleDashed,
   },
   manual: {
@@ -125,47 +122,61 @@ function useCountUp(target: number, durationMs = 1100) {
   return value;
 }
 
-function ScoreRing({ percent }: { percent: number }) {
-  const radius = 54;
-  const circumference = 2 * Math.PI * radius;
-  const shown = useCountUp(percent);
+const BAR_ORDER: PracticeRunReviewState[] = ['correct', 'incorrect', 'manual', 'unanswered'];
+
+const BAR_FILL: Record<PracticeRunReviewState, string> = {
+  correct: 'bg-emerald-300/85',
+  incorrect: 'bg-rose-300/85',
+  manual: 'bg-sky-300/60',
+  unanswered: 'bg-white/[0.09]',
+};
+
+const LEGEND_DOT: Record<PracticeRunReviewState, string> = {
+  correct: 'bg-emerald-300',
+  incorrect: 'bg-rose-300',
+  manual: 'bg-sky-300',
+  unanswered: 'border border-dashed border-slate-400/70',
+};
+
+/**
+ * The shape of the attempt in one line: every question is a share of the bar,
+ * so "21 of 22 skipped" reads before any number does.
+ */
+function OutcomeBar({ counts, total }: { counts: Record<PracticeRunReviewState, number>; total: number }) {
   const [drawn, setDrawn] = useState(prefersReducedMotion());
   useEffect(() => {
     const id = requestAnimationFrame(() => setDrawn(true));
     return () => cancelAnimationFrame(id);
   }, []);
-  const offset = circumference * (1 - (drawn ? Math.min(100, Math.max(0, percent)) : 0) / 100);
+  const shown = BAR_ORDER.filter((key) => counts[key] > 0);
 
   return (
-    <div className="relative h-36 w-36 shrink-0 sm:h-40 sm:w-40">
-      <svg viewBox="0 0 128 128" className="h-full w-full -rotate-90" aria-hidden="true">
-        <circle cx="64" cy="64" r={radius} fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth="8" />
-        <circle
-          cx="64"
-          cy="64"
-          r={radius}
-          fill="none"
-          stroke="url(#report-ring)"
-          strokeWidth="8"
-          strokeLinecap="round"
-          strokeDasharray={circumference}
-          strokeDashoffset={offset}
-          className="transition-[stroke-dashoffset] duration-[1200ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
-        />
-        <defs>
-          <linearGradient id="report-ring" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#f3dca6" />
-            <stop offset="100%" stopColor="#c99a4b" />
-          </linearGradient>
-        </defs>
-      </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="font-display text-4xl tabular-nums leading-none text-[#f3e3bf]">
-          {Math.round(shown)}
-          <span className="text-xl text-[#d6b26e]">%</span>
-        </span>
-        <span className="mt-1 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">of marks</span>
+    <div>
+      <div
+        className="flex h-2 w-full gap-[3px] overflow-hidden rounded-full bg-white/[0.04]"
+        role="img"
+        aria-label={shown.map((key) => `${counts[key]} ${OUTCOME_META[key].label.toLowerCase()}`).join(', ')}
+      >
+        {shown.map((key) => (
+          <span
+            key={key}
+            className={cn(
+              'h-full rounded-full transition-[flex-grow] duration-[900ms] ease-[cubic-bezier(0.22,1,0.36,1)]',
+              BAR_FILL[key],
+            )}
+            style={{ flexGrow: drawn ? counts[key] : key === 'unanswered' ? total : 0, flexBasis: 0 }}
+          />
+        ))}
       </div>
+      <ul className="mt-2.5 flex flex-wrap items-center gap-x-5 gap-y-1 text-sm">
+        {BAR_ORDER.filter((key) => key !== 'manual' || counts.manual > 0).map((key) => (
+          <li key={key} className="inline-flex items-center gap-2">
+            <span className={cn('h-2 w-2 rounded-full', LEGEND_DOT[key])} aria-hidden="true" />
+            <span className="tabular-nums text-foreground">{counts[key]}</span>
+            <span className="text-muted-foreground">{OUTCOME_META[key].label.toLowerCase()}</span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -194,31 +205,6 @@ function DeltaChip({ delta, suffix, invert = false }: { delta: number; suffix: s
   );
 }
 
-function Stat({
-  label,
-  value,
-  hint,
-  Icon,
-  tone,
-}: {
-  label: string;
-  value: string;
-  hint?: string;
-  Icon: typeof CheckCircle2;
-  tone: string;
-}) {
-  return (
-    <div className="min-w-0 rounded-xl border border-white/[0.07] bg-black/20 px-3 py-2.5">
-      <p className="flex items-center gap-1.5 text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
-        <Icon className={cn('h-3.5 w-3.5', tone)} aria-hidden="true" />
-        {label}
-      </p>
-      <p className="mt-1 font-display text-2xl tabular-nums leading-none text-foreground">{value}</p>
-      {hint && <p className="mt-1 truncate text-[11px] text-muted-foreground">{hint}</p>}
-    </div>
-  );
-}
-
 function Panel({ title, Icon, children, className, aside }: {
   title: string;
   Icon: typeof CheckCircle2;
@@ -227,10 +213,10 @@ function Panel({ title, Icon, children, className, aside }: {
   aside?: React.ReactNode;
 }) {
   return (
-    <section className={cn('exam-panel rounded-2xl bg-[#14161b]/85 p-4 backdrop-blur-sm sm:p-5', className)}>
+    <section className={cn('exam-panel rounded-2xl bg-[#121a30]/85 p-4 backdrop-blur-sm sm:p-5', className)}>
       <div className="mb-3 flex items-center justify-between gap-3">
         <h2 className="flex items-center gap-2 font-display text-lg font-normal tracking-tight">
-          <Icon className="h-4 w-4 text-[#d6b26e]" aria-hidden="true" />
+          <Icon className="h-4 w-4 text-[rgb(var(--ex-accent))]" aria-hidden="true" />
           {title}
         </h2>
         {aside}
@@ -291,7 +277,7 @@ function AttemptTrend({
           );
         })}
         {points.length > 1 && (
-          <path d={path} fill="none" stroke="#d6b26e" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+          <path d={path} fill="none" stroke="rgb(var(--ex-accent))" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
         )}
         {points.map((p, i) => {
           const isCurrent = p.attempt.id === currentId;
@@ -308,8 +294,8 @@ function AttemptTrend({
                 cx={p.x}
                 cy={p.y}
                 r={isCurrent ? 6.5 : 4.5}
-                fill={isCurrent ? '#f3dca6' : '#14161b'}
-                stroke={isCurrent ? '#14161b' : '#d6b26e'}
+                fill={isCurrent ? 'rgb(var(--ex-accent-soft))' : '#121a30'}
+                stroke={isCurrent ? '#121a30' : 'rgb(var(--ex-accent))'}
                 strokeWidth="2"
               />
               {/* Hit target larger than the mark. */}
@@ -326,7 +312,7 @@ function AttemptTrend({
                 <title>{isCurrent ? 'This attempt' : `Compare with attempt #${p.attempt.number}`}</title>
               </rect>
               {p.pct === best && points.length > 1 && (
-                <text x={p.x} y={p.y - 12} textAnchor="middle" className="fill-[#e7c98d] text-[10px] font-medium">
+                <text x={p.x} y={p.y - 12} textAnchor="middle" className="fill-[rgb(var(--ex-accent-soft))] text-[10px] font-medium">
                   best
                 </text>
               )}
@@ -336,12 +322,12 @@ function AttemptTrend({
       </svg>
       {hovered && (
         <div
-          className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-lg border border-[rgba(214,178,110,0.3)] bg-[#0f1116]/95 px-2.5 py-1.5 text-xs shadow-xl"
+          className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-lg border border-[rgb(var(--ex-line)/0.3)] bg-[#0d1325]/95 px-2.5 py-1.5 text-xs shadow-xl"
           style={{ left: `${(hovered.x / width) * 100}%`, top: `${(hovered.y / height) * 100}%`, marginTop: -12 }}
         >
           <p className="font-medium text-foreground">
             Attempt #{hovered.attempt.number}
-            {hovered.attempt.id === currentId && <span className="text-[#e7c98d]"> · this one</span>}
+            {hovered.attempt.id === currentId && <span className="text-[rgb(var(--ex-accent-soft))]"> · this one</span>}
           </p>
           <p className="tabular-nums text-muted-foreground">
             {formatMarks(hovered.attempt.score)} / {formatMarks(hovered.attempt.maxScore)} · {Math.round(hovered.pct)}%
@@ -458,6 +444,24 @@ export function AttemptReport({
     return 'A baseline to beat. Review, then try again.';
   })();
 
+  const outcomeCounts: Record<PracticeRunReviewState, number> = {
+    correct: stats.correct,
+    incorrect: stats.incorrect,
+    unanswered: stats.skipped,
+    manual: stats.manualEvalCount,
+  };
+  // The trend panel earns its space only once there is a trend to show.
+  const showTrend = signedIn && attempts !== null && attempts.length > 1;
+
+  // Lead with the most useful review: mistakes, else what was left blank.
+  const primaryReview: { filter: ReviewFilter; label: string; Icon: typeof CheckCircle2 } =
+    stats.incorrect > 0
+      ? { filter: 'incorrect', label: `Review incorrect (${stats.incorrect})`, Icon: XCircle }
+      : stats.skipped > 0
+      ? { filter: 'unanswered', label: `Review skipped (${stats.skipped})`, Icon: CircleDashed }
+      : { filter: 'all', label: 'Review answers', Icon: ListChecks };
+  const quietButton = 'border border-white/[0.12] text-foreground/90 hover:border-white/25 hover:bg-white/[0.06] hover:text-foreground';
+
   const reviewCounts: Record<ReviewFilter, number> = {
     all: graded.length,
     incorrect: stats.incorrect,
@@ -469,8 +473,8 @@ export function AttemptReport({
     <div className="space-y-5">
       {/* Hero verdict */}
       <section
-        className="exam-verdict exam-tome relative isolate overflow-hidden rounded-2xl border border-[rgba(214,178,110,0.3)] bg-[radial-gradient(120%_140%_at_85%_0%,rgba(214,178,110,0.16),transparent_55%),linear-gradient(to_bottom,rgba(24,26,32,0.95),rgba(15,16,20,0.97))] px-5 pb-5 pt-6 backdrop-blur-sm sm:px-8 sm:pb-7 sm:pt-8"
-        style={{ ['--lvl' as string]: '#d6b26e' }}
+        className="exam-verdict exam-tome relative isolate overflow-hidden rounded-2xl border border-[rgb(var(--ex-line)/0.3)] bg-[radial-gradient(90%_120%_at_0%_0%,rgb(var(--ex-line)/0.10),transparent_60%),linear-gradient(to_bottom,rgba(18,25,48,0.95),rgba(11,16,33,0.97))] px-5 pb-5 pt-6 backdrop-blur-sm sm:px-8 sm:pb-7 sm:pt-8"
+        style={{ ['--lvl' as string]: 'rgb(var(--ex-accent))' }}
       >
         <div className="tcard-frame" aria-hidden="true" />
         <span className="tcard-corner tcard-corner-tl" aria-hidden="true" />
@@ -478,117 +482,114 @@ export function AttemptReport({
         <span className="tcard-corner tcard-corner-bl" aria-hidden="true" />
         <span className="tcard-corner tcard-corner-br" aria-hidden="true" />
 
-        <div className="flex flex-col gap-6 md:flex-row md:items-center">
-          <div className="min-w-0 flex-1">
-            <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] font-medium uppercase tracking-[0.18em] text-[#d6b26e]">
-              <span>{current ? `Attempt #${current.number}` : 'Paper handed in'}</span>
-              <span className="text-white/25">·</span>
-              <span className="text-muted-foreground">{runMode === 'timed' ? 'Timed run' : 'Open run'}</span>
-              {timeUsedSeconds !== null && (
-                <>
-                  <span className="text-white/25">·</span>
-                  <span className="text-muted-foreground tabular-nums">{formatDuration(timeUsedSeconds)}</span>
-                </>
-              )}
-              {timeExpired && (
-                <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/40 bg-amber-500/10 px-2 py-0.5 normal-case tracking-normal text-amber-300">
-                  <Timer className="h-3 w-3" aria-hidden="true" />
-                  Auto-submitted at time
-                </span>
-              )}
-            </p>
+        {/* Eyebrow: which attempt, how it was sat, and whether it's on record. */}
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] font-medium uppercase tracking-[0.18em] text-[rgb(var(--ex-accent))]">
+            <span>{current ? `Attempt #${current.number}` : 'Paper handed in'}</span>
+            <span className="text-white/25" aria-hidden="true">·</span>
+            <span className="text-muted-foreground">{runMode === 'timed' ? 'Timed run' : 'Open run'}</span>
+            {timeExpired && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/40 bg-amber-500/10 px-2 py-0.5 normal-case tracking-normal text-amber-300">
+                <Timer className="h-3 w-3" aria-hidden="true" />
+                Auto-submitted at time
+              </span>
+            )}
+          </p>
+          <span className="text-muted-foreground">
+            <SaveNote signedIn={signedIn} saveState={saveState} onRetry={onRetrySave} />
+          </span>
+        </div>
 
-            <p className="mt-3 flex items-baseline gap-2 font-display">
-              <span className="text-6xl tabular-nums leading-none text-[#f6e7c4] drop-shadow-[0_0_24px_rgba(214,178,110,0.35)] sm:text-7xl">
+        {/* Score and verdict */}
+        <div className="mt-5 flex flex-wrap items-end justify-between gap-x-8 gap-y-3">
+          <div className="min-w-0">
+            <p className="flex items-baseline gap-2.5 font-display">
+              <span className="text-6xl tabular-nums leading-[0.9] text-[rgb(var(--ex-accent-soft))] sm:text-7xl">
                 {formatMarks(Math.round(score * 10) / 10)}
               </span>
               <span className="text-2xl text-muted-foreground">
                 / {formatMarks(scoreMax)} {hasMarks ? 'marks' : 'correct'}
               </span>
             </p>
-            <p className="mt-3 text-lg text-foreground/90">{headline}</p>
-
-            <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-              {current && previous ? (
-                <>
-                  <DeltaChip delta={current.score - previous.score} suffix=" marks" />
-                  {current.timeUsedSeconds !== null && previous.timeUsedSeconds !== null && (
-                    <DeltaChip
-                      delta={(current.timeUsedSeconds - previous.timeUsedSeconds) / 60}
-                      suffix=" min"
-                      invert
-                    />
-                  )}
-                  <span>vs attempt #{previous.number}</span>
-                </>
-              ) : current ? (
-                <span>First attempt on record. Retry to start tracking improvement.</span>
-              ) : null}
-              <SaveNote
-                signedIn={signedIn}
-                saveState={saveState}
-                onRetry={onRetrySave}
-              />
-            </div>
+            <p className="mt-3 text-[17px] leading-snug text-foreground/90">{headline}</p>
           </div>
-
-          <ScoreRing percent={percent} />
-        </div>
-
-        <div className="mt-6 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-          <Stat label="Correct" value={String(stats.correct)} Icon={CheckCircle2} tone="text-emerald-400" />
-          <Stat label="Incorrect" value={String(stats.incorrect)} Icon={XCircle} tone="text-rose-400" />
-          <Stat label="Skipped" value={String(stats.skipped)} Icon={CircleDashed} tone="text-slate-400" />
-          <Stat
-            label="Accuracy"
-            value={`${accuracy}%`}
-            hint={attempted > 0 ? `of ${attempted} attempted` : 'nothing attempted'}
-            Icon={Target}
-            tone="text-[#d6b26e]"
-          />
-          <Stat
-            label="Time"
-            value={formatDuration(timeUsedSeconds)}
-            hint={
-              timeUsedSeconds !== null && graded.length > 0
-                ? `${formatDuration(timeUsedSeconds / graded.length)} per question`
-                : undefined
-            }
-            Icon={Hourglass}
-            tone="text-sky-300"
-          />
-          <Stat
-            label="Self-check"
-            value={String(stats.manualEvalCount)}
-            hint={stats.manualEvalCount > 0 ? 'not auto-graded' : 'all auto-graded'}
-            Icon={PenLine}
-            tone="text-sky-200"
-          />
-        </div>
-
-        <div className="mt-6 flex flex-wrap items-center gap-2">
-          {stats.incorrect > 0 && (
-            <Button
-              onClick={() => onReview('incorrect')}
-              className="gap-2 bg-[#d6b26e] text-[#1a1408] hover:bg-[#e7c98d]"
-              data-autofocus
-            >
-              <XCircle className="h-4 w-4" />
-              Review incorrect ({stats.incorrect})
-            </Button>
+          {current && previous && (
+            <div className="flex flex-wrap items-center gap-2 pb-0.5 text-sm text-muted-foreground">
+              <DeltaChip delta={current.score - previous.score} suffix=" marks" />
+              {current.timeUsedSeconds !== null && previous.timeUsedSeconds !== null && (
+                <DeltaChip
+                  delta={(current.timeUsedSeconds - previous.timeUsedSeconds) / 60}
+                  suffix=" min"
+                  invert
+                />
+              )}
+              <span>vs #{previous.number}</span>
+            </div>
           )}
-          {stats.skipped > 0 && (
-            <Button variant="outline" onClick={() => onReview('unanswered')} className="gap-2">
-              <CircleDashed className="h-4 w-4" />
+        </div>
+
+        {/* Outcomes */}
+        <div className="mt-6">
+          <OutcomeBar counts={outcomeCounts} total={graded.length} />
+        </div>
+
+        {/* Secondary figures, as one quiet line */}
+        <dl className="mt-4 flex flex-wrap gap-x-6 gap-y-1.5 text-sm">
+          <div className="flex items-baseline gap-1.5">
+            <dt className="text-muted-foreground">Score</dt>
+            <dd className="tabular-nums text-foreground">{percent}%</dd>
+          </div>
+          <div className="flex items-baseline gap-1.5">
+            <dt className="text-muted-foreground">Accuracy</dt>
+            <dd className="tabular-nums text-foreground">
+              {attempted > 0 ? (
+                <>
+                  {accuracy}%<span className="text-muted-foreground"> on {attempted} attempted</span>
+                </>
+              ) : (
+                <span className="text-muted-foreground">nothing attempted</span>
+              )}
+            </dd>
+          </div>
+          {timeUsedSeconds !== null && (
+            <div className="flex items-baseline gap-1.5">
+              <dt className="text-muted-foreground">Time</dt>
+              <dd className="tabular-nums text-foreground">
+                {formatDuration(timeUsedSeconds)}
+                {graded.length > 0 && (
+                  <span className="text-muted-foreground"> · {formatDuration(timeUsedSeconds / graded.length)} a question</span>
+                )}
+              </dd>
+            </div>
+          )}
+        </dl>
+
+        {/* Next step: one clear primary, the rest quiet. */}
+        <div className="mt-6 flex flex-wrap items-center gap-2 border-t border-white/[0.07] pt-5">
+          <Button
+            onClick={() => onReview(primaryReview.filter)}
+            className="gap-2 bg-[rgb(var(--ex-primary))] text-[rgb(var(--ex-ink))] hover:bg-white"
+            data-autofocus
+          >
+            <primaryReview.Icon className="h-4 w-4" aria-hidden="true" />
+            {primaryReview.label}
+          </Button>
+          {primaryReview.filter === 'incorrect' && stats.skipped > 0 && (
+            <Button variant="ghost" onClick={() => onReview('unanswered')} className={quietButton}>
               Review skipped ({stats.skipped})
             </Button>
           )}
-          <Button variant="outline" onClick={() => onReview('all')} className="gap-2">
-            <ListChecks className="h-4 w-4" />
-            Review all
-          </Button>
-          <Button variant="ghost" onClick={onTryAgain} className="gap-2 text-muted-foreground hover:text-foreground">
-            <RotateCcw className="h-4 w-4" />
+          {primaryReview.filter !== 'all' && (
+            <Button variant="ghost" onClick={() => onReview('all')} className={quietButton}>
+              Review all
+            </Button>
+          )}
+          <Button
+            variant="ghost"
+            onClick={onTryAgain}
+            className="ml-auto gap-2 text-muted-foreground hover:bg-white/[0.06] hover:text-foreground"
+          >
+            <RotateCcw className="h-4 w-4" aria-hidden="true" />
             Try again
           </Button>
         </div>
@@ -610,7 +611,7 @@ export function AttemptReport({
                 type="button"
                 onClick={() => onReview('all', row.questionUuid)}
                 className={cn(
-                  'report-cell relative flex h-10 items-center justify-center rounded-md border text-sm font-medium tabular-nums transition-transform hover:-translate-y-0.5 hover:brightness-125 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d6b26e]',
+                  'report-cell relative flex h-10 items-center justify-center rounded-md border text-sm font-medium tabular-nums transition-transform hover:-translate-y-0.5 hover:brightness-125 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--ex-accent))]',
                   meta.cell,
                 )}
                 style={{ animationDelay: `${Math.min(i * 14, 700)}ms` }}
@@ -618,25 +619,23 @@ export function AttemptReport({
               >
                 {labelFor(row.questionUuid)}
                 {shift === 'fixed' && (
-                  <ArrowUpRight className="absolute -right-1 -top-1 h-3.5 w-3.5 rounded-full bg-[#14161b] text-emerald-300" aria-label="fixed" />
+                  <ArrowUpRight className="absolute -right-1 -top-1 h-3.5 w-3.5 rounded-full bg-[#121a30] text-emerald-300" aria-label="fixed" />
                 )}
                 {shift === 'slipped' && (
-                  <ArrowDownRight className="absolute -right-1 -top-1 h-3.5 w-3.5 rounded-full bg-[#14161b] text-rose-300" aria-label="slipped" />
+                  <ArrowDownRight className="absolute -right-1 -top-1 h-3.5 w-3.5 rounded-full bg-[#121a30] text-rose-300" aria-label="slipped" />
                 )}
               </button>
             );
           })}
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
-          {(['correct', 'incorrect', 'unanswered', 'manual'] as const).map((outcome) => {
-            const meta = OUTCOME_META[outcome];
-            return (
-              <span key={outcome} className="inline-flex items-center gap-1.5">
-                <meta.Icon className={cn('h-3.5 w-3.5', meta.text)} aria-hidden="true" />
-                {meta.label}
-              </span>
-            );
-          })}
+          {BAR_ORDER.filter((outcome) => outcomeCounts[outcome] > 0).map((outcome) => (
+            <span key={outcome} className="inline-flex items-center gap-1.5">
+              <span className={cn('h-2 w-2 rounded-full', LEGEND_DOT[outcome])} aria-hidden="true" />
+              <span className="tabular-nums text-foreground/90">{outcomeCounts[outcome]}</span>
+              {OUTCOME_META[outcome].label.toLowerCase()}
+            </span>
+          ))}
           {compare && (
             <>
               <span className="inline-flex items-center gap-1">
@@ -652,107 +651,87 @@ export function AttemptReport({
         </div>
       </Panel>
 
-      <div className="grid gap-5 lg:grid-cols-2">
+      <div className={cn('grid gap-5', showTrend && 'lg:grid-cols-2')}>
         {/* Progress across attempts */}
-        <Panel
-          title="Your attempts"
-          Icon={TrendingUp}
-          aside={
-            attempts && attempts.length > 1 ? (
-              <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                Compare with
-                <select
-                  value={compareId ?? ''}
-                  onChange={(event) => onCompareChange(event.target.value)}
-                  className="rounded-md border border-[rgba(214,178,110,0.25)] bg-[#0f1116] px-2 py-1 text-xs text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-[#d6b26e]"
-                >
-                  {attempts
-                    .filter((a) => a.id !== currentAttemptId)
-                    .slice()
-                    .reverse()
-                    .map((a) => (
-                      <option key={a.id} value={a.id}>
-                        #{a.number} · {Math.round(percentOf(a.score, a.maxScore))}%
-                      </option>
-                    ))}
-                </select>
-              </label>
-            ) : null
-          }
-        >
-          {!signedIn ? (
-            <EmptyNote
-              Icon={LogIn}
-              title="Sign in to track retries"
-              body="Signed-in attempts are kept, so every retry shows what you fixed and what slipped."
-              action={<SignInTrigger><Button size="sm" variant="outline">Sign in</Button></SignInTrigger>}
-            />
-          ) : attempts === null ? (
-            <SkeletonRegion label="Loading your attempts" className="flex h-40 flex-col gap-3">
-              <Skeleton className="w-full flex-1 rounded-xl" />
-              <div className="flex gap-2">
-                {[0, 1, 2, 3].map((i) => (
-                  <Skeleton key={i} className="h-3 w-12 rounded-full" />
-                ))}
-              </div>
-            </SkeletonRegion>
-          ) : attempts.length < 2 ? (
-            <EmptyNote
-              Icon={TrendingUp}
-              title="Your trend starts here"
-              body="Retry this paper and each attempt lands on this chart, with a side-by-side of what changed."
-              action={<Button size="sm" variant="outline" onClick={onTryAgain} className="gap-1.5"><RotateCcw className="h-3.5 w-3.5" />Try again</Button>}
-            />
-          ) : (
+        {showTrend && (
+          <Panel
+            title="Your attempts"
+            Icon={TrendingUp}
+            aside={
+              attempts ? (
+                <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                  Compare with
+                  <select
+                    value={compareId ?? ''}
+                    onChange={(event) => onCompareChange(event.target.value)}
+                    className="rounded-md border border-[rgb(var(--ex-line)/0.25)] bg-[#0d1325] px-2 py-1 text-xs text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--ex-accent))]"
+                  >
+                    {attempts
+                      .filter((a) => a.id !== currentAttemptId)
+                      .slice()
+                      .reverse()
+                      .map((a) => (
+                        <option key={a.id} value={a.id}>
+                          #{a.number} · {Math.round(percentOf(a.score, a.maxScore))}%
+                        </option>
+                      ))}
+                  </select>
+                </label>
+              ) : null
+            }
+          >
             <>
-              <AttemptTrend
-                attempts={attempts}
-                currentId={currentAttemptId}
-                compareId={compareId}
-                onPick={onCompareChange}
-              />
-              {compare && shifts && (
-                <div className="mt-3 grid grid-cols-3 gap-2 border-t border-white/[0.07] pt-3 text-center">
-                  <ShiftTile label="Fixed" value={shifts.fixed} Icon={ArrowUpRight} tone="text-emerald-300" />
-                  <ShiftTile label="Slipped" value={shifts.slipped} Icon={ArrowDownRight} tone="text-rose-300" />
-                  <ShiftTile label="Still wrong" value={shifts['still-wrong']} Icon={XCircle} tone="text-amber-300" />
-                </div>
-              )}
-              {compare && (
-                <p className="mt-2 text-center text-xs text-muted-foreground">
-                  Compared with attempt #{compare.number}: {formatMarks(compare.score)}/{formatMarks(compare.maxScore)} in{' '}
-                  {formatDuration(compare.timeUsedSeconds)}
-                </p>
-              )}
+            <AttemptTrend
+              attempts={attempts}
+              currentId={currentAttemptId}
+              compareId={compareId}
+              onPick={onCompareChange}
+            />
+            {compare && shifts && (
+              <div className="mt-3 grid grid-cols-3 gap-2 border-t border-white/[0.07] pt-3 text-center">
+                <ShiftTile label="Fixed" value={shifts.fixed} Icon={ArrowUpRight} tone="text-emerald-300" />
+                <ShiftTile label="Slipped" value={shifts.slipped} Icon={ArrowDownRight} tone="text-rose-300" />
+                <ShiftTile label="Still wrong" value={shifts['still-wrong']} Icon={XCircle} tone="text-amber-300" />
+              </div>
+            )}
+            {compare && (
+              <p className="mt-2 text-center text-xs text-muted-foreground">
+                Compared with attempt #{compare.number}: {formatMarks(compare.score)}/{formatMarks(compare.maxScore)} in{' '}
+                {formatDuration(compare.timeUsedSeconds)}
+              </p>
+            )}
             </>
-          )}
-        </Panel>
+          </Panel>
+        )}
 
-        {/* By question type */}
-        <Panel title="By question type" Icon={Clock}>
-          <div className="space-y-3.5">
+        {/* By question type — the hero's bar, broken down. */}
+        <Panel title="By question type" Icon={Layers}>
+          <div
+            className={cn(
+              'grid gap-x-8 gap-y-4',
+              !showTrend && 'md:grid-cols-[repeat(auto-fit,minmax(15rem,1fr))]',
+            )}
+          >
             {byType.map(([type, row]) => (
               <div key={type}>
-                <div className="mb-1.5 flex items-baseline justify-between gap-3 text-sm">
+                <div className="mb-2 flex items-baseline justify-between gap-3 text-sm">
                   <span className="text-foreground">{TYPE_LABELS[type] ?? type}</span>
                   <span className="tabular-nums text-xs text-muted-foreground">
-                    {row.manual === row.total
-                      ? `${row.total} self-check`
-                      : `${row.correct} / ${row.total - row.manual} correct`}
+                    {row.manual === row.total ? (
+                      `${row.total} self-check`
+                    ) : (
+                      <>
+                        <span className="text-foreground/90">{row.correct}</span> / {row.total - row.manual} correct
+                      </>
+                    )}
                   </span>
                 </div>
-                <div className="flex h-2.5 gap-[2px] overflow-hidden rounded-full bg-white/[0.05]">
-                  {(['correct', 'incorrect', 'unanswered', 'manual'] as const).map((outcome) =>
+                <div className="flex h-2 w-full gap-[3px] overflow-hidden rounded-full bg-white/[0.04]">
+                  {BAR_ORDER.map((outcome) =>
                     row[outcome] > 0 ? (
                       <span
                         key={outcome}
-                        className={cn(
-                          'report-bar h-full first:rounded-l-full last:rounded-r-full',
-                          outcome === 'correct' && 'bg-emerald-400/80',
-                          outcome === 'incorrect' && 'bg-rose-400/80',
-                          outcome === 'unanswered' && 'bg-slate-500/50',
-                          outcome === 'manual' && 'bg-sky-300/40',
-                        )}
+                        className={cn('report-bar h-full rounded-full', BAR_FILL[outcome])}
                         style={{ width: `${(row[outcome] / row.total) * 100}%` }}
                         title={`${OUTCOME_META[outcome].label}: ${row[outcome]}`}
                       />
@@ -760,22 +739,6 @@ export function AttemptReport({
                   )}
                 </div>
               </div>
-            ))}
-          </div>
-          <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-            {(['correct', 'incorrect', 'unanswered', 'manual'] as const).map((outcome) => (
-              <span key={outcome} className="inline-flex items-center gap-1.5">
-                <span
-                  className={cn(
-                    'h-2 w-2 rounded-full',
-                    outcome === 'correct' && 'bg-emerald-400/80',
-                    outcome === 'incorrect' && 'bg-rose-400/80',
-                    outcome === 'unanswered' && 'bg-slate-500/50',
-                    outcome === 'manual' && 'bg-sky-300/40',
-                  )}
-                />
-                {OUTCOME_META[outcome].label}
-              </span>
             ))}
           </div>
           <p className="sr-only">
@@ -799,22 +762,6 @@ function ShiftTile({ label, value, Icon, tone }: { label: string; value: number;
   );
 }
 
-function EmptyNote({ Icon, title, body, action }: {
-  Icon: typeof CheckCircle2;
-  title: string;
-  body: string;
-  action: React.ReactNode;
-}) {
-  return (
-    <div className="flex min-h-40 flex-col items-center justify-center gap-2 px-4 py-6 text-center">
-      <Icon className="h-6 w-6 text-[#d6b26e]/70" aria-hidden="true" />
-      <p className="font-display text-base text-foreground">{title}</p>
-      <p className="max-w-sm text-sm text-muted-foreground">{body}</p>
-      {action}
-    </div>
-  );
-}
-
 function SaveNote({ signedIn, saveState, onRetry }: {
   signedIn: boolean;
   saveState: AttemptSaveState;
@@ -825,7 +772,7 @@ function SaveNote({ signedIn, saveState, onRetry }: {
       <SignInTrigger>
         <button
           type="button"
-          className="inline-flex items-center gap-1 text-xs text-[#e7c98d] underline-offset-2 hover:underline"
+          className="inline-flex items-center gap-1 text-xs text-[rgb(var(--ex-accent-soft))] underline-offset-2 hover:underline"
         >
           <LogIn className="h-3.5 w-3.5" aria-hidden="true" />
           Sign in to save this attempt
@@ -883,6 +830,7 @@ export function ReviewBar({
   compareNumber,
   onFilter,
   onBackToReport,
+  onTryAgain,
 }: {
   filter: ReviewFilter;
   counts: Record<ReviewFilter, number>;
@@ -897,13 +845,14 @@ export function ReviewBar({
   compareNumber?: number;
   onFilter: (filter: ReviewFilter) => void;
   onBackToReport: () => void;
+  onTryAgain: () => void;
 }) {
   const meta = outcome ? OUTCOME_META[outcome] : null;
   const shift = getQuestionShift(outcome, compareOutcome);
   const compareMeta = compareOutcome ? OUTCOME_META[compareOutcome] : null;
 
   return (
-    <div className="exam-panel exam-verdict rounded-2xl bg-[#14161b]/90 p-3 backdrop-blur-sm sm:p-3.5">
+    <div className="exam-panel exam-verdict rounded-2xl bg-[#121a30]/90 p-3 backdrop-blur-sm sm:p-3.5">
       <div className="flex flex-wrap items-center gap-2">
         <Button variant="ghost" size="sm" onClick={onBackToReport} className="gap-1.5 text-muted-foreground hover:text-foreground">
           <ArrowLeft className="h-4 w-4" aria-hidden="true" />
@@ -922,7 +871,7 @@ export function ReviewBar({
               className={cn(
                 'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors disabled:pointer-events-none disabled:opacity-35',
                 filter === key
-                  ? 'border-[#d6b26e]/70 bg-[#d6b26e]/15 text-[#f3dca6]'
+                  ? 'border-[rgb(var(--ex-accent))]/70 bg-[rgb(var(--ex-accent))]/15 text-[rgb(var(--ex-accent-soft))]'
                   : 'border-white/10 text-muted-foreground hover:border-white/25 hover:text-foreground',
               )}
             >
@@ -936,6 +885,15 @@ export function ReviewBar({
             ? `${FILTER_LABELS[filter]} · ${position + 1} of ${total}`
             : `Question ${questionLabel} · outside this filter`}
         </span>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onTryAgain}
+          className="gap-1.5 text-muted-foreground hover:bg-white/[0.06] hover:text-foreground"
+        >
+          <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
+          Try again
+        </Button>
       </div>
 
       {meta && (
