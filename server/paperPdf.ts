@@ -135,12 +135,16 @@ function typeLabel(type: string) {
   return 'MCQ';
 }
 
+function paperTermLabel(paper: PaperPdfMeta, date: ReturnType<typeof parseBundleDate>) {
+  const term = date ? inferTerm(date.month) : null;
+  if (date && term) return `Term ${term} ${date.year}`;
+  return paper.year ? `Year ${paper.year}` : null;
+}
+
 function paperBits(paper: PaperPdfMeta) {
   const date =
     parseBundleDate(paper.paperName) ?? parseBundleDate(paper.paperDescription);
-  const term = date ? inferTerm(date.month) : null;
-  const termLabel =
-    date && term ? `Term ${term} ${date.year}` : paper.year ? `Year ${paper.year}` : null;
+  const termLabel = paperTermLabel(paper, date);
   const dateLabel = date
     ? new Date(Date.UTC(date.year, date.month - 1, date.day)).toLocaleDateString('en-GB', {
         day: 'numeric',
@@ -587,7 +591,17 @@ export function pdfDownloadFilename(paper: PaperPdfMeta, showAnswers: boolean) {
     .replaceAll(/[^a-zA-Z0-9]+/g, '-')
     .replaceAll(/^-+|-+$/g, '')
     .slice(0, 80);
-  return `${base || 'paper'}${showAnswers ? '-answers' : ''}.pdf`;
+  const date =
+    parseBundleDate(paper.paperName) ?? parseBundleDate(paper.paperDescription);
+  const termSlug = (paperTermLabel(paper, date) ?? '')
+    .replaceAll(/[^a-zA-Z0-9]+/g, '-')
+    .replaceAll(/^-+|-+$/g, '');
+  const session = /\(session\s*(\d+)\)/i.exec(paper.paperName)?.[1];
+  const sessionSlug = session ? `Session-${session}` : '';
+  const name = [base || 'paper', termSlug, sessionSlug, showAnswers ? 'answers' : '']
+    .filter(Boolean)
+    .join('-');
+  return `${name}.pdf`;
 }
 
 function chromiumCandidates() {
