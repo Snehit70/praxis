@@ -235,6 +235,51 @@ describe('pdfDownloadFilename', () => {
         },
         true,
       ),
-    ).toBe('DBMS-Quiz-1-answers.pdf');
+    ).toBe('DBMS-Quiz-1-Year-2026-answers.pdf');
+  });
+
+  test('adds the term and year when the paper name carries a date', () => {
+    expect(
+      pdfDownloadFilename(
+        {
+          courseName: 'DBMS',
+          examName: 'Quiz 1',
+          paperName: 'Quiz 1 - 15 Oct 2026',
+          paperDescription: 'x',
+          year: null,
+        },
+        false,
+      ),
+    ).toBe('DBMS-Quiz-1-Term-3-2026.pdf');
+  });
+
+  test('keeps sibling sessions of the same paper apart', () => {
+    expect(
+      pdfDownloadFilename(
+        {
+          courseName: 'DLGenAI',
+          examName: 'Quiz 1',
+          paperName: 'Generative Ai 06 May 26 (Session 2)',
+          paperDescription: 'x',
+          year: 2026,
+        },
+        true,
+      ),
+    ).toBe('DLGenAI-Quiz-1-Term-1-2026-Session-2-answers.pdf');
+  });
+
+  test('omits the term segment when there is no year or date', () => {
+    expect(
+      pdfDownloadFilename(
+        {
+          courseName: 'DBMS',
+          examName: 'Quiz 1',
+          paperName: 'x',
+          paperDescription: 'x',
+          year: null,
+        },
+        false,
+      ),
+    ).toBe('DBMS-Quiz-1.pdf');
   });
 });

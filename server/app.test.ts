@@ -536,8 +536,8 @@ describe('Praxis API authenticated routes', () => {
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toBe('application/pdf');
     expect(response.headers.get('cache-control')).toBe('private, no-store');
-    expect(response.headers.get('content-disposition')).toContain('Computational-Thinking-Quiz-1.pdf');
-    expect(response.headers.get('x-pdf-filename')).toBe('Computational-Thinking-Quiz-1.pdf');
+    expect(response.headers.get('content-disposition')).toContain('Computational-Thinking-Quiz-1-Year-2025.pdf');
+    expect(response.headers.get('x-pdf-filename')).toBe('Computational-Thinking-Quiz-1-Year-2025.pdf');
     expect(response.headers.get('access-control-expose-headers')).toContain('content-disposition');
     expect(new Uint8Array(await response.arrayBuffer())).toEqual(payload);
   });
