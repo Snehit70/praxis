@@ -3,11 +3,16 @@ import type { QuestionType, QuizQuestion } from '@/lib/dataTransforms';
 export type SelectedAnswers = Record<string, string | string[]>;
 
 /**
- * The two modes a user chooses on entering a paper variant (see CONTEXT.md):
- * a Timed Run (clock + auto-submit) or an Open Run (untimed, free review).
+ * The modes a user chooses on entering a paper variant (see CONTEXT.md): a
+ * Timed Run (clock + auto-submit), an Open Run (untimed, results at hand-in),
+ * or a Practice Run (untimed, each question checked and revealed on its own).
  * `null` means the choice hasn't been made yet — the cover plate is showing.
  */
-export type RunMode = 'timed' | 'open';
+export type RunMode = 'timed' | 'open' | 'practice';
+
+export function isRunMode(value: unknown): value is RunMode {
+  return value === 'timed' || value === 'open' || value === 'practice';
+}
 
 export interface QuestionWithChildren extends QuizQuestion {
   subQuestions?: QuizQuestion[];
@@ -26,6 +31,8 @@ export interface SavedPracticeRunSession {
    * saves) means the cover plate hasn't been resolved yet for this session.
    */
   runMode: RunMode | null;
+  /** Practice Run: page ids already checked (answer locked, result shown). */
+  checkedIds?: string[];
   /** Epoch ms when the run started; times open runs. Absent in older saves. */
   startedAt?: number | null;
   /** Seconds the sitting took, fixed at hand-in. */
@@ -88,8 +95,7 @@ export function parseSavedPracticeRunSession(
       ? Math.max(0, parsed.remainingSeconds)
       : durationSeconds;
     const expiredWhileAway = running && remainingSeconds === 0;
-    const runMode: RunMode | null =
-      parsed.runMode === 'timed' || parsed.runMode === 'open' ? parsed.runMode : null;
+    const runMode: RunMode | null = isRunMode(parsed.runMode) ? parsed.runMode : null;
 
     return {
       selectedAnswers: parsed.selectedAnswers ?? {},
@@ -101,6 +107,9 @@ export function parseSavedPracticeRunSession(
         ? parsed.flaggedIds.filter((id): id is string => typeof id === 'string')
         : [],
       runMode,
+      checkedIds: Array.isArray(parsed.checkedIds)
+        ? parsed.checkedIds.filter((id): id is string => typeof id === 'string')
+        : [],
       ...(typeof parsed.startedAt === 'number' ? { startedAt: parsed.startedAt } : {}),
       ...(typeof parsed.timeUsedSeconds === 'number' ? { timeUsedSeconds: parsed.timeUsedSeconds } : {}),
       ...(typeof parsed.attemptId === 'string' ? { attemptId: parsed.attemptId } : {}),

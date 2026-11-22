@@ -1,6 +1,6 @@
 import { useParams, Link, useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, CheckCircle2, XCircle, RotateCcw, Trophy, Timer, Play, Pause, ChevronLeft, ChevronRight, Flag, BookOpen, LayoutGrid, Maximize2, Undo2, Calculator, Eraser, Eye, EyeOff, AArrowDown, AArrowUp } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, XCircle, RotateCcw, Trophy, Timer, Play, Pause, ChevronLeft, ChevronRight, Flag, BookOpen, LayoutGrid, Maximize2, Undo2, Calculator, Eraser, Eye, EyeOff, AArrowDown, AArrowUp, Hourglass, ListChecks, Lock } from 'lucide-react';
 import type React from 'react';
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { Dialog } from '@/components/ui/dialog';
@@ -1306,10 +1306,13 @@ export function QuestionNavigator({
   onJump,
   onJumpNextFlagged,
   onJumpNextIncorrect,
+  checkedStates = null,
 }: {
   states: PracticeRunPageState[];
   /** When set (post-submission), cells colour by correctness instead of progress. */
   reviewStates?: PracticeRunReviewState[] | null;
+  /** Practice Run: outcome for each page already checked, null for the rest. */
+  checkedStates?: Array<PracticeRunReviewState | null> | null;
   flagged: boolean[];
   flaggedCount: number;
   incorrectCount?: number;
@@ -1353,7 +1356,7 @@ export function QuestionNavigator({
       <div className="relative z-10 grid grid-cols-5 gap-2">
         {states.map((state, index) => {
           const isCurrent = index === currentIndex;
-          const review = reviewStates?.[index];
+          const review = reviewStates?.[index] ?? checkedStates?.[index] ?? undefined;
           return (
             <button
               key={index}
@@ -1378,13 +1381,13 @@ export function QuestionNavigator({
                 review === 'manual' &&
                   'border-[rgb(var(--ex-line)/0.4)] bg-[rgb(var(--ex-line)/0.12)] text-[rgb(var(--ex-accent))]',
                 // Run mode: colour by answer progress.
-                !reviewMode &&
+                !review &&
                   state === 'done' &&
                   'border-[color-mix(in_srgb,var(--lvl,#62aef0)_50%,transparent)] bg-[color-mix(in_srgb,var(--lvl,#62aef0)_18%,transparent)] text-[color-mix(in_srgb,var(--lvl,#62aef0)_92%,white)]',
-                !reviewMode &&
+                !review &&
                   state === 'partial' &&
                   'border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400',
-                !reviewMode &&
+                !review &&
                   state === 'none' &&
                   'border-[rgb(var(--ex-line)/0.16)] bg-black/20 text-muted-foreground hover:border-[color-mix(in_srgb,var(--lvl,#62aef0)_45%,transparent)] hover:text-foreground',
                 isCurrent && 'ring-2 ring-[rgb(var(--ex-accent))] ring-offset-1 ring-offset-background',
@@ -1492,15 +1495,117 @@ function CoverStat({ value, label }: { value: string; label: string }) {
   return (
     <div className="flex flex-col gap-1.5 px-5 first:pl-0">
       <span className="font-display text-3xl font-normal tabular-nums leading-none">{value}</span>
-      <span className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">{label}</span>
+      <span className="text-[11px] uppercase tracking-[0.14em] text-white/70">{label}</span>
+    </div>
+  );
+}
+
+type RuleLine = { icon: typeof Timer; text: string };
+
+/** What each run mode promises, shown under the picker before the user commits. */
+function runModeOptions(durationMinutes: number): Array<{
+  mode: RunMode;
+  label: string;
+  hint: string;
+  icon: typeof Timer;
+  begin: string;
+  rules: RuleLine[];
+}> {
+  return [
+    {
+      mode: 'timed',
+      label: 'Timed',
+      hint: `${durationMinutes} min`,
+      icon: Timer,
+      begin: 'Begin timed run',
+      rules: [
+        { icon: Hourglass, text: `Clock starts when you begin: ${durationMinutes} minutes` },
+        { icon: Timer, text: 'Auto-submits when time runs out' },
+        { icon: Pause, text: 'Pause any time; progress autosaves' },
+      ],
+    },
+    {
+      mode: 'open',
+      label: 'Open',
+      hint: 'No clock',
+      icon: BookOpen,
+      begin: 'Begin open run',
+      rules: [
+        { icon: BookOpen, text: 'No clock; take as long as you need' },
+        { icon: CheckCircle2, text: 'Results appear when you hand in' },
+        { icon: Flag, text: 'Flag questions to come back to' },
+      ],
+    },
+    {
+      mode: 'practice',
+      label: 'Practice',
+      hint: 'Per question',
+      icon: ListChecks,
+      begin: 'Begin practice',
+      rules: [
+        { icon: ListChecks, text: 'Check each answer and see its result right away' },
+        { icon: Lock, text: 'An answer locks once you check it' },
+        { icon: Trophy, text: 'Your total score shows when you hand in' },
+      ],
+    },
+  ];
+}
+
+/** "Improvement Set 4 - February 2025" → title "Improvement Set 4", date "February 2025". */
+function splitPaperName(name: string): { title: string; date: string | null } {
+  const at = name.lastIndexOf(' - ');
+  if (at > 0) return { title: name.slice(0, at), date: name.slice(at + 3) };
+  return { title: name.replace(/^-\s*/, ''), date: null };
+}
+
+function formatAgo(iso: string, now = Date.now()): string {
+  const days = Math.floor((now - new Date(iso).getTime()) / 86_400_000);
+  if (!Number.isFinite(days) || days <= 0) return 'today';
+  if (days === 1) return 'yesterday';
+  if (days < 30) return `${days} days ago`;
+  const months = Math.floor(days / 30);
+  return months === 1 ? 'a month ago' : `${months} months ago`;
+}
+
+function formatScore(value: number) {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+/** The user's past runs on this paper: count, best, recency, and a tiny trend. */
+function CoverHistory({ attempts }: { attempts: AttemptSummary[] }) {
+  const last = attempts[attempts.length - 1];
+  if (!last) return null;
+  const best = attempts.reduce((top, a) => (a.score > top.score ? a : top), last);
+  const recent = attempts.slice(-6);
+  return (
+    <div className="mt-6 flex items-center gap-3.5 text-sm text-white/75">
+      <span className="flex h-6 items-end gap-1" aria-hidden="true">
+        {recent.map((a, i) => (
+          <span
+            key={a.id}
+            className={cn(
+              'w-1.5 rounded-sm',
+              i === recent.length - 1 ? 'bg-[rgb(var(--ex-accent))]' : 'bg-[rgb(var(--ex-accent)/0.45)]',
+            )}
+            style={{ height: `${Math.max(18, a.maxScore > 0 ? (a.score / a.maxScore) * 100 : 0)}%` }}
+          />
+        ))}
+      </span>
+      <span>
+        Your runs: <span className="text-white">{attempts.length}</span>
+        <span className="px-1.5 text-white/35">·</span>
+        Best <span className="tabular-nums text-white">{formatScore(best.score)}/{formatScore(best.maxScore)}</span>
+        <span className="px-1.5 text-white/35">·</span>
+        Last {formatAgo(last.submittedAt)}
+      </span>
     </div>
   );
 }
 
 /**
  * Cover: the threshold shown on entering a paper variant. Art on one side; on
- * the other, what the paper is and the choice to *sit* it (Timed Run) or simply
- * *read* it (Open Run).
+ * the other, what the paper is, the user's history with it, and the choice of
+ * how to sit it: Timed, Open, or Practice (checked one question at a time).
  */
 function RunCoverPlate({
   examName,
@@ -1512,8 +1617,8 @@ function RunCoverPlate({
   paperUuid,
   courseUuid,
   examUuid,
-  onBeginTimed,
-  onBeginOpen,
+  attempts,
+  onBegin,
   onBack,
 }: {
   examName: string;
@@ -1525,10 +1630,15 @@ function RunCoverPlate({
   paperUuid: string;
   courseUuid: string;
   examUuid: string;
-  onBeginTimed: () => void;
-  onBeginOpen: () => void;
+  attempts: AttemptSummary[] | null;
+  onBegin: (mode: RunMode) => void;
   onBack: () => void;
 }) {
+  const [mode, setMode] = useState<RunMode>('timed');
+  const options = runModeOptions(durationMinutes);
+  const selected = options.find((option) => option.mode === mode) ?? options[0]!;
+  const { title, date } = splitPaperName(paperName);
+
   return (
     <div
       className="relative isolate flex min-h-[calc(100vh-14rem)] w-full flex-col"
@@ -1536,90 +1646,181 @@ function RunCoverPlate({
     >
       <HallBackdrop />
 
-      <button
-        type="button"
-        onClick={onBack}
-        className="inline-flex w-fit items-center gap-1.5 rounded-md px-2 py-1 text-sm text-white/75 transition-colors [text-shadow:0_1px_8px_rgba(0,0,0,0.6)] hover:bg-white/10 hover:text-white"
-      >
-        <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-        Back to papers
-      </button>
+      <div className="flex flex-1 items-center justify-center py-2">
+        <div className="w-full max-w-4xl">
+          <button
+            type="button"
+            onClick={onBack}
+            className="mb-3 inline-flex w-fit items-center gap-1.5 rounded-md px-2 py-1 text-sm text-white/80 transition-colors [text-shadow:0_1px_8px_rgba(0,0,0,0.6)] hover:bg-white/10 hover:text-white"
+          >
+            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+            Back to papers
+          </button>
 
-      <div className="flex flex-1 items-center justify-center py-6">
-        <div className="exam-tome exam-cover exam-q-enter relative isolate grid w-full max-w-4xl overflow-hidden rounded-2xl border border-[rgb(var(--ex-line)/0.24)] backdrop-blur-sm lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
-          {/* Art panel: fades into the card on the reading side. */}
-          <div aria-hidden="true" className="relative hidden min-h-[26rem] lg:block">
-            <img
-              src={coverArt}
-              alt=""
-              className="absolute inset-0 h-full w-full object-cover object-[50%_40%]"
-            />
-            <div className="absolute inset-y-0 right-0 w-1/2 bg-gradient-to-l from-[#0E1530]/90 to-transparent" />
-            <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-[#0E1530]/70 to-transparent" />
-          </div>
-
-          <div className="relative z-10 flex flex-col px-6 py-8 sm:px-10 sm:py-10">
-            {courseName && (
-              <p className="text-xs font-medium uppercase tracking-[0.18em] text-[rgb(var(--ex-accent))]">
-                {courseName}
-              </p>
-            )}
-            <p className="mt-1 text-sm text-muted-foreground">{examName}</p>
-            <h1 className="mt-1.5 font-display text-4xl font-normal leading-tight tracking-tight sm:text-5xl">
-              {paperName}
-            </h1>
-
-            <div className="mt-7 flex items-stretch divide-x divide-[rgb(var(--ex-line)/0.18)]">
-              <CoverStat value={String(totalQuestions)} label={totalQuestions === 1 ? 'question' : 'questions'} />
-              {totalMarks > 0 && <CoverStat value={String(totalMarks)} label="marks" />}
-              <CoverStat value={`${durationMinutes}m`} label="duration" />
+          <div className="exam-tome exam-cover exam-q-enter relative isolate grid w-full overflow-hidden rounded-2xl border border-[rgb(var(--ex-line)/0.24)] backdrop-blur-sm lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+            {/* Art panel: fades into the card on the reading side. */}
+            <div aria-hidden="true" className="relative hidden min-h-[26rem] lg:block">
+              <img
+                src={coverArt}
+                alt=""
+                className="absolute inset-0 h-full w-full object-cover object-[50%_40%]"
+              />
+              <div className="absolute inset-y-0 right-0 w-1/2 bg-gradient-to-l from-[#0E1530]/90 to-transparent" />
+              <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-[#0E1530]/70 to-transparent" />
             </div>
 
-            <div className="mt-8 space-y-3">
+            <div className="relative z-10 flex flex-col px-6 py-8 sm:px-10 sm:py-9">
+              {courseName && (
+                <p className="text-xs font-medium uppercase tracking-[0.18em] text-[rgb(var(--ex-accent))]">
+                  {courseName}
+                </p>
+              )}
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                {[examName, date].filter(Boolean).map((chip) => (
+                  <span
+                    key={chip}
+                    className="rounded-md border border-[rgb(var(--ex-line)/0.2)] bg-[rgb(var(--ex-line)/0.08)] px-2.5 py-1 text-xs text-[rgb(var(--ex-accent-soft))]"
+                  >
+                    {chip}
+                  </span>
+                ))}
+              </div>
+              <h1 className="mt-3 font-display text-4xl font-normal leading-tight tracking-tight sm:text-5xl">
+                {title}
+              </h1>
+
+              <div className="mt-6 flex items-stretch divide-x divide-[rgb(var(--ex-line)/0.18)]">
+                <CoverStat value={String(totalQuestions)} label={totalQuestions === 1 ? 'question' : 'questions'} />
+                {totalMarks > 0 && <CoverStat value={String(totalMarks)} label="marks" />}
+                <CoverStat value={`${durationMinutes}m`} label="duration" />
+              </div>
+
+              {attempts && attempts.length > 0 && <CoverHistory attempts={attempts} />}
+
+              <fieldset className="mt-7">
+                <legend className="sr-only">How do you want to sit this paper?</legend>
+                <div className="grid grid-cols-3 gap-2">
+                  {options.map((option) => {
+                    const active = option.mode === mode;
+                    const Icon = option.icon;
+                    return (
+                      <label
+                        key={option.mode}
+                        className={cn(
+                          'relative flex cursor-pointer flex-col gap-1 rounded-xl border px-3.5 py-3 transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-[rgb(var(--ex-accent))]',
+                          active
+                            ? 'border-[rgb(var(--ex-accent)/0.75)] bg-[rgb(var(--ex-line)/0.14)] text-white'
+                            : 'border-[rgb(var(--ex-line)/0.22)] bg-black/20 text-white/80 hover:border-[rgb(var(--ex-line)/0.4)] hover:bg-black/30',
+                        )}
+                      >
+                        <input
+                          type="radio"
+                          name="run-mode"
+                          value={option.mode}
+                          checked={active}
+                          onChange={() => setMode(option.mode)}
+                          className="sr-only"
+                        />
+                        <span className="flex items-center gap-2 font-medium">
+                          <Icon
+                            className={cn('h-4 w-4 shrink-0', active ? 'text-[rgb(var(--ex-accent))]' : 'text-white/55')}
+                            aria-hidden="true"
+                          />
+                          {option.label}
+                        </span>
+                        <span className="text-xs text-white/60">{option.hint}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </fieldset>
+
+              <ul key={selected.mode} className="exam-q-enter mt-4 space-y-2 text-sm text-white/80" aria-live="polite">
+                {selected.rules.map(({ icon: RuleIcon, text }) => (
+                  <li key={text} className="flex items-center gap-2.5">
+                    <RuleIcon className="h-4 w-4 shrink-0 text-[rgb(var(--ex-accent-soft))]/80" aria-hidden="true" />
+                    {text}
+                  </li>
+                ))}
+              </ul>
+
               <button
                 type="button"
-                onClick={onBeginTimed}
-                className="exam-cover-cta group flex w-full items-center justify-between gap-3 rounded-xl border border-[rgb(var(--ex-line)/0.5)] bg-[rgb(var(--ex-line)/0.12)] px-5 py-4 text-left transition-colors hover:border-[rgb(var(--ex-line)/0.8)] hover:bg-[rgb(var(--ex-line)/0.2)]"
+                onClick={() => onBegin(selected.mode)}
+                className="exam-cover-cta group mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-[rgb(var(--ex-accent-soft))] px-5 py-3.5 font-medium text-[rgb(var(--ex-ink))] shadow-[0_10px_30px_-10px_rgba(120,180,240,0.55)] transition-colors hover:bg-white"
               >
-                <span className="flex items-center gap-3.5">
-                  <Timer className="h-5 w-5 shrink-0 text-[rgb(var(--ex-accent-soft))]" aria-hidden="true" />
-                  <span>
-                    <span className="block font-medium text-white">Timed run</span>
-                    <span className="block text-xs text-muted-foreground">{durationMinutes} minutes</span>
-                  </span>
-                </span>
-                <ChevronRight className="h-4 w-4 shrink-0 text-[rgb(var(--ex-accent-soft))] transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+                {selected.begin}
+                <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
               </button>
 
-              <button
-                type="button"
-                onClick={onBeginOpen}
-                className="group flex w-full items-center justify-between gap-3 rounded-xl border border-[rgb(var(--ex-line)/0.22)] bg-black/20 px-5 py-4 text-left transition-colors hover:border-[rgb(var(--ex-line)/0.4)] hover:bg-black/30"
-              >
-                <span className="flex items-center gap-3.5">
-                  <BookOpen className="h-5 w-5 shrink-0 text-muted-foreground" aria-hidden="true" />
-                  <span>
-                    <span className="block font-medium">Open run</span>
-                    <span className="block text-xs text-muted-foreground">No clock</span>
-                  </span>
-                </span>
-                <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
-              </button>
+              <div className="mt-5 flex flex-wrap items-start gap-x-6 gap-y-3 border-t border-[rgb(var(--ex-line)/0.12)] pt-4">
+                <DownloadPdfButton paperUuid={paperUuid} courseUuid={courseUuid} examUuid={examUuid} variant="link" label="Question paper (PDF)" />
+                <DownloadPdfButton paperUuid={paperUuid} courseUuid={courseUuid} examUuid={examUuid} answers variant="link" hint="Reveals answers" />
+              </div>
             </div>
 
-            <div className="mt-5 flex flex-wrap items-center gap-2">
-              <DownloadPdfButton paperUuid={paperUuid} courseUuid={courseUuid} examUuid={examUuid} />
-              <DownloadPdfButton paperUuid={paperUuid} courseUuid={courseUuid} examUuid={examUuid} answers />
-            </div>
+            <div className="tcard-frame" aria-hidden="true" />
+            <span className="tcard-corner tcard-corner-tl" aria-hidden="true" />
+            <span className="tcard-corner tcard-corner-tr" aria-hidden="true" />
+            <span className="tcard-corner tcard-corner-bl" aria-hidden="true" />
+            <span className="tcard-corner tcard-corner-br" aria-hidden="true" />
           </div>
-
-          <div className="tcard-frame" aria-hidden="true" />
-          <span className="tcard-corner tcard-corner-tl" aria-hidden="true" />
-          <span className="tcard-corner tcard-corner-tr" aria-hidden="true" />
-          <span className="tcard-corner tcard-corner-bl" aria-hidden="true" />
-          <span className="tcard-corner tcard-corner-br" aria-hidden="true" />
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Practice Run: the verdict for the question just checked, above its card. */
+function PracticeVerdict({
+  outcome,
+  marksAwarded,
+  maxMarks,
+}: {
+  outcome: PracticeRunReviewState;
+  marksAwarded: number;
+  maxMarks: number;
+}) {
+  const meta: Record<PracticeRunReviewState, { label: string; detail: string; className: string; icon: typeof Timer }> = {
+    correct: {
+      label: 'Correct',
+      detail: 'Nicely done.',
+      className: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300',
+      icon: CheckCircle2,
+    },
+    incorrect: {
+      label: 'Not quite',
+      detail: 'The correct answer is marked below.',
+      className: 'border-red-500/40 bg-red-500/10 text-red-300',
+      icon: XCircle,
+    },
+    unanswered: {
+      label: 'Answer shown',
+      detail: 'You skipped this one; the key is marked below.',
+      className: 'border-[rgb(var(--ex-line)/0.3)] bg-black/30 text-white/85',
+      icon: Eye,
+    },
+    manual: {
+      label: 'Compare with the key',
+      detail: "This one can't be auto-graded.",
+      className: 'border-[rgb(var(--ex-line)/0.4)] bg-[rgb(var(--ex-line)/0.12)] text-[rgb(var(--ex-accent))]',
+      icon: BookOpen,
+    },
+  };
+  const { label, detail, className, icon: Icon } = meta[outcome];
+  return (
+    <div role="status" className={cn('exam-q-enter flex items-center gap-3 rounded-xl border px-4 py-2.5', className)}>
+      <Icon className="h-5 w-5 shrink-0" aria-hidden="true" />
+      <p className="min-w-0 flex-1 text-sm">
+        <span className="font-semibold">{label}</span>
+        <span className="ml-2 text-white/70">{detail}</span>
+      </p>
+      {maxMarks > 0 && (
+        <span className="shrink-0 text-sm font-medium tabular-nums">
+          {formatScore(marksAwarded)}/{formatScore(maxMarks)}
+          <span className="ml-1 text-xs font-normal text-white/60">marks</span>
+        </span>
+      )}
     </div>
   );
 }
@@ -1653,6 +1854,8 @@ export default function PaperPage() {
   const [timeExpired, setTimeExpired] = useState(false);
   const [retryNonce, setRetryNonce] = useState(0);
   const [flaggedIds, setFlaggedIds] = useState<Set<string>>(new Set());
+  // Practice Run: pages already checked — answer locked, verdict shown.
+  const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
   // null while the cover plate is up; set once the user picks Timed/Open Run.
   const [runMode, setRunMode] = useState<RunMode | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -1688,6 +1891,8 @@ export default function PaperPage() {
   const [saveState, setSaveState] = useState<AttemptSaveState>('idle');
   const [saveNonce, setSaveNonce] = useState(0);
   const [attempts, setAttempts] = useState<AttemptSummary[] | null>(null);
+  // Past runs shown on the cover plate, fetched while it is up.
+  const [coverAttempts, setCoverAttempts] = useState<AttemptSummary[] | null>(null);
   const [compareId, setCompareId] = useState<string | null>(null);
   const [compare, setCompare] = useState<AttemptDetail | null>(null);
   const savingRef = useRef(false);
@@ -1748,6 +1953,7 @@ export default function PaperPage() {
           setTimerEndsAt(savedSession?.timerEndsAt ?? null);
           setTimeExpired((savedSession?.remainingSeconds ?? initSeconds) === 0);
           setFlaggedIds(new Set(savedSession?.flaggedIds ?? []));
+          setCheckedIds(new Set(savedSession?.checkedIds ?? []));
           setStartedAt(savedSession?.startedAt ?? null);
           setTimeUsed(savedSession?.timeUsedSeconds ?? null);
           setAttemptId(savedSession?.attemptId ?? null);
@@ -1805,13 +2011,14 @@ export default function PaperPage() {
       timerEndsAt,
       flaggedIds: Array.from(flaggedIds),
       runMode,
+      checkedIds: Array.from(checkedIds),
       startedAt,
       timeUsedSeconds: timeUsed,
       attemptId,
     };
 
     writePracticeRunSession(storageKey, payload);
-  }, [paper, remainingSeconds, selectedAnswers, showResults, storageKey, timerEndsAt, timerRunning, flaggedIds, runMode, startedAt, timeUsed, attemptId]);
+  }, [paper, remainingSeconds, selectedAnswers, showResults, storageKey, timerEndsAt, timerRunning, flaggedIds, runMode, checkedIds, startedAt, timeUsed, attemptId]);
 
   useEffect(() => {
     if (!paper || !timerRunning || showResults || timerEndsAt === null) {
@@ -1938,6 +2145,20 @@ export default function PaperPage() {
         if (token === runTokenRef.current) savingRef.current = false;
       });
   }, [showResults, paper, runMode, isSignedIn, attemptId, canMeasureTime, timeUsed, selectedAnswers, flaggedIds, timeExpired, getToken, saveNonce]);
+
+  // The cover plate shows the user's past runs on this paper.
+  useEffect(() => {
+    if (runMode !== null || !isSignedIn || !paper?._id) return;
+    let active = true;
+    getAttempts(paper._id, getToken)
+      .then((list) => {
+        if (active) setCoverAttempts(list);
+      })
+      .catch((error) => logger.error('Failed to load attempts for cover', error));
+    return () => {
+      active = false;
+    };
+  }, [runMode, isSignedIn, paper?._id, getToken]);
 
   // The user's history on this paper, refreshed once this attempt is stored.
   const saveFailed = saveState === 'error';
@@ -2198,6 +2419,7 @@ export default function PaperPage() {
       const question =
         page?.question.questionType === 'COMPREHENSION' ? page.question.subQuestions?.[0] : page?.question;
       if (!question) return;
+      if (checkedIds.has(question.uuid)) return;
       const optionId = String(Number(event.key) - 1);
       if (Number(optionId) >= question.options.length) return;
       event.preventDefault();
@@ -2210,7 +2432,7 @@ export default function PaperPage() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [currentIndex, pages, showResults]);
+  }, [currentIndex, pages, showResults, checkedIds]);
 
   // Pop back to the page we came from (the course page in the normal flow)
   // rather than pushing a fresh course entry — pushing created a Paper ⇄ Course
@@ -2266,7 +2488,7 @@ export default function PaperPage() {
     optionIndex: string,
     questionType: QuestionType
   ) => {
-    if (showResults) return;
+    if (showResults || checkedIds.has(questionId)) return;
 
     setSelectedAnswers((prev) =>
       selectPracticeRunOption(prev, questionId, optionIndex, questionType),
@@ -2280,12 +2502,12 @@ export default function PaperPage() {
   };
 
   const handleShortAnswerChange = (questionId: string, answer: string) => {
-    if (showResults) return;
+    if (showResults || checkedIds.has(questionId)) return;
     setSelectedAnswers((prev) => ({ ...prev, [questionId]: answer }));
   };
 
   const handleClearAnswer = (questionId: string) => {
-    if (showResults) return;
+    if (showResults || checkedIds.has(questionId)) return;
     setSelectedAnswers((prev) => {
       const next = { ...prev };
       delete next[questionId];
@@ -2361,6 +2583,7 @@ export default function PaperPage() {
   const handleBeginTimed = () => {
     if (!paper) return;
     setRunMode('timed');
+    setCheckedIds(new Set());
     setStartedAt(Date.now());
     setSelectedAnswers({});
     setShowResults(false);
@@ -2374,10 +2597,12 @@ export default function PaperPage() {
     warned1Ref.current = false;
   };
 
-  // Cover-plate choice: begin an Open Run — no clock, free reading and review.
-  const handleBeginOpen = () => {
+  // Cover-plate choice: an Open Run (no clock, results at hand-in) or a
+  // Practice Run (no clock, each question checked on its own).
+  const handleBeginUntimed = (mode: 'open' | 'practice') => {
     if (!paper) return;
-    setRunMode('open');
+    setRunMode(mode);
+    setCheckedIds(new Set());
     setStartedAt(Date.now());
     setTimerRunning(false);
     setTimerEndsAt(null);
@@ -2386,9 +2611,21 @@ export default function PaperPage() {
     setLowTimeWarning(null);
   };
 
+  const handleBeginRun = (mode: RunMode) => {
+    if (mode === 'timed') handleBeginTimed();
+    else handleBeginUntimed(mode);
+  };
+
+  // Practice Run: lock the current page's answer and reveal its verdict.
+  const handleCheckCurrent = (pageId: string) => {
+    if (showResults || runMode !== 'practice') return;
+    setCheckedIds((prev) => new Set(prev).add(pageId));
+  };
+
   const handleTryAgain = () => {
     setSelectedAnswers({});
     setFlaggedIds(new Set());
+    setCheckedIds(new Set());
     setEliminated({});
     setShowResults(false);
     setTimerRunning(false);
@@ -2409,8 +2646,9 @@ export default function PaperPage() {
     setResultsView('report');
     setReviewFilter('all');
     setCompareId(null);
-    // Return to the cover plate so the user re-picks Timed vs Open.
+    // Return to the cover plate so the user re-picks the run mode.
     setRunMode(null);
+    setCoverAttempts(null);
     if (storageKey) clearPracticeRunSession(storageKey);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -2497,8 +2735,8 @@ export default function PaperPage() {
         paperUuid={paper.uuid}
         courseUuid={paper.courseUuid}
         examUuid={paper.examUuid}
-        onBeginTimed={handleBeginTimed}
-        onBeginOpen={handleBeginOpen}
+        attempts={coverAttempts}
+        onBegin={handleBeginRun}
         onBack={goBack}
       />
     );
@@ -2514,6 +2752,20 @@ export default function PaperPage() {
   const pageNumberById = new Map(pages.map((page, index) => [page.id, index + 1]));
   const labelFor = (uuid: string) => String(pageNumberById.get(uuid) ?? '?');
   const currentGrade = currentPage ? graded.find((row) => row.questionUuid === currentPage.id) : undefined;
+  const isPractice = runMode === 'practice';
+  const currentChecked = isPractice && !!currentPage && checkedIds.has(currentPage.id);
+  const pageRevealed = showResults || currentChecked;
+  const checkedStates =
+    isPractice && !showResults ? pages.map((page, index) => (checkedIds.has(page.id) ? reviewStates[index] ?? null : null)) : null;
+  const checkedCount = checkedStates ? checkedStates.filter((state) => state !== null).length : 0;
+  const checkedCorrect = checkedStates ? checkedStates.filter((state) => state === 'correct').length : 0;
+  const practiceGrade =
+    currentChecked && currentQuestion
+      ? gradePracticeRun([currentQuestion], selectedAnswers).reduce(
+          (sum, row) => ({ awarded: sum.awarded + row.marksAwarded, max: sum.max + row.maxMarks }),
+          { awarded: 0, max: 0 },
+        )
+      : null;
   const compareOutcomes = new Map(compare?.answers.map((answer) => [answer.questionUuid, answer.outcome]) ?? []);
   const reviewCounts: Record<ReviewFilter, number> = {
     all: pageCount,
@@ -2560,6 +2812,25 @@ export default function PaperPage() {
         <span className="hidden sm:inline">Back to</span> report
       </Button>
     );
+  const currentAnswered = pageStates[safeIndex] !== undefined && pageStates[safeIndex] !== 'none';
+  const checkButton =
+    isPractice && !showResults && currentPage && !currentChecked ? (
+      <Button
+        size="sm"
+        variant={currentAnswered ? 'default' : 'outline'}
+        onClick={() => handleCheckCurrent(currentPage.id)}
+        className={cn('gap-1', currentAnswered && 'bg-[rgb(var(--ex-primary))] text-[rgb(var(--ex-ink))] hover:bg-white')}
+        title={currentAnswered ? 'Check this answer (locks it)' : 'Reveal the answer without attempting'}
+      >
+        {currentAnswered ? (
+          <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+        ) : (
+          <Eye className="h-4 w-4" aria-hidden="true" />
+        )}
+        {currentAnswered ? 'Check' : 'Show answer'}
+      </Button>
+    ) : null;
+  const forwardButton = checkButton ?? nextButton;
   const flagButton = !showResults && currentPage && (
     <button
       type="button"
@@ -2589,7 +2860,7 @@ export default function PaperPage() {
       // --exam-chrome: site header + exam bar + page padding, what the question
       // and answer panels leave free so the whole exam fits one screen (the
       // pager lives in the rail). In review the filter bar takes ~7.5rem more.
-      style={{ ['--ring' as string]: 'rgb(var(--ex-accent))', ['--exam-chrome' as string]: reviewing ? '18.5rem' : '11rem' }}
+      style={{ ['--ring' as string]: 'rgb(var(--ex-accent))', ['--exam-chrome' as string]: reviewing ? '18.5rem' : currentChecked ? '15.25rem' : '11rem' }}
     >
       {/* Page backdrop — the exam hall, dimmed and softened so the question
           and navigator stay legible through a long sitting. */}
@@ -2622,10 +2893,18 @@ export default function PaperPage() {
 
           {!showResults && (
             <div className="hidden shrink-0 flex-col items-end leading-tight md:flex">
-              <span className="text-sm font-medium tabular-nums">
-                {stats.answered}
-                <span className="text-muted-foreground">/{stats.totalQuestions} answered</span>
-              </span>
+              {isPractice ? (
+                <span className="text-sm font-medium tabular-nums">
+                  {checkedCount}
+                  <span className="text-muted-foreground">/{pageCount} checked</span>
+                  {checkedCount > 0 && <span className="text-emerald-300/90"> · {checkedCorrect} correct</span>}
+                </span>
+              ) : (
+                <span className="text-sm font-medium tabular-nums">
+                  {stats.answered}
+                  <span className="text-muted-foreground">/{stats.totalQuestions} answered</span>
+                </span>
+              )}
               <span
                 className="inline-flex items-center gap-1 text-[11px] text-muted-foreground"
                 title="Your answers and timer autosave and survive a refresh."
@@ -2809,6 +3088,15 @@ export default function PaperPage() {
             />
           )}
 
+          {currentChecked && practiceGrade && (
+            <PracticeVerdict
+              key={currentPage?.id}
+              outcome={reviewStates[safeIndex] ?? 'unanswered'}
+              marksAwarded={practiceGrade.awarded}
+              maxMarks={practiceGrade.max}
+            />
+          )}
+
           {/* One question per page: question | answer. */}
           {currentPage && currentQuestion && (
             // Parts of one passage share a key, so the passage (and its scroll)
@@ -2820,7 +3108,7 @@ export default function PaperPage() {
                 passage={currentPage.passage}
                 tools={questionTools}
                 selectedAnswers={selectedAnswers}
-                showResults={showResults}
+                showResults={pageRevealed}
                 onSelectAnswer={handleOptionSelect}
                 onShortAnswerChange={handleShortAnswerChange}
                 isFlagged={currentFlagged}
@@ -2845,7 +3133,7 @@ export default function PaperPage() {
                 </button>
                 {flagButton}
               </div>
-              {nextButton}
+              {forwardButton}
             </div>
           </div>
         </div>
@@ -2862,7 +3150,7 @@ export default function PaperPage() {
               </div>
               <div className="mt-3 grid grid-cols-2 gap-2">
                 {prevButton}
-                {nextButton}
+                {forwardButton}
               </div>
               <p className="mt-2.5 flex flex-wrap items-center justify-center gap-1 text-[10px] text-muted-foreground/80">
                 <kbd className="rounded border border-border px-1 py-px font-sans text-[9px]">←</kbd>
@@ -2882,6 +3170,7 @@ export default function PaperPage() {
               <QuestionNavigator
                 states={pageStates}
                 reviewStates={showResults ? reviewStates : null}
+                checkedStates={checkedStates}
                 flagged={flaggedPages}
                 flaggedCount={flaggedCount}
                 incorrectCount={incorrectCount}
@@ -2921,6 +3210,7 @@ export default function PaperPage() {
           <QuestionNavigator
             states={pageStates}
             reviewStates={showResults ? reviewStates : null}
+            checkedStates={checkedStates}
             flagged={flaggedPages}
             flaggedCount={flaggedCount}
             incorrectCount={incorrectCount}

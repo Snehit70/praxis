@@ -369,7 +369,7 @@ export interface AttemptSummary {
   /** 1-based position in the user's attempts at this paper. */
   number: number;
   paperId: string;
-  runMode: 'timed' | 'open';
+  runMode: 'timed' | 'open' | 'practice';
   timeUsedSeconds: number | null;
   timeExpired: boolean;
   score: number;
@@ -396,7 +396,7 @@ export interface AttemptDetail extends AttemptSummary {
 
 export interface SubmitAttemptPayload {
   paperId: string;
-  runMode: 'timed' | 'open';
+  runMode: 'timed' | 'open' | 'practice';
   answers: Record<string, string | string[]>;
   flaggedIds: string[];
   timeUsedSeconds: number | null;

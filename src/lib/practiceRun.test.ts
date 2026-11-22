@@ -261,7 +261,20 @@ test('parseSavedPracticeRunSession reveals results when a running timer expired 
     timerEndsAt: null,
     flaggedIds: [],
     runMode: null,
+    checkedIds: [],
   });
+});
+
+test('parseSavedPracticeRunSession restores a practice run and its checked questions', () => {
+  const saved = JSON.stringify({
+    selectedAnswers: { q1: '0' },
+    runMode: 'practice',
+    checkedIds: ['q1', 7, 'q2'],
+  });
+
+  const session = parseSavedPracticeRunSession(saved, 60, 0);
+  expect(session?.runMode).toBe('practice');
+  expect(session?.checkedIds).toEqual(['q1', 'q2']);
 });
 
 test('isEssayQuestion flags written-answer questions, not keyless numeric ones', () => {

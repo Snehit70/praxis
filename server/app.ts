@@ -566,8 +566,11 @@ export function createApiFetchHandler(sql: DbClient, options: ApiHandlerOptions 
             const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
             const paperId = typeof body?.paperId === 'string' ? body.paperId.trim() : '';
             if (!paperId) return jsonPrivate({ error: 'paperId is required' }, 400);
-            const runMode = body?.runMode === 'timed' ? 'timed' : body?.runMode === 'open' ? 'open' : null;
-            if (!runMode) return jsonPrivate({ error: 'runMode must be timed or open' }, 400);
+            const runMode =
+              body?.runMode === 'timed' || body?.runMode === 'open' || body?.runMode === 'practice'
+                ? body.runMode
+                : null;
+            if (!runMode) return jsonPrivate({ error: 'runMode must be timed, open, or practice' }, 400);
             const answers = parseSubmittedAnswers(body?.answers);
             if (!answers) return jsonPrivate({ error: 'answers must map question ids to strings' }, 400);
             const flagged = new Set(

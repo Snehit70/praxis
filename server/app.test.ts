@@ -721,9 +721,12 @@ describe('Praxis API authenticated routes', () => {
     const second = await submit({ paperId: 'variant-2025', runMode: 'open', answers: { 'q-child': '0' } });
     expect(await second.json()).toMatchObject({ number: 2, score: 1, correct: 1, unanswered: 1 });
 
+    const third = await submit({ paperId: 'variant-2025', runMode: 'practice', answers: { 'q-main': '0' } });
+    expect(await third.json()).toMatchObject({ number: 3, runMode: 'practice', score: 2 });
+
     const list = await handler(new Request(`${base}?paperId=variant-2025`));
     const listJson = (await list.json()) as Array<{ number: number; score: number }>;
-    expect(listJson.map((row) => [row.number, row.score])).toEqual([[1, 2], [2, 1]]);
+    expect(listJson.map((row) => [row.number, row.score])).toEqual([[1, 2], [2, 1], [3, 2]]);
 
     const detail = await handler(new Request(`${base}/${firstJson.id}`));
     expect(detail.status).toBe(200);

@@ -40,6 +40,8 @@ function getQuestionShift(
   return null;
 }
 
+const RUN_MODE_SHORT: Record<RunMode, string> = { timed: 'Timed', open: 'Open', practice: 'Practice' };
+
 const OUTCOME_META: Record<
   PracticeRunReviewState,
   { label: string; text: string; cell: string; Icon: typeof CheckCircle2 }
@@ -333,7 +335,7 @@ function AttemptTrend({
             {formatMarks(hovered.attempt.score)} / {formatMarks(hovered.attempt.maxScore)} · {Math.round(hovered.pct)}%
           </p>
           <p className="tabular-nums text-muted-foreground">
-            {hovered.attempt.runMode === 'timed' ? 'Timed' : 'Open'} · {formatDuration(hovered.attempt.timeUsedSeconds)}
+            {RUN_MODE_SHORT[hovered.attempt.runMode]} · {formatDuration(hovered.attempt.timeUsedSeconds)}
           </p>
         </div>
       )}
@@ -487,7 +489,7 @@ export function AttemptReport({
           <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] font-medium uppercase tracking-[0.18em] text-[rgb(var(--ex-accent))]">
             <span>{current ? `Attempt #${current.number}` : 'Paper handed in'}</span>
             <span className="text-white/25" aria-hidden="true">·</span>
-            <span className="text-muted-foreground">{runMode === 'timed' ? 'Timed run' : 'Open run'}</span>
+            <span className="text-muted-foreground">{RUN_MODE_SHORT[runMode]} run</span>
             {timeExpired && (
               <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/40 bg-amber-500/10 px-2 py-0.5 normal-case tracking-normal text-amber-300">
                 <Timer className="h-3 w-3" aria-hidden="true" />
