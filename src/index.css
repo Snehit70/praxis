@@ -831,32 +831,11 @@
 .exam-tome .tcard-corner-bl::after { bottom: 1px; left: 1px; }
 .exam-tome .tcard-corner-br::after { bottom: 1px; right: 1px; }
 
-/* Sticky comprehension passage — an opaque tome-toned panel so sub-questions
-   scrolling beneath it never bleed through while it's pinned. */
-.exam-passage {
-  background: linear-gradient(to bottom, #18203a, #141b33);
-  box-shadow:
-    inset 0 0 0 1px rgb(var(--ex-line) / 0.12),
-    0 10px 24px -18px rgba(0, 0, 0, 0.8);
-  padding: 0.75rem 0.85rem;
-}
-
-/* Question header crest — a runic underline beneath the type/marks row so each
-   tome opens with a small heraldic band. */
-.exam-crest-rule {
-  height: 1px;
-  background: linear-gradient(
-    to right,
-    color-mix(in srgb, var(--lvl, #62aef0) 50%, transparent),
-    rgb(var(--ex-line) / 0.34) 60%,
-    transparent
-  );
-}
-
 /* Reading measure — cap the line length of question/option prose so long
-   stems stay comfortable on wide screens (~68ch). */
+   stems stay comfortable on wide screens (~68ch), centred in a wide column. */
 .exam-measure {
   max-width: 68ch;
+  margin-inline: auto;
 }
 
 /* Embedded enumerated facts, broken out of a dense stem into scannable lines
@@ -900,6 +879,14 @@
   .exam-clock[data-warn='true'] {
     animation: exam-clock-warn 2.2s ease-in-out infinite;
   }
+  /* A time alert just fired: a short bright flash, then back to the steady pulse. */
+  .exam-clock[data-alert='true'] {
+    animation: exam-clock-alert 0.8s ease-in-out 3;
+  }
+}
+@keyframes exam-clock-alert {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(251, 191, 36, 0); }
+  40% { transform: scale(1.06); box-shadow: 0 0 22px 2px rgba(251, 191, 36, 0.55); }
 }
 
 /* Low-time heads-up pill — appears, holds, then fades on its own. */

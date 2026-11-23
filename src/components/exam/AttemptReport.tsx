@@ -3,6 +3,8 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   ArrowDownRight,
   ArrowLeft,
+  ArrowRight,
+  BarChart3,
   ArrowUpRight,
   CheckCircle2,
   CircleDashed,
@@ -13,12 +15,14 @@ import {
   Minus,
   PenLine,
   RotateCcw,
+  Target,
   Timer,
   TrendingUp,
   XCircle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { SignInTrigger } from '@/components/auth/AuthDialog';
+import { AnalyseWithAI, type InsightsReport } from '@/components/exam/InsightsCard';
 import { cn } from '@/lib/utils';
 import type { AttemptDetail, AttemptSummary } from '@/lib/api';
 import type { GradedQuestion, PracticeRunReviewState, PracticeRunStats, RunMode } from '@/lib/practiceRun';
@@ -39,6 +43,8 @@ function getQuestionShift(
   if (now === 'incorrect' && before === 'incorrect') return 'still-wrong';
   return null;
 }
+
+const RUN_MODE_SHORT: Record<RunMode, string> = { timed: 'Timed', open: 'Open', practice: 'Practice' };
 
 const OUTCOME_META: Record<
   PracticeRunReviewState,
@@ -333,7 +339,7 @@ function AttemptTrend({
             {formatMarks(hovered.attempt.score)} / {formatMarks(hovered.attempt.maxScore)} · {Math.round(hovered.pct)}%
           </p>
           <p className="tabular-nums text-muted-foreground">
-            {hovered.attempt.runMode === 'timed' ? 'Timed' : 'Open'} · {formatDuration(hovered.attempt.timeUsedSeconds)}
+            {RUN_MODE_SHORT[hovered.attempt.runMode]} · {formatDuration(hovered.attempt.timeUsedSeconds)}
           </p>
         </div>
       )}
@@ -359,6 +365,17 @@ export interface AttemptReportProps {
   onCompareChange: (id: string) => void;
   onReview: (filter: ReviewFilter, startUuid?: string) => void;
   onTryAgain: () => void;
+  /** Questions this run got wrong or skipped, which a retry would cover. */
+  missedCount?: number;
+  /** Starts a Practice run of just the missed questions. */
+  onRetryMissed?: () => void;
+  /** This run was itself a retry of missed questions (kept out of history). */
+  focusRun?: boolean;
+  /** Builds the "Analyse with AI" Markdown report; the card hides without it. */
+  /** Builds the AI report for the hero's Analyse with AI buttons. */
+  onBuildInsights?: () => InsightsReport;
+  /** Opens the Insights page: charts of how the sitting went. */
+  onOpenInsights?: () => void;
 }
 
 export function AttemptReport({
@@ -378,6 +395,11 @@ export function AttemptReport({
   onCompareChange,
   onReview,
   onTryAgain,
+  missedCount = 0,
+  onRetryMissed,
+  focusRun = false,
+  onBuildInsights,
+  onOpenInsights,
 }: AttemptReportProps) {
   const hasMarks = stats.totalMarks > 0;
   const scoreTarget = hasMarks ? stats.scoredMarks : stats.correct;
@@ -487,17 +509,22 @@ export function AttemptReport({
           <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] font-medium uppercase tracking-[0.18em] text-[rgb(var(--ex-accent))]">
             <span>{current ? `Attempt #${current.number}` : 'Paper handed in'}</span>
             <span className="text-white/25" aria-hidden="true">·</span>
-            <span className="text-muted-foreground">{runMode === 'timed' ? 'Timed run' : 'Open run'}</span>
+            <span className="text-muted-foreground">{RUN_MODE_SHORT[runMode]} run</span>
             {timeExpired && (
               <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/40 bg-amber-500/10 px-2 py-0.5 normal-case tracking-normal text-amber-300">
                 <Timer className="h-3 w-3" aria-hidden="true" />
                 Auto-submitted at time
               </span>
             )}
+            {focusRun ? (
+              <span className="normal-case tracking-normal text-muted-foreground">Retry of missed questions · not added to your history</span>
+            ) : (
+              <span className="normal-case tracking-normal text-muted-foreground">
+                <SaveNote signedIn={signedIn} saveState={saveState} onRetry={onRetrySave} />
+              </span>
+            )}
           </p>
-          <span className="text-muted-foreground">
-            <SaveNote signedIn={signedIn} saveState={saveState} onRetry={onRetrySave} />
-          </span>
+          {onBuildInsights && <AnalyseWithAI onBuild={onBuildInsights} />}
         </div>
 
         {/* Score and verdict */}
@@ -584,10 +611,33 @@ export function AttemptReport({
               Review all
             </Button>
           )}
+          {onRetryMissed && missedCount > 0 && (
+            <Button
+              variant="ghost"
+              onClick={onRetryMissed}
+              title="A Practice run of only the questions you got wrong or skipped, checked one at a time"
+              className="gap-2 border border-[rgb(var(--ex-accent)/0.4)] bg-[rgb(var(--ex-accent)/0.08)] text-[rgb(var(--ex-accent-soft))] hover:bg-[rgb(var(--ex-accent)/0.16)] hover:text-white"
+            >
+              <Target className="h-4 w-4" aria-hidden="true" />
+              Retry {missedCount} missed
+            </Button>
+          )}
+          {onOpenInsights && (
+            <button
+              type="button"
+              onClick={onOpenInsights}
+              title="Charts of where your time went, your path through the paper, pace and answer changes"
+              className="group relative inline-flex h-10 items-center gap-2 overflow-hidden rounded-md border border-[rgb(var(--ex-accent-soft)/0.6)] bg-[linear-gradient(110deg,rgb(var(--ex-accent)),rgb(var(--ex-accent)/0.82))] px-4 text-sm font-semibold text-[#0b1124] shadow-[0_0_0_1px_rgb(var(--ex-accent)/0.25),0_8px_28px_-8px_rgb(var(--ex-accent)/0.85)] transition-[box-shadow,background-color,transform] hover:-translate-y-px hover:shadow-[0_0_0_1px_rgb(var(--ex-accent)/0.35),0_12px_30px_-10px_rgb(var(--ex-accent)/0.9)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--ex-accent))] motion-reduce:transition-none motion-reduce:hover:translate-y-0 sm:ml-auto"
+            >
+              <BarChart3 className="h-4 w-4" aria-hidden="true" />
+              See insights
+              <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5 motion-reduce:transition-none" aria-hidden="true" />
+            </button>
+          )}
           <Button
             variant="ghost"
             onClick={onTryAgain}
-            className="ml-auto gap-2 text-muted-foreground hover:bg-white/[0.06] hover:text-foreground"
+            className={cn(onOpenInsights ? 'sm:ml-0' : 'ml-auto', 'gap-2 text-muted-foreground hover:bg-white/[0.06] hover:text-foreground')}
           >
             <RotateCcw className="h-4 w-4" aria-hidden="true" />
             Try again
@@ -798,14 +848,7 @@ function SaveNote({ signedIn, saveState, onRetry }: {
       </span>
     );
   }
-  if (saveState === 'saved') {
-    return (
-      <span className="inline-flex items-center gap-1 text-xs" role="status">
-        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400/80" aria-hidden="true" />
-        Saved to your history
-      </span>
-    );
-  }
+  // A saved attempt is the expected outcome; only a wait or a failure is worth a word.
   return null;
 }
 

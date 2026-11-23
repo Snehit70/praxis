@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test';
 import {
   calculatePracticeRunStats,
+  focusPracticeRunQuestions,
   getPracticeRunPageStates,
   getPracticeRunReviewStates,
   gradePracticeRun,
@@ -261,7 +262,44 @@ test('parseSavedPracticeRunSession reveals results when a running timer expired 
     timerEndsAt: null,
     flaggedIds: [],
     runMode: null,
+    checkedIds: [],
   });
+});
+
+test('parseSavedPracticeRunSession restores a practice run and its checked questions', () => {
+  const saved = JSON.stringify({
+    selectedAnswers: { q1: '0' },
+    runMode: 'practice',
+    checkedIds: ['q1', 7, 'q2'],
+  });
+
+  const session = parseSavedPracticeRunSession(saved, 60, 0);
+  expect(session?.runMode).toBe('practice');
+  expect(session?.checkedIds).toEqual(['q1', 'q2']);
+});
+
+test('focusPracticeRunQuestions keeps only the listed pages, trimming passages', () => {
+  const grouped = groupPracticeRunQuestions([
+    quizQuestion({ uuid: 'q1', questionNumber: 1 }),
+    quizQuestion({ uuid: 'q2', questionNumber: 2 }),
+    quizQuestion({ uuid: 'passage', questionNumber: 3, questionType: 'COMPREHENSION', totalMark: '0', options: [] }),
+    quizQuestion({ uuid: 'sub-a', questionNumber: 4, parentQuestionUuid: 'passage' }),
+    quizQuestion({ uuid: 'sub-b', questionNumber: 5, parentQuestionUuid: 'passage' }),
+    quizQuestion({ uuid: 'passage-2', questionNumber: 6, questionType: 'COMPREHENSION', totalMark: '0', options: [] }),
+    quizQuestion({ uuid: 'sub-c', questionNumber: 7, parentQuestionUuid: 'passage-2' }),
+  ]);
+
+  const focused = focusPracticeRunQuestions(grouped, new Set(['q2', 'sub-b']));
+  expect(focused.map((question) => question.uuid)).toEqual(['q2', 'passage']);
+  expect(focused[1]?.subQuestions?.map((sub) => sub.uuid)).toEqual(['sub-b']);
+  // The full grouping is left untouched.
+  expect(grouped[2]?.subQuestions).toHaveLength(2);
+});
+
+test('parseSavedPracticeRunSession restores a missed-questions retry', () => {
+  const saved = JSON.stringify({ runMode: 'practice', focusIds: ['q2', null, 'sub-b'] });
+  expect(parseSavedPracticeRunSession(saved, 60, 0)?.focusIds).toEqual(['q2', 'sub-b']);
+  expect(parseSavedPracticeRunSession(JSON.stringify({ runMode: 'open' }), 60, 0)?.focusIds).toBeUndefined();
 });
 
 test('isEssayQuestion flags written-answer questions, not keyless numeric ones', () => {

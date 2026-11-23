@@ -1,6 +1,6 @@
 import { useParams, Link, useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, CheckCircle2, XCircle, RotateCcw, Trophy, Timer, Play, Pause, ChevronLeft, ChevronRight, Flag, BookOpen, LayoutGrid, Maximize2, Undo2, Calculator, Eraser, Eye, EyeOff, AArrowDown, AArrowUp } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, XCircle, RotateCcw, Trophy, Timer, Play, Pause, ChevronLeft, ChevronRight, ChevronsRight, Flag, BookOpen, LayoutGrid, Maximize2, Undo2, Calculator, Eraser, Eye, EyeOff, AArrowDown, AArrowUp, Hourglass, ListChecks, Lock, CircleAlert } from 'lucide-react';
 import type React from 'react';
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { Dialog } from '@/components/ui/dialog';
@@ -8,7 +8,6 @@ import { cn } from '@/lib/utils';
 import { formatPaperName } from '@/lib/paperUtils';
 import { getExamSlugFromUuid, getExamUuidFromSlug, getExamDurationMinutes } from '@/lib/examMapping';
 import { getDisplayCourseName } from '@/lib/courseMapping';
-import { ArcaneSigil } from '@/components/ArcaneSigil';
 import { PaperVerification } from '@/components/PaperVerification';
 import { logger } from '@/lib/logger';
 import { getQuestionImageUrl, getOptionImageUrl, imageSourceFallbacks } from '@/lib/imageUtils';
@@ -31,6 +30,7 @@ import {
   calculatePracticeRunStats,
   clearPracticeRunSession,
   describeShortAnswerKey,
+  focusPracticeRunQuestions,
   gradePracticeRun,
   isEssayQuestion,
   isPracticeRunQuestionCorrect,
@@ -64,8 +64,18 @@ import {
   type ReviewFilter,
 } from '@/components/exam/AttemptReport';
 import { HallBackdrop, PaperLoadingSkeleton, PaperReportSkeleton } from '@/components/skeletons/route-skeletons';
+import { appendRunEvent, diffRunSnapshots, type NavVia, type RunEvent, type RunSnapshot } from '@/lib/runActivity';
+import { analyseAttempt, attemptPatterns, buildAttemptInsightsMarkdown, insightsFileName, type InsightsInput } from '@/lib/attemptInsights';
+import { AttemptInsights } from '@/components/exam/AttemptInsights';
 
 const OPTION_LABELS = ['A', 'B', 'C', 'D', 'E', 'F'];
+/** Low-time alerts, each fired once as the clock crosses it. */
+type LowTimeWarning = '10min' | '5min' | '1min';
+const LOW_TIME_LABEL: Record<LowTimeWarning, string> = {
+  '10min': '10 minutes left',
+  '5min': '5 minutes left',
+  '1min': '1 minute left',
+};
 const TEXT_SCALES = [0.9, 1, 1.12, 1.25, 1.4];
 const TEXT_SCALE_KEY = 'praxis.exam.textScale';
 // Stored per-paper `duration` values are placeholders, so the timed attempt is
@@ -98,6 +108,7 @@ function CompactTimer({
   expired,
   hidden = false,
   onToggleHidden,
+  alerting = false,
 }: {
   durationMinutes: number;
   remainingSeconds: number | null;
@@ -109,6 +120,8 @@ function CompactTimer({
   /** The taker chose to hide the countdown; it comes back on its own in the last 5 minutes. */
   hidden?: boolean;
   onToggleHidden?: () => void;
+  /** A low-time alert just fired: flash the clock once. */
+  alerting?: boolean;
 }) {
   // Amber under the last 5 minutes, red (and a stronger pulse) under the last
   // minute — both flush the clock and pulse.
@@ -116,10 +129,14 @@ function CompactTimer({
   const urgent = !expired && running && remainingSeconds !== null && remainingSeconds <= 60 && remainingSeconds > 0;
   const lastFive = remainingSeconds !== null && remainingSeconds <= 300;
   const concealed = hidden && !lastFive && !expired;
+  const totalSeconds = Math.max(durationMinutes * 60, 1);
+  const remainingFraction =
+    remainingSeconds === null ? 1 : Math.min(1, Math.max(0, remainingSeconds / totalSeconds));
   return (
     <div
       data-urgent={urgent || expired}
       data-warn={warn}
+      data-alert={alerting}
       title={
         expired
           ? 'Time is up — answers were submitted automatically.'
@@ -128,48 +145,69 @@ function CompactTimer({
           : 'Start to simulate the real exam clock.'
       }
       className={cn(
-        'exam-clock exam-panel flex shrink-0 items-center gap-2 rounded-lg px-2.5 py-1.5 backdrop-blur-sm',
-        expired ? 'border-destructive/40 bg-destructive/10' : 'bg-[#121a30]/75',
+        'exam-clock flex shrink-0 items-center gap-1.5 rounded-xl border py-1 pl-3 pr-1.5 shadow-[0_6px_24px_-12px_rgb(0_0_0/0.6)] backdrop-blur-sm sm:gap-2',
+        expired
+          ? 'border-destructive/40 bg-destructive/10'
+          : urgent
+          ? 'border-red-500/40 bg-red-500/10'
+          : warn
+          ? 'border-amber-500/40 bg-amber-500/10'
+          : 'border-[rgb(var(--ex-accent)/0.3)] bg-[#121a30]/85',
       )}
     >
       <Timer
-        className={cn('h-4 w-4', expired || urgent ? 'text-red-400' : warn ? 'text-amber-400' : '')}
-        style={expired || urgent || warn ? undefined : { color: 'var(--lvl, var(--primary))' }}
+        className={cn('h-4 w-4 shrink-0', expired || urgent ? 'text-red-400' : warn ? 'text-amber-400' : 'text-[rgb(var(--ex-accent))]')}
         aria-hidden="true"
       />
-      {concealed ? (
-        <span className="text-sm text-muted-foreground">Timer hidden</span>
-      ) : (
-        <>
+      {/* The clock is the one thing to read at a glance mid-sitting: large
+          tabular digits, with a bar underneath that drains as time runs out. */}
+      <div className="flex min-w-[5.5rem] flex-col gap-1 sm:min-w-[7rem]">
+        {concealed ? (
+          <span className="text-sm leading-7 text-muted-foreground">Timer hidden</span>
+        ) : (
+          <span className="flex items-baseline gap-1.5 leading-none">
+            <span
+              role="timer"
+              aria-label={`${formatRemainingTime(remainingSeconds)} remaining`}
+              className={cn(
+                'text-[1.375rem] font-semibold tabular-nums tracking-tight sm:text-2xl',
+                (expired || urgent) && 'text-red-300',
+                warn && 'text-amber-300',
+              )}
+            >
+              {formatRemainingTime(remainingSeconds)}
+            </span>
+            <span className="hidden text-xs text-muted-foreground sm:inline">of {durationMinutes}m</span>
+          </span>
+        )}
+        <span className="h-[3px] overflow-hidden rounded-full bg-white/10" aria-hidden="true">
           <span
             className={cn(
-              'text-base font-semibold tabular-nums',
-              (expired || urgent) && 'text-red-400',
-              warn && 'text-amber-400',
+              'block h-full rounded-full transition-[width] duration-1000 ease-linear',
+              expired || urgent ? 'bg-red-400' : warn ? 'bg-amber-400' : 'bg-[rgb(var(--ex-accent))]',
             )}
-          >
-            {formatRemainingTime(remainingSeconds)}
-          </span>
-          <span className="hidden text-xs text-muted-foreground sm:inline">/ {durationMinutes}m</span>
-        </>
-      )}
+            style={{ width: `${remainingFraction * 100}%` }}
+          />
+        </span>
+      </div>
+      <span className="mx-0.5 h-6 w-px bg-white/10" aria-hidden="true" />
       {onToggleHidden && !lastFive && !expired && (
         <button
           type="button"
           onClick={onToggleHidden}
           aria-label={hidden ? 'Show timer' : 'Hide timer'}
           title={hidden ? 'Show timer' : 'Hide timer (it reappears at 5 minutes)'}
-          className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground"
         >
           {hidden ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
         </button>
       )}
-      <span className="mx-0.5 h-4 w-px bg-border" aria-hidden="true" />
       <button
         type="button"
         onClick={running ? onPause : onStart}
         aria-label={running ? 'Pause timer' : expired ? 'Restart timer' : 'Start timer'}
-        className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        title={running ? 'Pause' : 'Start'}
+        className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground"
       >
         {running ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
       </button>
@@ -177,7 +215,8 @@ function CompactTimer({
         type="button"
         onClick={onReset}
         aria-label="Reset timer"
-        className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        title="Reset"
+        className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground"
       >
         <RotateCcw className="h-4 w-4" />
       </button>
@@ -303,34 +342,6 @@ export function ResultsSummary({
         </div>
       )}
     </div>
-  );
-}
-
-const QUESTION_TYPE_META: Record<string, { label: string; accent: string }> = {
-  MSQ: { label: 'MSQ', accent: '#a78bfa' },
-  COMPREHENSION: { label: 'Passage', accent: '#62aef0' },
-  SA: { label: 'Short Answer', accent: '#f0b462' },
-  ESSAY: { label: 'Essay', accent: '#e8919b' },
-  OPPE: { label: 'OPPE', accent: '#2dd4bf' },
-  MCQ: { label: 'MCQ', accent: 'rgb(var(--ex-accent))' },
-};
-
-/** A single, theme-aligned chip: a quiet gold-tinted pill that carries the
- *  question type's semantic colour as a soft accent (no loud default pills). */
-function QuestionTypeBadge({ question }: { question: QuizQuestion }) {
-  const type = isEssayQuestion(question) ? 'ESSAY' : question.questionType;
-  const meta = QUESTION_TYPE_META[type] ?? { label: 'MCQ', accent: 'rgb(var(--ex-accent))' };
-  return (
-    <span
-      className="inline-flex items-center rounded px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
-      style={{
-        color: `color-mix(in srgb, ${meta.accent} 90%, white)`,
-        backgroundColor: `color-mix(in srgb, ${meta.accent} 12%, transparent)`,
-        border: `1px solid color-mix(in srgb, ${meta.accent} 36%, transparent)`,
-      }}
-    >
-      {meta.label}
-    </span>
   );
 }
 
@@ -604,6 +615,55 @@ function FlowImage({ src, alt, inOption = false }: { src: string; alt: string; i
   );
 }
 
+/** Source papers often restate an earlier fragment at the start of a later one
+ *  ("Consider Table 1…" then "Consider Table 1… Based on the above…"). Show
+ *  each sentence once: drop a fragment that repeats an earlier one, or strip
+ *  the repeated lead-in. */
+function dedupeLeadingRepeat(text: string, earlier: string[]): string {
+  const squash = (value: string) => value.replace(/\s+/g, ' ').trim();
+  let current = squash(text);
+  for (const prior of earlier) {
+    const lead = squash(prior);
+    if (lead.length < 20) continue;
+    if (current === lead) return '';
+    if (current.startsWith(lead)) current = current.slice(lead.length).trim();
+  }
+  return current === squash(text) ? text : current;
+}
+
+/** Whether a short answer gets the numeric field and keypad. Alphanumeric keys
+ *  ("thick", "A,B,E") need letters; everything else is numeric. */
+function takesNumericInput(question: QuizQuestion): boolean {
+  const responseType = question.responseType?.toLowerCase() ?? '';
+  const answerType = question.answerType?.toLowerCase() ?? '';
+  const numericHint =
+    responseType.includes('number') ||
+    responseType.includes('numeric') ||
+    answerType.includes('number') ||
+    answerType.includes('numeric') ||
+    question.valueStart !== undefined ||
+    question.valueEnd !== undefined;
+  return responseType !== 'alphanumeric' && (question.questionType === 'SA' || numericHint);
+}
+
+/** Plain-language answer format for the sheet head: what to do, not a code. */
+function answerFormatLabel(question: QuizQuestion, numeric: boolean): string {
+  if (isEssayQuestion(question)) return 'Written answer';
+  switch (question.questionType) {
+    case 'MSQ':
+      // The options carry "Select all that apply" themselves.
+      return 'Multiple answers';
+    case 'SA':
+      return numeric ? 'Numeric answer' : 'Short answer';
+    case 'OPPE':
+      return 'Programming answer';
+    case 'COMPREHENSION':
+      return 'Passage';
+    default:
+      return 'Single answer';
+  }
+}
+
 /**
  * Interleaves question/option text fragments with their images in field order
  * (text_1, image_1, text_2, image_2, …) so inline math lands where it belongs.
@@ -620,9 +680,13 @@ function QuestionMedia({
 }) {
   const max = Math.max(texts.length, images.length);
   const parts: React.ReactNode[] = [];
+  const seen: string[] = [];
   for (let i = 0; i < max; i++) {
-    const text = texts[i]?.trim();
-    if (text) parts.push(<StemText key={`t-${i}`} text={text} />);
+    const text = dedupeLeadingRepeat(texts[i]?.trim() ?? '', seen);
+    if (text) {
+      seen.push(text);
+      parts.push(<StemText key={`t-${i}`} text={text} />);
+    }
     const image = images[i];
     if (image) parts.push(<FlowImage key={`i-${i}`} src={image} alt={`${altPrefix} ${i + 1}`} />);
   }
@@ -687,6 +751,7 @@ export function OptionButton({
   const button = (
     <button
       type="button"
+      data-exam-option
       onClick={onClick}
       disabled={showResults}
       aria-pressed={!showResults ? isSelected : undefined}
@@ -728,7 +793,7 @@ export function OptionButton({
   return (
     <div className="group/opt relative">
       {button}
-      {optionIndex < 9 && !eliminated && (
+      {optionIndex < 6 && !eliminated && (
         <kbd
           aria-hidden="true"
           className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 rounded border border-white/10 px-1.5 py-px font-sans text-[10px] tabular-nums text-muted-foreground/60 transition-opacity group-focus-within/opt:opacity-0 group-hover/opt:opacity-0 [@media(hover:none)]:hidden"
@@ -749,7 +814,16 @@ export function OptionButton({
             : 'border-transparent text-muted-foreground opacity-0 hover:border-white/10 hover:bg-white/5 hover:text-foreground group-hover/opt:opacity-100 [@media(hover:none)]:opacity-60',
         )}
       >
-        {eliminated ? <Undo2 className="h-3.5 w-3.5" aria-hidden="true" /> : <span className="line-through">{label}</span>}
+        {/* A plain line-through on one small letter reads as another glyph
+            (C looks like "e"), so cross it with a diagonal slash instead. */}
+        {eliminated ? (
+          <Undo2 className="h-3.5 w-3.5" aria-hidden="true" />
+        ) : (
+          <span aria-hidden="true" className="relative inline-flex h-5 w-5 items-center justify-center text-[13px]">
+            {label}
+            <span className="absolute left-0 top-1/2 h-[1.5px] w-full -translate-y-1/2 -rotate-45 rounded-full bg-current" />
+          </span>
+        )}
       </button>
     </div>
   );
@@ -831,6 +905,7 @@ function ShortAnswerField({
   numeric,
   disabled,
   showResults,
+  checkOnDemand = false,
   onChange,
 }: {
   question: QuizQuestion;
@@ -838,6 +913,7 @@ function ShortAnswerField({
   numeric: boolean;
   disabled: boolean;
   showResults: boolean;
+  checkOnDemand?: boolean;
   onChange: (next: string) => void;
 }) {
   const key = describeShortAnswerKey(question);
@@ -854,11 +930,11 @@ function ShortAnswerField({
   );
 
   // Review of a skipped question: no empty input reading "No answer given"
-  // (it looked like the key was missing) — say it was skipped, lead with the key.
+  // (it looked like the key was missing) — lead with the key. The verdict
+  // banner / review bar above already says it was skipped.
   if (showResults && !answered) {
     return (
       <div className="space-y-2 px-1">
-        <p className="text-sm text-muted-foreground">You skipped this question.</p>
         {key !== null ? (
           <p className="text-base">
             <span className="text-muted-foreground">Correct answer: </span>
@@ -904,16 +980,11 @@ function ShortAnswerField({
       {numeric && !essay && !disabled && <NumericKeypad value={value} onChange={onChange} />}
       {showResults ? (
         key !== null ? (
-          <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-            {answered && (
-              <span className={cn('inline-flex items-center gap-1 font-medium', correct ? 'text-emerald-400' : 'text-red-400')}>
-                {correct ? <CheckCircle2 className="h-4 w-4" aria-hidden="true" /> : <XCircle className="h-4 w-4" aria-hidden="true" />}
-                {correct ? 'Correct' : 'Incorrect'}
-              </span>
-            )}
-            <span className="text-muted-foreground">
-              Accepted answer: <span className="font-medium tabular-nums text-foreground">{key}</span>
-            </span>
+          // Right/wrong is the verdict's job (and the input's colour); this
+          // line only gives the key to compare against.
+          <p className="text-sm text-muted-foreground">
+            Accepted answer:{' '}
+            <span className={cn('font-medium tabular-nums', correct ? 'text-emerald-300' : 'text-foreground')}>{key}</span>
           </p>
         ) : (
           <p className="text-xs italic text-muted-foreground">
@@ -925,7 +996,9 @@ function ShortAnswerField({
       ) : (
         <p className="text-xs text-muted-foreground">
           {key !== null
-            ? 'Checked against the answer key when you hand in.'
+            ? checkOnDemand
+              ? 'Type an answer and press Check, or Show answer to skip it.'
+              : 'Checked against the answer key when you hand in.'
             : essay
               ? 'Essay question: written answer, not auto-graded.'
               : 'Not auto-graded.'}
@@ -952,6 +1025,8 @@ interface QuestionTools {
   eliminated: Record<string, string[]>;
   onToggleEliminate: (questionId: string, optionId: string) => void;
   onClear: (questionId: string) => void;
+  /** Practice runs check each answer on demand instead of at hand-in. */
+  checkOnDemand?: boolean;
 }
 
 interface ExamPage {
@@ -961,6 +1036,121 @@ interface ExamPage {
   passage?: PassagePart;
 }
 
+// Question | answer split on wide screens: the question column's share of the
+// sheet, draggable and remembered per device like the reading size.
+const SPLIT_KEY = 'praxis.exam.split';
+const SPLIT_DEFAULT = 1.2 / 2.2;
+const SPLIT_MIN = 0.3;
+const SPLIT_MAX = 0.72;
+const SPLIT_STEP = 0.02;
+const clampSplit = (value: number) => Math.min(SPLIT_MAX, Math.max(SPLIT_MIN, value));
+
+function readSplit(): number {
+  try {
+    const saved = Number(window.localStorage.getItem(SPLIT_KEY));
+    return saved >= SPLIT_MIN && saved <= SPLIT_MAX ? saved : SPLIT_DEFAULT;
+  } catch {
+    return SPLIT_DEFAULT;
+  }
+}
+
+function saveSplit(value: number) {
+  try {
+    window.localStorage.setItem(SPLIT_KEY, String(value));
+  } catch {
+    // Storage blocked: the split still works for this page view.
+  }
+}
+
+/**
+ * The draggable seam between the question and answer columns. Drag it, use
+ * ← → / Home / End while it has focus, or double-click to reset.
+ */
+function SplitHandle({
+  split,
+  onChange,
+  containerRef,
+}: {
+  split: number;
+  onChange: (value: number) => void;
+  containerRef: React.RefObject<HTMLDivElement | null>;
+}) {
+  const [dragging, setDragging] = useState(false);
+  const ratioAt = (clientX: number) => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    return rect && rect.width > 0 ? clampSplit((clientX - rect.left) / rect.width) : split;
+  };
+  const set = (value: number) => {
+    const next = clampSplit(value);
+    onChange(next);
+    saveSplit(next);
+  };
+  const endDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragging) return;
+    setDragging(false);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    set(ratioAt(event.clientX));
+  };
+  const percent = Math.round(split * 100);
+
+  return (
+    <div
+      role="separator"
+      tabIndex={0}
+      aria-orientation="vertical"
+      aria-label="Resize the question and answer columns"
+      aria-valuemin={Math.round(SPLIT_MIN * 100)}
+      aria-valuemax={Math.round(SPLIT_MAX * 100)}
+      aria-valuenow={percent}
+      aria-valuetext={`Question column ${percent}% wide`}
+      title="Drag to resize · double-click to reset"
+      data-dragging={dragging || undefined}
+      style={{ left: `${split * 100}%` }}
+      onPointerDown={(event) => {
+        if (event.button !== 0) return;
+        event.preventDefault();
+        event.currentTarget.setPointerCapture(event.pointerId);
+        setDragging(true);
+      }}
+      onPointerMove={(event) => {
+        if (dragging) onChange(ratioAt(event.clientX));
+      }}
+      onPointerUp={endDrag}
+      onPointerCancel={endDrag}
+      onDoubleClick={() => set(SPLIT_DEFAULT)}
+      onKeyDown={(event) => {
+        const next =
+          event.key === 'ArrowLeft'
+            ? split - SPLIT_STEP
+            : event.key === 'ArrowRight'
+            ? split + SPLIT_STEP
+            : event.key === 'Home'
+            ? SPLIT_MIN
+            : event.key === 'End'
+            ? SPLIT_MAX
+            : null;
+        if (next === null) return;
+        // Keep ← → from also turning the page.
+        event.preventDefault();
+        event.stopPropagation();
+        set(next);
+      }}
+      className="group absolute inset-y-0 z-20 hidden w-4 -translate-x-1/2 cursor-col-resize touch-none select-none outline-none lg:block"
+    >
+      <span
+        aria-hidden="true"
+        className="absolute inset-y-0 left-1/2 w-0.5 -translate-x-1/2 bg-transparent transition-colors group-hover:bg-[rgb(var(--ex-accent)/0.55)] group-focus-visible:bg-[rgb(var(--ex-accent))] group-data-[dragging]:bg-[rgb(var(--ex-accent))]"
+      />
+      <span
+        aria-hidden="true"
+        className="absolute left-1/2 top-1/2 h-10 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[rgb(var(--ex-line)/0.4)] transition-colors group-hover:bg-[rgb(var(--ex-accent))] group-focus-visible:bg-[rgb(var(--ex-accent))] group-data-[dragging]:bg-[rgb(var(--ex-accent))]"
+      />
+    </div>
+  );
+}
+
 function QuestionCard({
   question,
   index,
@@ -968,22 +1158,24 @@ function QuestionCard({
   showResults,
   onSelectAnswer,
   onShortAnswerChange,
-  isSubQuestion = false,
-  isFlagged = false,
   part,
   passage,
   tools,
+  verdict,
+  headAction,
 }: {
   question: QuestionWithChildren;
   index: number;
   passage?: PassagePart;
   tools?: QuestionTools;
+  /** Practice Run result for this page, shown at the top of the answer column. */
+  verdict?: React.ReactNode;
+  /** Page-level control at the end of the sheet head (the flag). */
+  headAction?: React.ReactNode;
   selectedAnswers: SelectedAnswers;
   showResults: boolean;
   onSelectAnswer: (questionId: string, optionIndex: string, questionType: QuestionType) => void;
   onShortAnswerChange: (questionId: string, answer: string) => void;
-  isSubQuestion?: boolean;
-  isFlagged?: boolean;
   /** A passage page's sub-question rendered as the answer column: its stem
    *  above its options, beside the passage. */
   part?: 'answer';
@@ -991,6 +1183,8 @@ function QuestionCard({
   const selectedAnswer = selectedAnswers[question.uuid];
   // Comprehension passages can be collapsed to reclaim room for the sub-questions.
   const [passageOpen, setPassageOpen] = useState(true);
+  const [split, setSplit] = useState(readSplit);
+  const splitRef = useRef<HTMLDivElement>(null);
   // Kept index-aligned (no filter): text_i and image_i interleave so inline
   // math images land between the right text fragments.
   const questionTexts = [
@@ -1014,26 +1208,15 @@ function QuestionCard({
     getQuestionImageUrl(question.questionImage10),
   ];
 
-  const marks = parseFloat(question.totalMark) || 0;
   const isMultiSelect = question.questionType === 'MSQ';
   const isComprehension = question.questionType === 'COMPREHENSION';
   const isShortAnswer = question.questionType === 'SA' || question.questionType === 'OPPE';
-  const responseType = question.responseType?.toLowerCase() ?? '';
-  const answerType = question.answerType?.toLowerCase() ?? '';
-  const isNumericShortAnswer =
-    responseType.includes('number') ||
-    responseType.includes('numeric') ||
-    answerType.includes('number') ||
-    answerType.includes('numeric') ||
-    question.valueStart !== undefined ||
-    question.valueEnd !== undefined;
-  // Alphanumeric keys ("thick", "A,B,E") need letters; everything else gets
-  // the numeric field and keypad.
-  const isNumericInput = responseType !== 'alphanumeric' && (question.questionType === 'SA' || isNumericShortAnswer);
+  const isNumericInput = takesNumericInput(question);
   const hasOptions = question.options.length > 0;
   const hasAnswer = Array.isArray(selectedAnswer)
     ? selectedAnswer.length > 0
     : typeof selectedAnswer === 'string' && selectedAnswer !== '';
+  const selectedCount = Array.isArray(selectedAnswer) ? selectedAnswer.length : 0;
   const struck = tools?.eliminated[question.uuid] ?? [];
   const scaleStyle = tools && tools.textScale !== 1 ? { zoom: tools.textScale } : undefined;
 
@@ -1056,12 +1239,20 @@ function QuestionCard({
       numeric={isNumericInput}
       disabled={showResults}
       showResults={showResults}
+      checkOnDemand={tools?.checkOnDemand}
       onChange={(next) => onShortAnswerChange(question.uuid, next)}
     />
   ) : (
-    <div className="space-y-2">
-      {isMultiSelect && (
-        <p className="text-xs text-muted-foreground">Select all that apply</p>
+    <div className="space-y-2.5">
+      {/* The head names the format too, but this is where the choice is made. */}
+      {isMultiSelect && hasOptions && !showResults && (
+        <p className="flex items-center gap-2 px-1 pb-0.5 text-sm text-[rgb(var(--ex-accent-soft))]">
+          <ListChecks className="h-4 w-4 shrink-0 text-[rgb(var(--ex-accent))]" aria-hidden="true" />
+          <span className="font-medium">Select all that apply</span>
+          <span className="tabular-nums text-white/55" aria-live="polite">
+            · {selectedCount} selected
+          </span>
+        </p>
       )}
       {hasOptions && question.options.map((option, optionIndex) => {
         const optionId = String(optionIndex);
@@ -1092,63 +1283,26 @@ function QuestionCard({
     </div>
   );
 
-  // Answer column: what kind of question, its weight, then the response.
+  const formatLabel = answerFormatLabel(question, isNumericInput);
+
+  // Answer column body: a passage part's own stem, then the response.
   const answerColumn = (
-    <div className="flex min-h-0 flex-1 flex-col gap-4">
-      <div className="flex min-h-7 flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-[rgb(var(--ex-line)/0.14)] pb-3">
-        <QuestionTypeBadge question={question} />
-        {marks > 0 && (
-          <span className="text-xs font-medium tabular-nums text-muted-foreground">
-            {marks} {marks === 1 ? 'mark' : 'marks'}
-          </span>
-        )}
-        {clearButton && <span className="ml-auto">{clearButton}</span>}
-      </div>
-      <div className="exam-scroll space-y-5 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pr-1" style={scaleStyle}>
+    <div className="space-y-5">
+      <div className="space-y-5" style={scaleStyle}>
         {part === 'answer' && (
           // A passage's question reads right above its options; the passage
           // stays on the left as reference.
-          <div className="text-[15.5px] leading-[1.72] sm:text-[16px]">
+          <div className="text-[16px] leading-[1.72] sm:text-[17px]">
             <QuestionMedia texts={questionTexts} images={questionImages} altPrefix="Question image" />
           </div>
         )}
         {answerArea}
       </div>
+      {clearButton && <div className="flex justify-end">{clearButton}</div>}
     </div>
   );
 
-  if (isSubQuestion && part === 'answer') return answerColumn;
-
-  if (isSubQuestion) {
-    return (
-      <div className="exam-q-enter rounded-lg border border-[rgb(var(--ex-line)/0.16)] bg-black/20 p-4" style={scaleStyle}>
-        <div className="flex gap-3">
-          {index >= 0 && (
-            <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md border border-[color-mix(in_srgb,var(--lvl,#62aef0)_40%,transparent)] bg-[color-mix(in_srgb,var(--lvl,#62aef0)_14%,transparent)] text-xs font-bold text-[color-mix(in_srgb,var(--lvl,#62aef0)_92%,white)]">
-              {index + 1}
-            </div>
-          )}
-          <div className="flex-1 min-w-0 space-y-3">
-            <div className="flex items-center gap-2 flex-wrap">
-              <QuestionTypeBadge question={question} />
-              {marks > 0 && (
-                <span className="text-xs text-muted-foreground">
-                  {marks} {marks === 1 ? 'mark' : 'marks'}
-                </span>
-              )}
-              {clearButton && <span className="ml-auto">{clearButton}</span>}
-            </div>
-            <QuestionMedia
-              texts={questionTexts}
-              images={questionImages}
-              altPrefix={`Question ${index + 1} image`}
-            />
-            {!isComprehension && answerArea}
-          </div>
-        </div>
-      </div>
-    );
-  }
+  if (part === 'answer') return answerColumn;
 
   const passageBody = (
     <QuestionMedia
@@ -1159,8 +1313,8 @@ function QuestionCard({
   );
 
   const subQuestions = question.subQuestions ?? [];
-  // A passage page carries exactly one sub-question: its stem joins the
-  // passage on the left and its response gets the answer column.
+  // A passage page carries exactly one sub-question: the passage stays on the
+  // left and the sub-question (stem and response) takes the answer column.
   const splitSub = passage && subQuestions.length === 1 ? subQuestions[0] : null;
   const subProps = {
     tools,
@@ -1168,134 +1322,179 @@ function QuestionCard({
     showResults,
     onSelectAnswer,
     onShortAnswerChange,
-    isSubQuestion: true,
   };
 
-  const panelClass =
-    'exam-tome relative isolate flex flex-col overflow-clip rounded-2xl border border-[rgb(var(--ex-line)/0.24)] px-4 pb-5 pt-4 backdrop-blur-sm sm:px-6 sm:pb-6 sm:pt-5 lg:h-[calc(100dvh-var(--exam-chrome))]';
-  const frame = (
-    <>
-      {/* Ornate frame + corner brackets — the deck language, kept calm (no foil). */}
-      <div className="tcard-frame" aria-hidden="true" />
-      <span className="tcard-corner tcard-corner-tl" aria-hidden="true" />
-      <span className="tcard-corner tcard-corner-tr" aria-hidden="true" />
-      <span className="tcard-corner tcard-corner-bl" aria-hidden="true" />
-      <span className="tcard-corner tcard-corner-br" aria-hidden="true" />
-    </>
-  );
+  // What the sheet head announces: the answerable question's format and weight.
+  // (A passage with no question of its own has nothing to announce.)
+  const headQuestion = splitSub ?? (isComprehension ? null : question);
+  const headMarks = headQuestion ? parseFloat(headQuestion.totalMark) || 0 : 0;
+  const headLabel = splitSub
+    ? answerFormatLabel(splitSub, takesNumericInput(splitSub))
+    : headQuestion
+    ? formatLabel
+    : null;
+  const columnClass = 'exam-scroll px-5 py-5 sm:px-8 sm:py-7 lg:min-h-0 lg:overflow-y-auto lg:px-6 xl:px-8';
 
   return (
-    // Two panels, each filling the height between the exam bar and the page
-    // foot and scrolling on its own: the question (and any passage) on the
-    // left, the response always in view beside it.
-    <div className="grid gap-5 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
-      <section aria-label="Question" className={panelClass}>
-        <div className="relative z-10 flex min-h-0 flex-1 flex-col gap-4">
-          <div className="flex min-h-7 flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-[rgb(var(--ex-line)/0.14)] pb-3">
-            <h2 className="font-display text-xl font-normal tracking-tight">
-              {isComprehension && !passage ? 'Passage' : 'Question'}{' '}
-              <span className="tabular-nums text-[rgb(var(--ex-accent))]">{index + 1}</span>
-            </h2>
-            {passage ? (
-              <span className="inline-flex items-center gap-2 text-xs text-muted-foreground">
-                Passage {passage.number}
-                {passage.parts > 1 && (
-                  <span
-                    className="inline-flex items-center gap-1"
-                    role="img"
-                    aria-label={`Part ${passage.part + 1} of ${passage.parts}`}
-                    title={`Part ${passage.part + 1} of ${passage.parts}`}
-                  >
-                    {Array.from({ length: passage.parts }, (_, i) => (
-                      <span
-                        key={i}
-                        className={cn(
-                          'h-1.5 rounded-full transition-all',
-                          i === passage.part ? 'w-4 bg-[rgb(var(--ex-accent))]' : 'w-1.5 bg-white/20',
-                        )}
-                      />
-                    ))}
-                  </span>
-                )}
-              </span>
-            ) : (
-              isComprehension && subQuestions.length > 0 && (
-                <span className="text-xs text-muted-foreground">
-                  {subQuestions.length} {subQuestions.length === 1 ? 'question' : 'questions'}
-                </span>
-              )
-            )}
-            {isFlagged && !showResults && (
-              <span className="ml-auto inline-flex items-center gap-1 text-xs font-medium text-amber-300">
-                <Flag className="h-3.5 w-3.5 fill-amber-400/80" aria-hidden="true" />
-                Flagged
+    // One sheet body: a head naming the question, then question | answer,
+    // each column scrolling on its own so the response stays in view.
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-[rgb(var(--ex-line)/0.14)] px-5 py-3.5 sm:px-8">
+        <h2 className="flex items-baseline gap-2 font-display text-[1.65rem] font-normal leading-none tracking-tight">
+          {isComprehension && !passage ? 'Passage' : 'Question'}
+          <span className="tabular-nums text-[rgb(var(--ex-accent))]">{index + 1}</span>
+        </h2>
+        {passage && (
+          // Which passage this question belongs to, and where in it: one quiet line.
+          <span className="flex items-center gap-2 border-l border-[rgb(var(--ex-line)/0.22)] pl-4 text-sm text-white/60">
+            <BookOpen className="h-4 w-4 text-[rgb(var(--ex-accent-soft))]" aria-hidden="true" />
+            <span className="text-[rgb(var(--ex-accent-soft))]">Passage {passage.number}</span>
+            {passage.parts > 1 && (
+              <span className="tabular-nums">
+                · Part {passage.part + 1} of {passage.parts}
               </span>
             )}
-          </div>
+          </span>
+        )}
+        <div className="ml-auto flex items-center gap-3">
+          {headLabel && <span className="text-sm text-white/75">{headLabel}</span>}
+          {headMarks > 0 && (
+            <span className="rounded-md border border-[rgb(var(--ex-accent)/0.35)] bg-[rgb(var(--ex-accent)/0.1)] px-2.5 py-1 text-sm font-semibold tabular-nums text-[rgb(var(--ex-accent-soft))]">
+              {formatScore(headMarks)} {headMarks === 1 ? 'mark' : 'marks'}
+            </span>
+          )}
+          {headAction}
+        </div>
+      </div>
 
+      <div
+        ref={splitRef}
+        className="relative grid min-h-0 flex-1 lg:grid-cols-[minmax(0,var(--ex-split))_minmax(0,var(--ex-rest))]"
+        style={{ '--ex-split': `${split}fr`, '--ex-rest': `${1 - split}fr` } as React.CSSProperties}
+      >
+        <SplitHandle split={split} onChange={setSplit} containerRef={splitRef} />
+        <section aria-label={isComprehension ? 'Passage' : 'Question'} className={columnClass}>
           {isComprehension ? (
-            <div className="exam-scroll lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pr-2">
-              <div className="exam-passage rounded-xl p-4">
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                    Read the passage
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => setPassageOpen((open) => !open)}
-                    aria-expanded={passageOpen}
-                    className="rounded px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground lg:hidden"
-                  >
-                    {passageOpen ? 'Hide' : 'Show'}
-                  </button>
-                </div>
-                <div
-                  className={cn(
-                    'exam-scroll space-y-3 text-[15.5px] leading-[1.72] sm:text-[16px] lg:block',
-                    passageOpen ? 'max-h-[45vh] overflow-y-auto pr-1 lg:max-h-none lg:overflow-visible lg:pr-0' : 'hidden',
-                  )}
-                  style={scaleStyle}
+            <div>
+              <div className="mb-2 flex items-center justify-between gap-2 lg:hidden">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Passage</p>
+                <button
+                  type="button"
+                  onClick={() => setPassageOpen((open) => !open)}
+                  aria-expanded={passageOpen}
+                  className="rounded px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
                 >
-                  {passageBody}
-                </div>
+                  {passageOpen ? 'Hide' : 'Show'}
+                </button>
               </div>
-            </div>
-          ) : (
-            <div className="exam-scroll lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pr-2">
-              <div className="exam-measure space-y-3 text-[15.5px] leading-[1.72] sm:text-[16.5px]" style={scaleStyle}>
+              <div
+                className={cn(
+                  'exam-measure space-y-3 text-[16px] leading-[1.72] sm:text-[17px] lg:block',
+                  passageOpen ? 'max-h-[45vh] overflow-y-auto pr-1 lg:max-h-none lg:overflow-visible lg:pr-0' : 'hidden',
+                )}
+                style={scaleStyle}
+              >
                 {passageBody}
               </div>
             </div>
+          ) : (
+            <div className="exam-measure space-y-3 text-[17px] leading-[1.72] sm:text-[18px]" style={scaleStyle}>
+              {passageBody}
+            </div>
           )}
-        </div>
-        {frame}
-      </section>
+        </section>
 
-      <section aria-label="Your answer" className={panelClass}>
-        <div className="relative z-10 flex min-h-0 flex-1 flex-col">
+        <section
+          key={splitSub?.uuid ?? question.uuid}
+          aria-label="Your answer"
+          className={cn(
+            columnClass,
+            'border-t border-[rgb(var(--ex-line)/0.14)] bg-black/[0.12] lg:border-l lg:border-t-0',
+          )}
+        >
+          {/* Mounted with the page and filled on Check, so screen readers announce it. */}
+          <div aria-live="polite">{verdict && <VerdictSlot>{verdict}</VerdictSlot>}</div>
+          {/* Pages split every passage to one question each, so a passage
+              page always has its question here. */}
           {!isComprehension ? (
             answerColumn
           ) : splitSub ? (
             <QuestionCard key={splitSub.uuid} question={splitSub} index={-1} part="answer" {...subProps} />
-          ) : (
-            <div className="exam-scroll space-y-3 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pr-1">
-              {subQuestions.map((subQuestion, subIndex) => (
-                <QuestionCard key={subQuestion.uuid} question={subQuestion} index={subIndex} {...subProps} />
-              ))}
-            </div>
-          )}
-        </div>
-        {frame}
-      </section>
+          ) : null}
+        </section>
+      </div>
+    </div>
+  );
+}
+
+/** One figure in the hand-in summary: a big number over a small key. */
+function HandInStat({
+  label,
+  value,
+  swatch,
+  icon,
+}: {
+  label: string;
+  value: number;
+  swatch?: string;
+  icon?: React.ReactNode;
+}) {
+  return (
+    <div className="flex min-w-0 flex-1 flex-col-reverse gap-1.5 px-4 py-3">
+      <dt className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
+        {swatch && <span aria-hidden="true" className={cn('h-3 w-3 shrink-0 rounded-[3px] border', swatch)} />}
+        {icon}
+        {label}
+      </dt>
+      <dd className="font-display text-[1.75rem] leading-none tabular-nums">{value}</dd>
     </div>
   );
 }
 
 /**
- * Right-rail navigator: a grid of question numbers that reflects answered /
- * partially-answered / untouched state and lets the user jump to any question.
- * Uses the horizontal space the single-question layout frees up.
+ * Right-rail navigator: the run's progress, a grid of question numbers that
+ * reflects answered / partly answered / untouched (or checked, or graded) state,
+ * and a key with live counts. It owns the progress readout, so the exam bar
+ * doesn't repeat it on wide screens.
  */
+type NavCellKind = 'done' | 'partial' | 'none' | PracticeRunReviewState;
+
+// One look per state, shared by the grid cells and the key so they always match.
+const NAV_CELL_CLASS: Record<NavCellKind, string> = {
+  done:
+    'border-transparent bg-[color-mix(in_srgb,var(--lvl,#62aef0)_62%,transparent)] text-white',
+  partial:
+    'border-amber-400/55 bg-[linear-gradient(to_top,rgb(245_158_11/0.38)_50%,transparent_50%)] text-amber-100',
+  none: 'border-[rgb(var(--ex-line)/0.22)] bg-black/25 text-white/60',
+  correct: 'border-transparent bg-emerald-500/55 text-white',
+  incorrect: 'border-transparent bg-red-500/55 text-white',
+  unanswered: 'border-[rgb(var(--ex-line)/0.22)] bg-black/25 text-white/55',
+  manual: 'border-[rgb(var(--ex-line)/0.45)] bg-[rgb(var(--ex-line)/0.16)] text-[rgb(var(--ex-accent))]',
+};
+
+const NAV_CELL_LABEL: Record<NavCellKind, string> = {
+  done: 'Answered',
+  partial: 'Partly answered',
+  none: 'Not answered',
+  correct: 'Correct',
+  incorrect: 'Incorrect',
+  unanswered: 'Skipped',
+  manual: 'Needs manual review',
+};
+
+/** The amber corner fold that marks a flagged question. */
+function FlagFold({ className }: { className?: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={cn(
+        'pointer-events-none absolute right-0 top-0 h-0 w-0 border-l-[11px] border-t-[11px] border-l-transparent border-t-amber-400',
+        className,
+      )}
+    />
+  );
+}
+
 export function QuestionNavigator({
   states,
   reviewStates,
@@ -1306,10 +1505,16 @@ export function QuestionNavigator({
   onJump,
   onJumpNextFlagged,
   onJumpNextIncorrect,
+  onJumpNextUnanswered,
+  unansweredCount = 0,
+  checkedStates = null,
+  bare = false,
 }: {
   states: PracticeRunPageState[];
   /** When set (post-submission), cells colour by correctness instead of progress. */
   reviewStates?: PracticeRunReviewState[] | null;
+  /** Practice Run: outcome for each page already checked, null for the rest. */
+  checkedStates?: Array<PracticeRunReviewState | null> | null;
   flagged: boolean[];
   flaggedCount: number;
   incorrectCount?: number;
@@ -1317,172 +1522,215 @@ export function QuestionNavigator({
   onJump: (index: number) => void;
   onJumpNextFlagged: () => void;
   onJumpNextIncorrect?: () => void;
+  onJumpNextUnanswered?: () => void;
+  unansweredCount?: number;
+  /** Inside the exam sheet: no panel chrome of its own. */
+  bare?: boolean;
 }) {
   const reviewMode = !!reviewStates;
-  const done = states.filter((state) => state === 'done').length;
-  // In review the gradable denominator excludes manual-eval pages — "X / Y correct".
-  const gradablePages = reviewStates
-    ? reviewStates.filter((state) => state !== 'manual').length
-    : 0;
-  const correctPages = reviewStates
-    ? reviewStates.filter((state) => state === 'correct').length
-    : 0;
+  const practiceMode = !reviewMode && !!checkedStates;
+  const total = states.length;
 
-  const reviewLabel: Record<PracticeRunReviewState, string> = {
-    correct: ', correct',
-    incorrect: ', incorrect',
-    unanswered: ', skipped',
-    manual: ', needs manual review',
+  const kinds: NavCellKind[] = states.map(
+    (state, index) => reviewStates?.[index] ?? checkedStates?.[index] ?? state,
+  );
+  const count = (kind: NavCellKind) => kinds.filter((value) => value === kind).length;
+
+  // The headline number and what it counts, per mode.
+  let headline: number;
+  let headlineOf: number;
+  let headlineLabel: string;
+  let aside: string | null = null;
+  if (reviewMode) {
+    headline = count('correct');
+    headlineOf = kinds.filter((kind) => kind !== 'manual').length;
+    headlineLabel = 'correct';
+  } else if (practiceMode) {
+    headline = checkedStates!.filter((state) => state !== null).length;
+    headlineOf = total;
+    headlineLabel = 'checked';
+    aside = headline > 0 ? `${count('correct')} correct` : null;
+  } else {
+    headline = count('done');
+    headlineOf = total;
+    headlineLabel = 'answered';
+  }
+
+  // Progress bar segments, in the same colours as the cells.
+  const segments: Array<{ kind: NavCellKind; value: number }> = reviewMode
+    ? [
+        { kind: 'correct', value: count('correct') },
+        { kind: 'incorrect', value: count('incorrect') },
+      ]
+    : practiceMode
+    ? [
+        { kind: 'correct', value: count('correct') },
+        { kind: 'incorrect', value: count('incorrect') },
+        { kind: 'done', value: count('done') },
+        { kind: 'partial', value: count('partial') },
+      ]
+    : [
+        { kind: 'done', value: count('done') },
+        { kind: 'partial', value: count('partial') },
+      ];
+  const segmentFill: Partial<Record<NavCellKind, string>> = {
+    done: 'bg-[color-mix(in_srgb,var(--lvl,#62aef0)_75%,transparent)]',
+    partial: 'bg-amber-400/70',
+    correct: 'bg-emerald-400/80',
+    incorrect: 'bg-red-400/80',
+  };
+
+  // The key lists only states that can appear in this mode, each with its count.
+  // Partial and manual only show up when some question is in that state.
+  const keyKinds = (
+    reviewMode
+      ? (['correct', 'incorrect', 'unanswered', 'manual'] as NavCellKind[])
+      : practiceMode
+      ? (['correct', 'incorrect', 'done', 'partial', 'none'] as NavCellKind[])
+      : (['done', 'partial', 'none'] as NavCellKind[])
+  ).filter((kind) => (kind === 'partial' || kind === 'manual' ? count(kind) > 0 : true));
+  const keyLabel: Partial<Record<NavCellKind, string>> = {
+    done: practiceMode ? 'To check' : 'Answered',
+    partial: 'Partly',
+    none: 'Not yet',
+    manual: 'Manual',
   };
 
   return (
-    <div className="exam-panel exam-tome relative isolate overflow-hidden rounded-2xl p-4 backdrop-blur-sm">
-      {/* Faint summoning sigil watermark — ties the rail to the deck. */}
-      <div aria-hidden="true" className="pointer-events-none absolute -right-8 -top-8 h-40 w-40 opacity-[0.06]">
-        <ArcaneSigil />
-      </div>
-      <div className="relative z-10 mb-2 flex items-center justify-between">
-        <h2 className="font-display text-base font-normal tracking-tight">
+    <div className={cn('relative', !bare && 'exam-panel exam-tome rounded-2xl p-4 backdrop-blur-sm')}>
+      <div className="mb-4">
+        <h2 className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
           {reviewMode ? 'Review' : 'Questions'}
         </h2>
-        <span className="text-xs tabular-nums text-muted-foreground">
-          {reviewMode ? `${correctPages}/${gradablePages} correct` : `${done}/${states.length} done`}
-        </span>
+        <p className="mt-1 flex items-baseline gap-1.5 tabular-nums">
+          <span className="font-display text-[2rem] leading-none">{headline}</span>
+          <span className="text-sm text-muted-foreground">
+            of {headlineOf} {headlineLabel}
+          </span>
+          {aside && <span className="ml-auto text-[13px] text-emerald-300/90">{aside}</span>}
+        </p>
+        <div
+          className="mt-2.5 flex h-1.5 overflow-hidden rounded-full bg-white/[0.07]"
+          role="progressbar"
+          aria-label={`${headline} of ${headlineOf} ${headlineLabel}`}
+          aria-valuemin={0}
+          aria-valuemax={headlineOf}
+          aria-valuenow={headline}
+        >
+          {segments.map(({ kind, value }) =>
+            value > 0 ? (
+              <span
+                key={kind}
+                className={cn('h-full transition-[width] duration-300', segmentFill[kind])}
+                style={{ width: `${(value / Math.max(total, 1)) * 100}%` }}
+              />
+            ) : null,
+          )}
+        </div>
       </div>
-      <RunicDivider className="relative z-10 mb-3" />
-      <div className="relative z-10 grid grid-cols-5 gap-2">
-        {states.map((state, index) => {
+
+      {/* p-1 keeps the current cell's ring clear of the scroll container's edge. */}
+      <div className="-m-1 grid grid-cols-5 gap-2 p-1">
+        {kinds.map((kind, index) => {
           const isCurrent = index === currentIndex;
-          const review = reviewStates?.[index];
           return (
             <button
               key={index}
               type="button"
               onClick={() => onJump(index)}
               aria-current={isCurrent ? 'true' : undefined}
-              aria-label={`Go to question ${index + 1}${
-                review
-                  ? reviewLabel[review]
-                  : state === 'done'
-                  ? ', answered'
-                  : state === 'partial'
-                  ? ', partly answered'
-                  : ''
-              }${flagged[index] ? ', flagged' : ''}`}
+              aria-label={`Go to question ${index + 1}, ${NAV_CELL_LABEL[kind].toLowerCase()}${flagged[index] ? ', flagged' : ''}`}
               className={cn(
-                'relative flex h-9 w-9 items-center justify-center rounded-md border text-sm font-medium transition-colors',
-                // Review mode: colour by correctness.
-                review === 'correct' && 'border-emerald-500/45 bg-emerald-500/15 text-emerald-300',
-                review === 'incorrect' && 'border-red-500/45 bg-red-500/15 text-red-300',
-                review === 'unanswered' && 'border-border bg-black/20 text-muted-foreground',
-                review === 'manual' &&
-                  'border-[rgb(var(--ex-line)/0.4)] bg-[rgb(var(--ex-line)/0.12)] text-[rgb(var(--ex-accent))]',
-                // Run mode: colour by answer progress.
-                !reviewMode &&
-                  state === 'done' &&
-                  'border-[color-mix(in_srgb,var(--lvl,#62aef0)_50%,transparent)] bg-[color-mix(in_srgb,var(--lvl,#62aef0)_18%,transparent)] text-[color-mix(in_srgb,var(--lvl,#62aef0)_92%,white)]',
-                !reviewMode &&
-                  state === 'partial' &&
-                  'border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400',
-                !reviewMode &&
-                  state === 'none' &&
-                  'border-[rgb(var(--ex-line)/0.16)] bg-black/20 text-muted-foreground hover:border-[color-mix(in_srgb,var(--lvl,#62aef0)_45%,transparent)] hover:text-foreground',
-                isCurrent && 'ring-2 ring-[rgb(var(--ex-accent))] ring-offset-1 ring-offset-background',
+                'relative flex h-10 w-full items-center justify-center overflow-hidden rounded-md border text-sm font-medium tabular-nums transition-[filter,border-color] hover:brightness-125',
+                NAV_CELL_CLASS[kind],
+                isCurrent &&
+                  'ring-2 ring-[rgb(var(--ex-accent-soft))] ring-offset-2 ring-offset-[#0c1222]',
               )}
             >
               {index + 1}
-              {flagged[index] && (
-                <span
-                  aria-hidden="true"
-                  className="absolute -right-1 -top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-amber-500 ring-2 ring-background"
-                >
-                  <Flag className="h-2 w-2 fill-black text-black" />
-                </span>
-              )}
+              {flagged[index] && <FlagFold />}
             </button>
           );
         })}
       </div>
 
-      {reviewMode && incorrectCount > 0 && onJumpNextIncorrect && (
-        <button
-          type="button"
-          onClick={onJumpNextIncorrect}
-          className="relative z-10 mt-3 flex w-full items-center justify-center gap-1.5 rounded-md border border-red-500/40 bg-red-500/10 px-2 py-1.5 text-xs font-medium text-red-300 transition-colors hover:bg-red-500/20"
-        >
-          <XCircle className="h-3 w-3" aria-hidden="true" />
-          Next incorrect ({incorrectCount})
-        </button>
-      )}
-      {flaggedCount > 0 && (
-        <button
-          type="button"
-          onClick={onJumpNextFlagged}
-          className="relative z-10 mt-3 flex w-full items-center justify-center gap-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-xs font-medium text-amber-300 transition-colors hover:bg-amber-500/20"
-        >
-          <Flag className="h-3 w-3 fill-amber-400/80" aria-hidden="true" />
-          Next flagged ({flaggedCount})
-        </button>
-      )}
-      <div className="relative z-10 mt-4 grid grid-cols-2 gap-x-3 gap-y-1.5 text-[11px] text-muted-foreground">
-        {reviewMode ? (
-          <>
-            <span className="flex items-center gap-1">
-              <span className="h-2.5 w-2.5 rounded-sm bg-emerald-500/45" aria-hidden="true" />
-              Correct
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="h-2.5 w-2.5 rounded-sm bg-red-500/45" aria-hidden="true" />
-              Incorrect
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="h-2.5 w-2.5 rounded-sm border border-border" aria-hidden="true" />
-              Skipped
-            </span>
-            {reviewStates?.includes('manual') && (
-              <span className="flex items-center gap-1">
-                <span className="h-2.5 w-2.5 rounded-sm bg-[rgb(var(--ex-line)/0.4)]" aria-hidden="true" />
-                Manual
+      {(reviewMode && incorrectCount > 0 && onJumpNextIncorrect) ||
+      (!reviewMode && unansweredCount > 0 && onJumpNextUnanswered) ||
+      flaggedCount > 0 ? (
+        <div className="mt-4 space-y-2">
+          {reviewMode && incorrectCount > 0 && onJumpNextIncorrect && (
+            <button
+              type="button"
+              onClick={onJumpNextIncorrect}
+              className="flex h-9 w-full items-center justify-between rounded-md border border-red-500/35 bg-red-500/10 px-3 text-[13px] font-medium text-red-200 transition-colors hover:bg-red-500/20"
+            >
+              <span className="inline-flex items-center gap-1.5">
+                <XCircle className="h-3.5 w-3.5" aria-hidden="true" />
+                Next incorrect
               </span>
-            )}
-          </>
-        ) : (
-          <>
-            <span className="flex items-center gap-1">
-              <span className="h-2.5 w-2.5 rounded-sm bg-[color-mix(in_srgb,var(--lvl,#62aef0)_55%,transparent)]" aria-hidden="true" />
-              Answered
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="h-2.5 w-2.5 rounded-sm bg-amber-500/40" aria-hidden="true" />
-              Partial
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="h-2.5 w-2.5 rounded-sm border border-border" aria-hidden="true" />
-              Unanswered
-            </span>
-          </>
-        )}
-        <span className="flex items-center gap-1">
-          <Flag className="h-2.5 w-2.5 fill-amber-400/80 text-amber-400" aria-hidden="true" />
-          Flagged
-        </span>
-      </div>
+              <span className="tabular-nums text-red-200/70">{incorrectCount}</span>
+            </button>
+          )}
+          {!reviewMode && unansweredCount > 0 && onJumpNextUnanswered && (
+            <button
+              type="button"
+              onClick={onJumpNextUnanswered}
+              className="flex h-9 w-full items-center justify-between rounded-md border border-[rgb(var(--ex-line)/0.25)] bg-black/20 px-3 text-[13px] font-medium text-foreground/90 transition-colors hover:bg-white/5"
+            >
+              <span className="inline-flex items-center gap-1.5">
+                <ChevronsRight className="h-3.5 w-3.5" aria-hidden="true" />
+                Next unanswered
+              </span>
+              <span className="tabular-nums text-muted-foreground">{unansweredCount}</span>
+            </button>
+          )}
+          {flaggedCount > 0 && (
+            <button
+              type="button"
+              onClick={onJumpNextFlagged}
+              className="flex h-9 w-full items-center justify-between rounded-md border border-amber-500/35 bg-amber-500/10 px-3 text-[13px] font-medium text-amber-200 transition-colors hover:bg-amber-500/20"
+            >
+              <span className="inline-flex items-center gap-1.5">
+                <Flag className="h-3.5 w-3.5 fill-amber-400/80" aria-hidden="true" />
+                Next flagged
+              </span>
+              <span className="tabular-nums text-amber-200/70">{flaggedCount}</span>
+            </button>
+          )}
+        </div>
+      ) : null}
+
+      {/* Key: a miniature of each cell look, with how many questions are in it. */}
+      <dl className="mt-5 grid grid-cols-2 gap-x-4 gap-y-2.5 border-t border-[rgb(var(--ex-line)/0.12)] pt-4 text-[13px]">
+        {keyKinds.map((kind) => (
+          <div key={kind} className="flex items-center gap-2">
+            <span aria-hidden="true" className={cn('h-4 w-4 shrink-0 rounded-[4px] border', NAV_CELL_CLASS[kind])} />
+            <dt className="text-muted-foreground">{keyLabel[kind] ?? NAV_CELL_LABEL[kind]}</dt>
+            <dd className="ml-auto tabular-nums text-foreground/85">{count(kind)}</dd>
+          </div>
+        ))}
+        <div className="flex items-center gap-2">
+          <span aria-hidden="true" className="relative h-4 w-4 shrink-0 overflow-hidden rounded-[4px] border border-[rgb(var(--ex-line)/0.22)] bg-black/25">
+            <FlagFold className="border-l-[7px] border-t-[7px]" />
+          </span>
+          <dt className="text-muted-foreground">Flagged</dt>
+          <dd className="ml-auto tabular-nums text-foreground/85">{flaggedCount}</dd>
+        </div>
+      </dl>
     </div>
   );
 }
 
-/** Runic rule line with a centered diamond node — the structural divider that
- *  carries the ArcaneSigil grammar into the header crest and section breaks. */
-function RunicDivider({ className, label }: { className?: string; label?: string }) {
+/** Holds the Practice verdict and brings it into view when it appears. */
+function VerdictSlot({ children }: { children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    ref.current?.scrollIntoView({ block: 'nearest', behavior: reduce ? 'auto' : 'smooth' });
+  }, []);
   return (
-    <div className={cn('runic-divider', className)} role="presentation">
-      <span className="runic-divider-line" aria-hidden="true" />
-      {label ? (
-        <span className="runic-divider-label">{label}</span>
-      ) : (
-        <span className="runic-divider-node" aria-hidden="true" />
-      )}
-      <span className="runic-divider-line" aria-hidden="true" />
+    <div ref={ref} className="mb-5 scroll-mt-4">
+      {children}
     </div>
   );
 }
@@ -1492,15 +1740,117 @@ function CoverStat({ value, label }: { value: string; label: string }) {
   return (
     <div className="flex flex-col gap-1.5 px-5 first:pl-0">
       <span className="font-display text-3xl font-normal tabular-nums leading-none">{value}</span>
-      <span className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">{label}</span>
+      <span className="text-[11px] uppercase tracking-[0.14em] text-white/70">{label}</span>
+    </div>
+  );
+}
+
+type RuleLine = { icon: typeof Timer; text: string };
+
+/** What each run mode promises, shown under the picker before the user commits. */
+function runModeOptions(durationMinutes: number): Array<{
+  mode: RunMode;
+  label: string;
+  hint: string;
+  icon: typeof Timer;
+  begin: string;
+  rules: RuleLine[];
+}> {
+  return [
+    {
+      mode: 'timed',
+      label: 'Timed',
+      hint: `${durationMinutes} min`,
+      icon: Timer,
+      begin: 'Begin timed run',
+      rules: [
+        { icon: Hourglass, text: `Clock starts when you begin: ${durationMinutes} minutes` },
+        { icon: Timer, text: 'Auto-submits when time runs out' },
+        { icon: Pause, text: 'Pause any time; progress autosaves' },
+      ],
+    },
+    {
+      mode: 'open',
+      label: 'Open',
+      hint: 'No clock',
+      icon: BookOpen,
+      begin: 'Begin open run',
+      rules: [
+        { icon: BookOpen, text: 'No clock; take as long as you need' },
+        { icon: CheckCircle2, text: 'Results appear when you hand in' },
+        { icon: Flag, text: 'Flag questions to come back to' },
+      ],
+    },
+    {
+      mode: 'practice',
+      label: 'Practice',
+      hint: 'Per question',
+      icon: ListChecks,
+      begin: 'Begin practice',
+      rules: [
+        { icon: ListChecks, text: 'Check each answer and see its result right away' },
+        { icon: Lock, text: 'An answer locks once you check it' },
+        { icon: Trophy, text: 'Your total score shows when you hand in' },
+      ],
+    },
+  ];
+}
+
+/** "Improvement Set 4 - February 2025" → title "Improvement Set 4", date "February 2025". */
+function splitPaperName(name: string): { title: string; date: string | null } {
+  const at = name.lastIndexOf(' - ');
+  if (at > 0) return { title: name.slice(0, at), date: name.slice(at + 3) };
+  return { title: name.replace(/^-\s*/, ''), date: null };
+}
+
+function formatAgo(iso: string, now = Date.now()): string {
+  const days = Math.floor((now - new Date(iso).getTime()) / 86_400_000);
+  if (!Number.isFinite(days) || days <= 0) return 'today';
+  if (days === 1) return 'yesterday';
+  if (days < 30) return `${days} days ago`;
+  const months = Math.floor(days / 30);
+  return months === 1 ? 'a month ago' : `${months} months ago`;
+}
+
+function formatScore(value: number) {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+/** The user's past runs on this paper: count, best, recency, and a tiny trend. */
+function CoverHistory({ attempts }: { attempts: AttemptSummary[] }) {
+  const last = attempts[attempts.length - 1];
+  if (!last) return null;
+  const best = attempts.reduce((top, a) => (a.score > top.score ? a : top), last);
+  const recent = attempts.slice(-6);
+  return (
+    <div className="mt-6 flex items-center gap-3.5 text-sm text-white/75">
+      <span className="flex h-6 items-end gap-1" aria-hidden="true">
+        {recent.map((a, i) => (
+          <span
+            key={a.id}
+            className={cn(
+              'w-1.5 rounded-sm',
+              i === recent.length - 1 ? 'bg-[rgb(var(--ex-accent))]' : 'bg-[rgb(var(--ex-accent)/0.45)]',
+            )}
+            style={{ height: `${Math.max(18, a.maxScore > 0 ? (a.score / a.maxScore) * 100 : 0)}%` }}
+          />
+        ))}
+      </span>
+      <span>
+        Your runs: <span className="text-white">{attempts.length}</span>
+        <span className="px-1.5 text-white/35">·</span>
+        Best <span className="tabular-nums text-white">{formatScore(best.score)}/{formatScore(best.maxScore)}</span>
+        <span className="px-1.5 text-white/35">·</span>
+        Last run {formatAgo(last.submittedAt)}
+      </span>
     </div>
   );
 }
 
 /**
  * Cover: the threshold shown on entering a paper variant. Art on one side; on
- * the other, what the paper is and the choice to *sit* it (Timed Run) or simply
- * *read* it (Open Run).
+ * the other, what the paper is, the user's history with it, and the choice of
+ * how to sit it: Timed, Open, or Practice (checked one question at a time).
  */
 function RunCoverPlate({
   examName,
@@ -1512,8 +1862,8 @@ function RunCoverPlate({
   paperUuid,
   courseUuid,
   examUuid,
-  onBeginTimed,
-  onBeginOpen,
+  attempts,
+  onBegin,
   onBack,
 }: {
   examName: string;
@@ -1525,10 +1875,15 @@ function RunCoverPlate({
   paperUuid: string;
   courseUuid: string;
   examUuid: string;
-  onBeginTimed: () => void;
-  onBeginOpen: () => void;
+  attempts: AttemptSummary[] | null;
+  onBegin: (mode: RunMode) => void;
   onBack: () => void;
 }) {
+  const [mode, setMode] = useState<RunMode>('timed');
+  const options = runModeOptions(durationMinutes);
+  const selected = options.find((option) => option.mode === mode) ?? options[0]!;
+  const { title, date } = splitPaperName(paperName);
+
   return (
     <div
       className="relative isolate flex min-h-[calc(100vh-14rem)] w-full flex-col"
@@ -1536,90 +1891,241 @@ function RunCoverPlate({
     >
       <HallBackdrop />
 
-      <button
-        type="button"
-        onClick={onBack}
-        className="inline-flex w-fit items-center gap-1.5 rounded-md px-2 py-1 text-sm text-white/75 transition-colors [text-shadow:0_1px_8px_rgba(0,0,0,0.6)] hover:bg-white/10 hover:text-white"
-      >
-        <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-        Back to papers
-      </button>
+      <div className="flex flex-1 items-center justify-center py-2">
+        <div className="w-full max-w-4xl">
+          <button
+            type="button"
+            onClick={onBack}
+            className="mb-3 inline-flex w-fit items-center gap-1.5 rounded-md px-2 py-1 text-sm text-white/80 transition-colors [text-shadow:0_1px_8px_rgba(0,0,0,0.6)] hover:bg-white/10 hover:text-white"
+          >
+            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+            Back to papers
+          </button>
 
-      <div className="flex flex-1 items-center justify-center py-6">
-        <div className="exam-tome exam-cover exam-q-enter relative isolate grid w-full max-w-4xl overflow-hidden rounded-2xl border border-[rgb(var(--ex-line)/0.24)] backdrop-blur-sm lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
-          {/* Art panel: fades into the card on the reading side. */}
-          <div aria-hidden="true" className="relative hidden min-h-[26rem] lg:block">
-            <img
-              src={coverArt}
-              alt=""
-              className="absolute inset-0 h-full w-full object-cover object-[50%_40%]"
-            />
-            <div className="absolute inset-y-0 right-0 w-1/2 bg-gradient-to-l from-[#0E1530]/90 to-transparent" />
-            <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-[#0E1530]/70 to-transparent" />
-          </div>
-
-          <div className="relative z-10 flex flex-col px-6 py-8 sm:px-10 sm:py-10">
-            {courseName && (
-              <p className="text-xs font-medium uppercase tracking-[0.18em] text-[rgb(var(--ex-accent))]">
-                {courseName}
-              </p>
-            )}
-            <p className="mt-1 text-sm text-muted-foreground">{examName}</p>
-            <h1 className="mt-1.5 font-display text-4xl font-normal leading-tight tracking-tight sm:text-5xl">
-              {paperName}
-            </h1>
-
-            <div className="mt-7 flex items-stretch divide-x divide-[rgb(var(--ex-line)/0.18)]">
-              <CoverStat value={String(totalQuestions)} label={totalQuestions === 1 ? 'question' : 'questions'} />
-              {totalMarks > 0 && <CoverStat value={String(totalMarks)} label="marks" />}
-              <CoverStat value={`${durationMinutes}m`} label="duration" />
+          <div className="exam-tome exam-cover exam-q-enter relative isolate grid w-full overflow-hidden rounded-2xl border border-[rgb(var(--ex-line)/0.24)] backdrop-blur-sm lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+            {/* Art panel: fades into the card on the reading side. */}
+            <div aria-hidden="true" className="relative hidden min-h-[26rem] lg:block">
+              <img
+                src={coverArt}
+                alt=""
+                className="absolute inset-0 h-full w-full object-cover object-[50%_40%]"
+              />
+              <div className="absolute inset-y-0 right-0 w-1/2 bg-gradient-to-l from-[#0E1530]/90 to-transparent" />
+              <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-[#0E1530]/70 to-transparent" />
             </div>
 
-            <div className="mt-8 space-y-3">
+            <div className="relative z-10 flex flex-col px-6 py-8 sm:px-10 sm:py-9">
+              {courseName && (
+                <p className="text-xs font-medium uppercase tracking-[0.18em] text-[rgb(var(--ex-accent))]">
+                  {courseName}
+                </p>
+              )}
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                {[examName, date].filter(Boolean).map((chip) => (
+                  <span
+                    key={chip}
+                    className="rounded-md border border-[rgb(var(--ex-line)/0.2)] bg-[rgb(var(--ex-line)/0.08)] px-2.5 py-1 text-xs text-[rgb(var(--ex-accent-soft))]"
+                  >
+                    {chip}
+                  </span>
+                ))}
+              </div>
+              <h1 className="mt-3 font-display text-4xl font-normal leading-tight tracking-tight sm:text-5xl">
+                {title}
+              </h1>
+
+              <div className="mt-6 flex items-stretch divide-x divide-[rgb(var(--ex-line)/0.18)]">
+                <CoverStat value={String(totalQuestions)} label={totalQuestions === 1 ? 'question' : 'questions'} />
+                {totalMarks > 0 && <CoverStat value={String(totalMarks)} label="marks" />}
+                <CoverStat value={`${durationMinutes}m`} label="duration" />
+              </div>
+
+              {attempts && attempts.length > 0 && <CoverHistory attempts={attempts} />}
+
+              <fieldset className="mt-7">
+                <legend className="sr-only">How do you want to sit this paper?</legend>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                  {options.map((option) => {
+                    const active = option.mode === mode;
+                    const Icon = option.icon;
+                    return (
+                      <label
+                        key={option.mode}
+                        className={cn(
+                          'relative flex cursor-pointer flex-col gap-1 rounded-xl border px-3.5 py-3 transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-[rgb(var(--ex-accent))]',
+                          active
+                            ? 'border-[rgb(var(--ex-accent)/0.75)] bg-[rgb(var(--ex-line)/0.14)] text-white'
+                            : 'border-[rgb(var(--ex-line)/0.22)] bg-black/20 text-white/80 hover:border-[rgb(var(--ex-line)/0.4)] hover:bg-black/30',
+                        )}
+                      >
+                        <input
+                          type="radio"
+                          name="run-mode"
+                          value={option.mode}
+                          checked={active}
+                          onChange={() => setMode(option.mode)}
+                          className="sr-only"
+                        />
+                        <span className="flex items-center gap-2 font-medium">
+                          <Icon
+                            className={cn('h-4 w-4 shrink-0', active ? 'text-[rgb(var(--ex-accent))]' : 'text-white/55')}
+                            aria-hidden="true"
+                          />
+                          {option.label}
+                        </span>
+                        <span className="text-xs text-white/60">{option.hint}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </fieldset>
+
+              <ul key={selected.mode} className="exam-q-enter mt-4 space-y-2 text-sm text-white/80" aria-live="polite">
+                {selected.rules.map(({ icon: RuleIcon, text }) => (
+                  <li key={text} className="flex items-center gap-2.5">
+                    <RuleIcon className="h-4 w-4 shrink-0 text-[rgb(var(--ex-accent-soft))]/80" aria-hidden="true" />
+                    {text}
+                  </li>
+                ))}
+              </ul>
+
               <button
                 type="button"
-                onClick={onBeginTimed}
-                className="exam-cover-cta group flex w-full items-center justify-between gap-3 rounded-xl border border-[rgb(var(--ex-line)/0.5)] bg-[rgb(var(--ex-line)/0.12)] px-5 py-4 text-left transition-colors hover:border-[rgb(var(--ex-line)/0.8)] hover:bg-[rgb(var(--ex-line)/0.2)]"
+                onClick={() => onBegin(selected.mode)}
+                className="exam-cover-cta group mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-[rgb(var(--ex-accent-soft))] px-5 py-3.5 font-medium text-[rgb(var(--ex-ink))] shadow-[0_10px_30px_-10px_rgba(120,180,240,0.55)] transition-colors hover:bg-white"
               >
-                <span className="flex items-center gap-3.5">
-                  <Timer className="h-5 w-5 shrink-0 text-[rgb(var(--ex-accent-soft))]" aria-hidden="true" />
-                  <span>
-                    <span className="block font-medium text-white">Timed run</span>
-                    <span className="block text-xs text-muted-foreground">{durationMinutes} minutes</span>
-                  </span>
-                </span>
-                <ChevronRight className="h-4 w-4 shrink-0 text-[rgb(var(--ex-accent-soft))] transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+                {selected.begin}
+                <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
               </button>
 
-              <button
-                type="button"
-                onClick={onBeginOpen}
-                className="group flex w-full items-center justify-between gap-3 rounded-xl border border-[rgb(var(--ex-line)/0.22)] bg-black/20 px-5 py-4 text-left transition-colors hover:border-[rgb(var(--ex-line)/0.4)] hover:bg-black/30"
-              >
-                <span className="flex items-center gap-3.5">
-                  <BookOpen className="h-5 w-5 shrink-0 text-muted-foreground" aria-hidden="true" />
-                  <span>
-                    <span className="block font-medium">Open run</span>
-                    <span className="block text-xs text-muted-foreground">No clock</span>
-                  </span>
-                </span>
-                <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
-              </button>
+              <div className="mt-5 flex flex-wrap items-start gap-x-6 gap-y-3 border-t border-[rgb(var(--ex-line)/0.12)] pt-4">
+                <DownloadPdfButton paperUuid={paperUuid} courseUuid={courseUuid} examUuid={examUuid} variant="link" label="Question paper (PDF)" />
+                <DownloadPdfButton paperUuid={paperUuid} courseUuid={courseUuid} examUuid={examUuid} answers variant="link" hint="Reveals answers" />
+              </div>
             </div>
 
-            <div className="mt-5 flex flex-wrap items-center gap-2">
-              <DownloadPdfButton paperUuid={paperUuid} courseUuid={courseUuid} examUuid={examUuid} />
-              <DownloadPdfButton paperUuid={paperUuid} courseUuid={courseUuid} examUuid={examUuid} answers />
-            </div>
+            <div className="tcard-frame" aria-hidden="true" />
+            <span className="tcard-corner tcard-corner-tl" aria-hidden="true" />
+            <span className="tcard-corner tcard-corner-tr" aria-hidden="true" />
+            <span className="tcard-corner tcard-corner-bl" aria-hidden="true" />
+            <span className="tcard-corner tcard-corner-br" aria-hidden="true" />
           </div>
-
-          <div className="tcard-frame" aria-hidden="true" />
-          <span className="tcard-corner tcard-corner-tl" aria-hidden="true" />
-          <span className="tcard-corner tcard-corner-tr" aria-hidden="true" />
-          <span className="tcard-corner tcard-corner-bl" aria-hidden="true" />
-          <span className="tcard-corner tcard-corner-br" aria-hidden="true" />
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Practice Run: the verdict for the question just checked, above its card. */
+const KBD_CLASS =
+  'inline-flex min-w-[1.6rem] items-center justify-center rounded-md border border-white/15 border-b-white/25 bg-white/[0.06] px-1.5 py-0.5 font-sans text-xs font-medium text-foreground/90 shadow-[inset_0_-1px_0_rgb(255_255_255/0.08)]';
+
+/** Everything the keyboard can do on the sheet, opened with `?`. */
+function ShortcutsDialog({
+  open,
+  onOpenChange,
+  practice,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  practice: boolean;
+}) {
+  const rows: Array<{ keys: string[]; label: string }> = [
+    { keys: ['←', '→'], label: 'Previous or next question' },
+    { keys: ['1', '–', '6'], label: 'Pick option A to F (toggles on multi-answer questions)' },
+    { keys: ['F'], label: 'Flag or unflag for review' },
+    ...(practice ? [{ keys: ['Enter'], label: 'Check your answer, then Enter again for the next one' }] : []),
+    { keys: ['?'], label: 'Show or hide this list' },
+    { keys: ['Esc'], label: 'Close a dialog' },
+  ];
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={onOpenChange}
+      labelledBy="exam-shortcuts-title"
+      className="border-transparent bg-[#0f1529] sm:max-w-md"
+    >
+      <div className="p-5 sm:p-6">
+        <h2 id="exam-shortcuts-title" className="font-display text-xl font-normal tracking-tight">
+          Keyboard shortcuts
+        </h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          They work anywhere on the sheet, except letters and numbers while you type an answer.
+        </p>
+        <dl className="mt-4 divide-y divide-white/[0.06]">
+          {rows.map((row) => (
+            <div key={row.label} className="flex items-center justify-between gap-4 py-2.5">
+              <dt className="text-sm text-foreground/90">{row.label}</dt>
+              <dd className="flex shrink-0 items-center gap-1">
+                {row.keys.map((key, i) =>
+                  key === '–' ? (
+                    <span key={i} className="text-xs text-muted-foreground">
+                      to
+                    </span>
+                  ) : (
+                    <kbd key={i} className={KBD_CLASS}>
+                      {key}
+                    </kbd>
+                  ),
+                )}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </div>
+    </Dialog>
+  );
+}
+
+function PracticeVerdict({
+  outcome,
+  marksAwarded,
+  maxMarks,
+}: {
+  outcome: PracticeRunReviewState;
+  marksAwarded: number;
+  maxMarks: number;
+}) {
+  const meta: Record<PracticeRunReviewState, { label: string; detail: string; className: string; icon: typeof Timer }> = {
+    correct: {
+      label: 'Correct',
+      detail: 'Nicely done.',
+      className: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300',
+      icon: CheckCircle2,
+    },
+    incorrect: {
+      label: 'Not quite',
+      detail: 'The correct answer is marked below.',
+      className: 'border-red-500/40 bg-red-500/10 text-red-300',
+      icon: XCircle,
+    },
+    unanswered: {
+      label: 'Answer shown',
+      detail: 'You skipped this one; the key is marked below.',
+      className: 'border-[rgb(var(--ex-line)/0.3)] bg-black/30 text-white/85',
+      icon: Eye,
+    },
+    manual: {
+      label: 'Compare with the key',
+      detail: "This one can't be auto-graded.",
+      className: 'border-[rgb(var(--ex-line)/0.4)] bg-[rgb(var(--ex-line)/0.12)] text-[rgb(var(--ex-accent))]',
+      icon: BookOpen,
+    },
+  };
+  const { label, detail, className, icon: Icon } = meta[outcome];
+  return (
+    <div role="status" className={cn('exam-q-enter flex items-center gap-3 rounded-xl border px-4 py-2.5', className)}>
+      <Icon className="h-5 w-5 shrink-0" aria-hidden="true" />
+      <p className="min-w-0 flex-1 text-sm">
+        <span className="font-semibold">{label}</span>
+        <span className="ml-2 text-white/70">{detail}</span>
+      </p>
+      {maxMarks > 0 && (
+        <span className="shrink-0 text-sm font-medium tabular-nums">
+          {formatScore(marksAwarded)}/{formatScore(maxMarks)}
+          <span className="ml-1 text-xs font-normal text-white/60">marks</span>
+        </span>
+      )}
     </div>
   );
 }
@@ -1653,10 +2159,15 @@ export default function PaperPage() {
   const [timeExpired, setTimeExpired] = useState(false);
   const [retryNonce, setRetryNonce] = useState(0);
   const [flaggedIds, setFlaggedIds] = useState<Set<string>>(new Set());
+  // Practice Run: pages already checked — answer locked, verdict shown.
+  const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
   // null while the cover plate is up; set once the user picks Timed/Open Run.
   const [runMode, setRunMode] = useState<RunMode | null>(null);
+  // A retry of last run's missed questions: only these pages are in play.
+  const [focusIds, setFocusIds] = useState<string[] | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   // Test-taking aids. Struck-out options live only for this sitting; the
   // reading size is a per-device preference.
   const [eliminated, setEliminated] = useState<Record<string, string[]>>({});
@@ -1671,14 +2182,15 @@ export default function PaperPage() {
     }
   });
   const [autoSubmitting, setAutoSubmitting] = useState(false);
-  const [lowTimeWarning, setLowTimeWarning] = useState<'5min' | '1min' | null>(null);
+  const [lowTimeWarning, setLowTimeWarning] = useState<LowTimeWarning | null>(null);
   // One-shot guards so each low-time warning fires exactly once per run.
+  const warned10Ref = useRef(false);
   const warned5Ref = useRef(false);
   const warned1Ref = useRef(false);
   const warningTimeoutRef = useRef<number | null>(null);
   const { getToken, isSignedIn } = useAuth();
   // After hand-in: the report, or stepping through questions under a filter.
-  const [resultsView, setResultsView] = useState<'report' | 'review'>('report');
+  const [resultsView, setResultsView] = useState<'report' | 'insights' | 'review'>('report');
   const [reviewFilter, setReviewFilter] = useState<ReviewFilter>('all');
   // Attempt record: when the sitting began, how long it took, and the stored
   // server copy once saved. Retries append, so `attempts` is the history.
@@ -1688,9 +2200,21 @@ export default function PaperPage() {
   const [saveState, setSaveState] = useState<AttemptSaveState>('idle');
   const [saveNonce, setSaveNonce] = useState(0);
   const [attempts, setAttempts] = useState<AttemptSummary[] | null>(null);
+  // Past runs shown on the cover plate, fetched while it is up.
+  const [coverAttempts, setCoverAttempts] = useState<{ paperId: string; list: AttemptSummary[] } | null>(null);
   const [compareId, setCompareId] = useState<string | null>(null);
   const [compare, setCompare] = useState<AttemptDetail | null>(null);
   const savingRef = useRef(false);
+  // The sitting's activity log (visits, answers, flags, focus) for the
+  // insights report. Recorded only while a run is live.
+  const [activity, setActivity] = useState<RunEvent[]>([]);
+  // How the next page change happened; call sites set it just before moving.
+  const navViaRef = useRef<NavVia>('other');
+  // The next time a run goes live, log 'start' (a fresh run) not 'resume'.
+  const freshRunRef = useRef(false);
+  const liveRef = useRef(false);
+  // The last session written to storage, so a hide can add to it synchronously.
+  const savedSessionRef = useRef<{ key: string; payload: SavedPracticeRunSession } | null>(null);
   // Bumped on Try again so a save still in flight can't attach to the new run.
   const runTokenRef = useRef(0);
 
@@ -1748,9 +2272,13 @@ export default function PaperPage() {
           setTimerEndsAt(savedSession?.timerEndsAt ?? null);
           setTimeExpired((savedSession?.remainingSeconds ?? initSeconds) === 0);
           setFlaggedIds(new Set(savedSession?.flaggedIds ?? []));
+          setCheckedIds(new Set(savedSession?.checkedIds ?? []));
+          setFocusIds(savedSession?.focusIds ?? null);
           setStartedAt(savedSession?.startedAt ?? null);
           setTimeUsed(savedSession?.timeUsedSeconds ?? null);
           setAttemptId(savedSession?.attemptId ?? null);
+          setActivity(savedSession?.activity ?? []);
+          freshRunRef.current = false;
           setSaveState(savedSession?.attemptId ? 'saved' : 'idle');
           setResultsView('report');
           setAttempts(null);
@@ -1763,6 +2291,7 @@ export default function PaperPage() {
           // If we restored into already-low time, suppress the (now stale)
           // crossing warnings so they don't fire spuriously on the next tick.
           const restoredSeconds = savedSession?.remainingSeconds ?? initSeconds;
+          warned10Ref.current = restoredSeconds <= 600;
           warned5Ref.current = restoredSeconds <= 300;
           warned1Ref.current = restoredSeconds <= 60;
         }
@@ -1795,30 +2324,38 @@ export default function PaperPage() {
   }, [paperId, courseId, examUuidFromSearch, storageKey, retryNonce, getToken]);
 
   useEffect(() => {
-    if (!paper || !storageKey) return;
+    // While a (re)load is in flight the old paper is still set but answers and
+    // results were just cleared; saving now would overwrite a finished run.
+    if (!paper || !storageKey || loading) return;
 
     const payload: SavedPracticeRunSession = {
       selectedAnswers,
-      showResults,
+      // At the deadline the run is over even while "time's up" is still on
+      // screen, so a reload in that beat lands on the results, not a dead clock.
+      showResults: showResults || (runMode === 'timed' && timeExpired),
       timerRunning,
       remainingSeconds,
       timerEndsAt,
       flaggedIds: Array.from(flaggedIds),
       runMode,
+      checkedIds: Array.from(checkedIds),
       startedAt,
       timeUsedSeconds: timeUsed,
       attemptId,
+      focusIds,
+      activity,
     };
 
     writePracticeRunSession(storageKey, payload);
-  }, [paper, remainingSeconds, selectedAnswers, showResults, storageKey, timerEndsAt, timerRunning, flaggedIds, runMode, startedAt, timeUsed, attemptId]);
+    savedSessionRef.current = { key: storageKey, payload };
+  }, [paper, remainingSeconds, selectedAnswers, showResults, storageKey, timerEndsAt, timerRunning, flaggedIds, runMode, checkedIds, startedAt, timeUsed, attemptId, focusIds, activity, timeExpired, loading]);
 
   useEffect(() => {
     if (!paper || !timerRunning || showResults || timerEndsAt === null) {
       return;
     }
 
-    const flashWarning = (which: '5min' | '1min') => {
+    const flashWarning = (which: LowTimeWarning) => {
       setLowTimeWarning(which);
       if (warningTimeoutRef.current) window.clearTimeout(warningTimeoutRef.current);
       warningTimeoutRef.current = window.setTimeout(() => setLowTimeWarning(null), 4500);
@@ -1832,10 +2369,15 @@ export default function PaperPage() {
       if (nextRemaining <= 60 && nextRemaining > 0 && !warned1Ref.current) {
         warned1Ref.current = true;
         warned5Ref.current = true;
+        warned10Ref.current = true;
         flashWarning('1min');
       } else if (nextRemaining <= 300 && nextRemaining > 60 && !warned5Ref.current) {
         warned5Ref.current = true;
+        warned10Ref.current = true;
         flashWarning('5min');
+      } else if (nextRemaining <= 600 && nextRemaining > 300 && !warned10Ref.current) {
+        warned10Ref.current = true;
+        flashWarning('10min');
       }
 
       if (nextRemaining === 0) {
@@ -1887,7 +2429,14 @@ export default function PaperPage() {
     return formatPaperName(paper.paperName, paper.year ?? undefined);
   }, [paper?.paperName, paper?.year]);
 
-  const groupedQuestions = useMemo(() => groupPracticeRunQuestions(questions), [questions]);
+  const allGroupedQuestions = useMemo(() => groupPracticeRunQuestions(questions), [questions]);
+  // A missed-questions retry narrows the paper; if none of its ids survive
+  // (the paper changed under a saved session), fall back to the whole paper.
+  const groupedQuestions = useMemo(() => {
+    if (!focusIds) return allGroupedQuestions;
+    const focused = focusPracticeRunQuestions(allGroupedQuestions, new Set(focusIds));
+    return focused.length > 0 ? focused : allGroupedQuestions;
+  }, [allGroupedQuestions, focusIds]);
 
   const stats = useMemo(
     () => calculatePracticeRunStats(groupedQuestions, selectedAnswers, showResults),
@@ -1910,6 +2459,9 @@ export default function PaperPage() {
   // so the stored score never trusts the client.
   useEffect(() => {
     if (!showResults || !paper || !runMode || !isSignedIn || attemptId || savingRef.current) return;
+    // A retry of a few missed questions isn't a sitting of the paper: the
+    // server grades the whole paper, so storing it would log a false low score.
+    if (focusIds) return;
     if (canMeasureTime && timeUsed === null) return;
     const token = runTokenRef.current;
     savingRef.current = true;
@@ -1937,7 +2489,22 @@ export default function PaperPage() {
       .finally(() => {
         if (token === runTokenRef.current) savingRef.current = false;
       });
-  }, [showResults, paper, runMode, isSignedIn, attemptId, canMeasureTime, timeUsed, selectedAnswers, flaggedIds, timeExpired, getToken, saveNonce]);
+  }, [showResults, paper, runMode, isSignedIn, attemptId, canMeasureTime, timeUsed, selectedAnswers, flaggedIds, timeExpired, getToken, saveNonce, focusIds]);
+
+  // The cover plate shows the user's past runs on this paper.
+  useEffect(() => {
+    if (runMode !== null || !isSignedIn || !paper?._id) return;
+    let active = true;
+    const paperId = paper._id;
+    getAttempts(paperId, getToken)
+      .then((list) => {
+        if (active) setCoverAttempts({ paperId, list });
+      })
+      .catch((error) => logger.error('Failed to load attempts for cover', error));
+    return () => {
+      active = false;
+    };
+  }, [runMode, isSignedIn, paper?._id, getToken]);
 
   // The user's history on this paper, refreshed once this attempt is stored.
   const saveFailed = saveState === 'error';
@@ -2026,9 +2593,19 @@ export default function PaperPage() {
     () => reviewStates.filter((state) => state === 'incorrect').length,
     [reviewStates],
   );
+  // Pages a retry would cover: graded wrong, or gradable and left blank.
+  const missedPageIds = useMemo(
+    () =>
+      pages.flatMap((page, index) =>
+        reviewStates[index] === 'incorrect' || reviewStates[index] === 'unanswered' ? [page.id] : [],
+      ),
+    [pages, reviewStates],
+  );
 
   // Review steps only through pages matching the filter; otherwise every page.
   const reviewing = showResults && resultsView === 'review';
+  // Everything but the report fits one screen on wide displays.
+  const fitsScreen = !(showResults && resultsView !== 'review');
   const reviewIndices = useMemo(
     () =>
       reviewStates.flatMap((state, index) =>
@@ -2086,6 +2663,11 @@ export default function PaperPage() {
     window.scrollTo({ top: 0, behavior: 'instant' });
   };
 
+  const showInsights = () => {
+    setResultsView('insights');
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  };
+
   // Flagged-for-review overlay, aligned to the navigator pages.
   const flaggedPages = useMemo(
     () => pages.map((page) => flaggedIds.has(page.id)),
@@ -2106,6 +2688,7 @@ export default function PaperPage() {
     () => pageStates.filter((state) => state === 'none').length,
     [pageStates],
   );
+  const answeredCount = pageCount - blankCount - partialCount;
 
   const toggleFlag = useCallback((uuid: string) => {
     setFlaggedIds((prev) => {
@@ -2116,16 +2699,110 @@ export default function PaperPage() {
     });
   }, []);
 
+  // Activity recorder: compares each render's run state with the last and logs
+  // what changed. A run going live logs 'start' or 'resume'; hand-in logs
+  // 'submit'. Nothing is logged on the cover plate, while loading, or in review.
+  const snapshotRef = useRef<RunSnapshot | null>(null);
+  useEffect(() => {
+    const live = !loading && !!paper && runMode !== null && !showResults && pages.length > 0;
+    const snapshot: RunSnapshot = {
+      pageIds: pages.map((page) => page.id),
+      index: Math.max(0, Math.min(currentIndex, pages.length - 1)),
+      answers: selectedAnswers,
+      flagged: flaggedIds,
+      checked: checkedIds,
+      eliminated,
+      calcOpen,
+      handInOpen: confirmOpen,
+      clockRunning: runMode === 'timed' && !timeExpired ? timerRunning : null,
+    };
+    const prev = snapshotRef.current;
+    snapshotRef.current = snapshot;
+    const wasLive = liveRef.current;
+    liveRef.current = live;
+    const via = navViaRef.current;
+    navViaRef.current = 'other';
+    const t = Date.now();
+    const page = snapshot.pageIds[snapshot.index] ?? '';
+
+    if (live && !wasLive) {
+      const fresh = freshRunRef.current;
+      freshRunRef.current = false;
+      setActivity((log) => {
+        // A log that already holds a hand-in belongs to a finished sitting;
+        // never extend it with a new one.
+        if (fresh || log.some((event) => event.type === 'submit')) {
+          if (!fresh) logger.warn('Run went live on a handed-in log; starting a fresh one', { events: log.length });
+          return [{ t, type: 'start', mode: runMode!, page }];
+        }
+        return appendRunEvent(log, { t, type: 'resume', page });
+      });
+      return;
+    }
+    if (!live && wasLive && showResults) {
+      setActivity((log) => appendRunEvent(log, { t, type: 'submit', auto: timeExpired }));
+      return;
+    }
+    if (!live || !prev) return;
+    const events = diffRunSnapshots(prev, snapshot, t, via);
+    if (events.length > 0) setActivity((log) => events.reduce(appendRunEvent, log));
+  }, [loading, paper, runMode, showResults, pages, currentIndex, selectedAnswers, flaggedIds, checkedIds, eliminated, calcOpen, confirmOpen, timerRunning, timeExpired]);
+
+  // Leaving the tab pauses the per-question clock in the report.
+  useEffect(() => {
+    const onVisibility = () => {
+      if (!liveRef.current) return;
+      const event: RunEvent = { t: Date.now(), type: document.hidden ? 'hidden' : 'visible' };
+      setActivity((log) => appendRunEvent(log, event));
+      // Hiding is also what closing the tab looks like, and the page may not
+      // render again. Save the boundary now so a later resume or an expiry
+      // while closed doesn't credit the closed stretch to the last question.
+      const saved = savedSessionRef.current;
+      if (document.hidden && saved) {
+        const payload = { ...saved.payload, activity: appendRunEvent(saved.payload.activity ?? [], event) };
+        savedSessionRef.current = { key: saved.key, payload };
+        try {
+          writePracticeRunSession(saved.key, payload);
+        } catch (error) {
+          logger.warn('Could not save the run before the page hid', { error: String(error) });
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, []);
+
   const goNextFlagged = useCallback(() => {
     const total = flaggedPages.length;
     for (let step = 1; step <= total; step++) {
       const idx = (currentIndex + step) % total;
       if (flaggedPages[idx]) {
+        navViaRef.current = 'next-flagged';
         goTo(idx);
         return;
       }
     }
   }, [flaggedPages, currentIndex, goTo]);
+
+  // Next page still open: not fully answered and (in Practice) not yet checked.
+  const unansweredCount = useMemo(
+    () =>
+      pageStates.filter(
+        (state, index) => index !== currentIndex && state !== 'done' && !checkedIds.has(pages[index]?.id ?? ''),
+      ).length,
+    [pageStates, checkedIds, pages, currentIndex],
+  );
+  const goNextUnanswered = useCallback(() => {
+    const total = pageStates.length;
+    for (let step = 1; step < total; step++) {
+      const idx = (currentIndex + step) % total;
+      if (pageStates[idx] !== 'done' && !checkedIds.has(pages[idx]?.id ?? '')) {
+        navViaRef.current = 'next-unanswered';
+        goTo(idx);
+        return;
+      }
+    }
+  }, [pageStates, checkedIds, pages, currentIndex, goTo]);
 
   // Cycle to the next incorrect page during review (wraps around like flagged).
   const goNextIncorrect = useCallback(() => {
@@ -2160,6 +2837,7 @@ export default function PaperPage() {
       } else if (target?.isContentEditable) {
         return;
       }
+      navViaRef.current = 'arrow-key';
       if (event.key === 'ArrowLeft') goPrev();
       else goNext();
     };
@@ -2198,6 +2876,7 @@ export default function PaperPage() {
       const question =
         page?.question.questionType === 'COMPREHENSION' ? page.question.subQuestions?.[0] : page?.question;
       if (!question) return;
+      if (checkedIds.has(question.uuid)) return;
       const optionId = String(Number(event.key) - 1);
       if (Number(optionId) >= question.options.length) return;
       event.preventDefault();
@@ -2210,7 +2889,71 @@ export default function PaperPage() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [currentIndex, pages, showResults]);
+  }, [currentIndex, pages, showResults, checkedIds]);
+
+  // `?` opens the shortcut list (not while typing, or over another dialog).
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== '?' || event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || target?.isContentEditable) return;
+      if (confirmOpen || navOpen) return;
+      event.preventDefault();
+      setShortcutsOpen((open) => !open);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [confirmOpen, navOpen]);
+
+  // Practice run: Enter checks an answered question, and Enter again moves on.
+  // Works from the page, from a short-answer box, and from the Next button
+  // (which holds focus after a Check) so the forward key never skips a check.
+  useEffect(() => {
+    if (runMode !== 'practice' || showResults) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Enter' || event.isComposing) return;
+      if (event.shiftKey || event.metaKey || event.ctrlKey || event.altKey) return;
+      if (confirmOpen || navOpen || shortcutsOpen) return;
+      const target = event.target as HTMLElement | null;
+      const onForward = !!target?.closest('[data-exam-forward]');
+      const inAnswerBox = target instanceof HTMLInputElement && target.type === 'text';
+      // A clicked option keeps focus; Enter there would toggle it back off, so
+      // it checks instead (Space still toggles). Enter on an option not yet
+      // chosen keeps its native press, so a multi-select can't lock half-done.
+      const onOption = target?.closest('[data-exam-option]')?.getAttribute('aria-pressed') === 'true';
+      // Other controls (links, the calculator, textareas) keep their Enter.
+      if (
+        !onForward &&
+        !inAnswerBox &&
+        !onOption &&
+        target &&
+        target !== document.body &&
+        target.closest('button, a, input, textarea, select, [contenteditable="true"], [role="dialog"]')
+      ) {
+        return;
+      }
+      const index = Math.min(currentIndex, pages.length - 1);
+      const page = pages[index];
+      if (!page) return;
+      const answered = pageStates[index] !== undefined && pageStates[index] !== 'none';
+      if (!checkedIds.has(page.id)) {
+        // Unanswered: leave Next's own Enter alone, and never reveal by accident.
+        if (!answered) return;
+        event.preventDefault();
+        setCheckedIds((prev) => new Set(prev).add(page.id));
+        requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-exam-forward]')?.focus());
+        return;
+      }
+      if (onForward) return; // the button's own click moves on
+      event.preventDefault();
+      if (onOption) return; // a locked option: don't toggle, don't jump
+      navViaRef.current = 'enter-key';
+      goNext();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [runMode, showResults, confirmOpen, navOpen, shortcutsOpen, currentIndex, pages, pageStates, checkedIds, goNext]);
 
   // Pop back to the page we came from (the course page in the normal flow)
   // rather than pushing a fresh course entry — pushing created a Paper ⇄ Course
@@ -2253,6 +2996,7 @@ export default function PaperPage() {
 
   const handleConfirmReviewUnanswered = () => {
     setConfirmOpen(false);
+    navViaRef.current = 'hand-in-sheet';
     if (firstIncompleteIndex >= 0) goTo(firstIncompleteIndex);
   };
 
@@ -2266,7 +3010,7 @@ export default function PaperPage() {
     optionIndex: string,
     questionType: QuestionType
   ) => {
-    if (showResults) return;
+    if (showResults || checkedIds.has(questionId)) return;
 
     setSelectedAnswers((prev) =>
       selectPracticeRunOption(prev, questionId, optionIndex, questionType),
@@ -2280,12 +3024,12 @@ export default function PaperPage() {
   };
 
   const handleShortAnswerChange = (questionId: string, answer: string) => {
-    if (showResults) return;
+    if (showResults || checkedIds.has(questionId)) return;
     setSelectedAnswers((prev) => ({ ...prev, [questionId]: answer }));
   };
 
   const handleClearAnswer = (questionId: string) => {
-    if (showResults) return;
+    if (showResults || checkedIds.has(questionId)) return;
     setSelectedAnswers((prev) => {
       const next = { ...prev };
       delete next[questionId];
@@ -2327,6 +3071,7 @@ export default function PaperPage() {
       setSelectedAnswers({});
       setTimerEndsAt(Date.now() + durationMinutes * 60 * 1000);
       setTimerRunning(true);
+      warned10Ref.current = false;
       warned5Ref.current = false;
       warned1Ref.current = false;
       return;
@@ -2336,6 +3081,7 @@ export default function PaperPage() {
     setTimerEndsAt(Date.now() + nextRemaining * 1000);
     setTimerRunning(true);
     // Arm whichever warnings are still ahead of where the clock resumes.
+    warned10Ref.current = nextRemaining <= 600;
     warned5Ref.current = nextRemaining <= 300;
     warned1Ref.current = nextRemaining <= 60;
   };
@@ -2352,6 +3098,7 @@ export default function PaperPage() {
     setRemainingSeconds(durationMinutes * 60);
     setTimeExpired(false);
     setLowTimeWarning(null);
+    warned10Ref.current = false;
     warned5Ref.current = false;
     warned1Ref.current = false;
   };
@@ -2360,7 +3107,11 @@ export default function PaperPage() {
   // timed attempt can never be silently un-started.
   const handleBeginTimed = () => {
     if (!paper) return;
+    setActivity([]);
+    freshRunRef.current = true;
     setRunMode('timed');
+    setFocusIds(null);
+    setCheckedIds(new Set());
     setStartedAt(Date.now());
     setSelectedAnswers({});
     setShowResults(false);
@@ -2370,14 +3121,20 @@ export default function PaperPage() {
     setRemainingSeconds(durationMinutes * 60);
     setTimerEndsAt(Date.now() + durationMinutes * 60 * 1000);
     setTimerRunning(true);
+    warned10Ref.current = false;
     warned5Ref.current = false;
     warned1Ref.current = false;
   };
 
-  // Cover-plate choice: begin an Open Run — no clock, free reading and review.
-  const handleBeginOpen = () => {
+  // Cover-plate choice: an Open Run (no clock, results at hand-in) or a
+  // Practice Run (no clock, each question checked on its own).
+  const handleBeginUntimed = (mode: 'open' | 'practice') => {
     if (!paper) return;
-    setRunMode('open');
+    setActivity([]);
+    freshRunRef.current = true;
+    setRunMode(mode);
+    setFocusIds(null);
+    setCheckedIds(new Set());
     setStartedAt(Date.now());
     setTimerRunning(false);
     setTimerEndsAt(null);
@@ -2386,9 +3143,24 @@ export default function PaperPage() {
     setLowTimeWarning(null);
   };
 
-  const handleTryAgain = () => {
+  const handleBeginRun = (mode: RunMode) => {
+    if (mode === 'timed') handleBeginTimed();
+    else handleBeginUntimed(mode);
+  };
+
+  // Practice Run: lock the current page's answer and reveal its verdict.
+  const handleCheckCurrent = (pageId: string) => {
+    if (showResults || runMode !== 'practice') return;
+    setCheckedIds((prev) => new Set(prev).add(pageId));
+    // The Check button unmounts; hand focus to the forward button beside it.
+    requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-exam-forward]')?.focus());
+  };
+
+  // Clears a finished run back to a blank sheet; callers pick what comes next.
+  const resetRun = () => {
     setSelectedAnswers({});
     setFlaggedIds(new Set());
+    setCheckedIds(new Set());
     setEliminated({});
     setShowResults(false);
     setTimerRunning(false);
@@ -2397,6 +3169,7 @@ export default function PaperPage() {
     setTimeExpired(false);
     setLowTimeWarning(null);
     setAutoSubmitting(false);
+    warned10Ref.current = false;
     warned5Ref.current = false;
     warned1Ref.current = false;
     setCurrentIndex(0);
@@ -2409,10 +3182,29 @@ export default function PaperPage() {
     setResultsView('report');
     setReviewFilter('all');
     setCompareId(null);
-    // Return to the cover plate so the user re-picks Timed vs Open.
-    setRunMode(null);
+    setActivity([]);
     if (storageKey) clearPracticeRunSession(storageKey);
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleTryAgain = () => {
+    resetRun();
+    setFocusIds(null);
+    // Return to the cover plate so the user re-picks the run mode.
+    setRunMode(null);
+    setCoverAttempts(null);
+  };
+
+  // Straight into a Practice run of just the pages this run got wrong or
+  // skipped, checked one at a time.
+  const handleRetryMissed = () => {
+    if (missedPageIds.length === 0) return;
+    const ids = missedPageIds;
+    resetRun();
+    freshRunRef.current = true;
+    setFocusIds(ids);
+    setRunMode('practice');
+    setStartedAt(Date.now());
   };
 
   // Error states
@@ -2484,7 +3276,7 @@ export default function PaperPage() {
     );
   }
 
-  // The cover plate gates entry: pick Timed Run (clock) or Open Run (review).
+  // The cover plate gates entry: pick Timed, Open, or Practice.
   if (runMode === null) {
     return (
       <RunCoverPlate
@@ -2497,8 +3289,8 @@ export default function PaperPage() {
         paperUuid={paper.uuid}
         courseUuid={paper.courseUuid}
         examUuid={paper.examUuid}
-        onBeginTimed={handleBeginTimed}
-        onBeginOpen={handleBeginOpen}
+        attempts={coverAttempts?.paperId === paper._id ? coverAttempts.list : null}
+        onBegin={handleBeginRun}
         onBack={goBack}
       />
     );
@@ -2513,7 +3305,58 @@ export default function PaperPage() {
   const isLastPage = safeIndex >= pageCount - 1;
   const pageNumberById = new Map(pages.map((page, index) => [page.id, index + 1]));
   const labelFor = (uuid: string) => String(pageNumberById.get(uuid) ?? '?');
+  // "Analyse with AI": the sitting as a Markdown report, built on demand.
+  const insightsInput = (generatedAt: number): InsightsInput => {
+    const name = displayPaperName || paper?.paperName || 'Exam paper';
+    return {
+      paper: { name, course: displayCourseName, exam: paper?.examName ?? '', year: paper?.year ?? null },
+      mode: runMode ?? 'open',
+      focusRun: focusIds !== null,
+      durationMinutes,
+      startedAt,
+      timeUsedSeconds: timeUsed,
+      timeExpired,
+      pages: pages.map((page) => ({
+        id: page.id,
+        question: page.passage ? page.question.subQuestions?.[0] ?? page.question : page.question,
+        passage: page.passage
+          ? { number: page.passage.number, part: page.passage.part, parts: page.passage.parts }
+          : null,
+        passageQuestion: page.passage ? page.question : null,
+      })),
+      answers: selectedAnswers,
+      flaggedIds: Array.from(flaggedIds),
+      checkedIds: Array.from(checkedIds),
+      events: activity,
+      generatedAt,
+    };
+  };
+  // Analysed only while the Insights page is open.
+  const insightsView = (() => {
+    if (!showResults || resultsView !== 'insights') return null;
+    const input = insightsInput(Date.now());
+    const analysis = analyseAttempt(input);
+    return { analysis, patterns: attemptPatterns(analysis, input) };
+  })();
+  const buildInsights = () => {
+    const input = insightsInput(Date.now());
+    return { markdown: buildAttemptInsightsMarkdown(input), fileName: insightsFileName(input.paper.name, input.generatedAt) };
+  };
   const currentGrade = currentPage ? graded.find((row) => row.questionUuid === currentPage.id) : undefined;
+  const isPractice = runMode === 'practice';
+  const currentChecked = isPractice && !showResults && !!currentPage && checkedIds.has(currentPage.id);
+  const pageRevealed = showResults || currentChecked;
+  const checkedStates =
+    isPractice && !showResults ? pages.map((page, index) => (checkedIds.has(page.id) ? reviewStates[index] ?? null : null)) : null;
+  const checkedCount = checkedStates ? checkedStates.filter((state) => state !== null).length : 0;
+  const checkedCorrect = checkedStates ? checkedStates.filter((state) => state === 'correct').length : 0;
+  const practiceGrade =
+    currentChecked && currentQuestion
+      ? gradePracticeRun([currentQuestion], selectedAnswers).reduce(
+          (sum, row) => ({ awarded: sum.awarded + row.marksAwarded, max: sum.max + row.maxMarks }),
+          { awarded: 0, max: 0 },
+        )
+      : null;
   const compareOutcomes = new Map(compare?.answers.map((answer) => [answer.questionUuid, answer.outcome]) ?? []);
   const reviewCounts: Record<ReviewFilter, number> = {
     all: pageCount,
@@ -2525,6 +3368,8 @@ export default function PaperPage() {
     ? 'Submit answers'
     : stats.answered > 0
     ? `Submit (${stats.answered}/${stats.totalQuestions})`
+    : checkedIds.size > 0
+    ? 'Submit'
     : 'Answer to submit';
 
   const questionTools: QuestionTools = {
@@ -2532,64 +3377,110 @@ export default function PaperPage() {
     eliminated,
     onToggleEliminate: handleToggleEliminate,
     onClear: handleClearAnswer,
+    checkOnDemand: isPractice,
   };
   // Pager controls, shared by the desktop rail and the phone pager.
   const prevButton = (
-    <Button variant="outline" size="sm" onClick={goPrev} disabled={prevIndex < 0} className="gap-1">
+    <Button variant="outline" onClick={() => { navViaRef.current = 'prev'; goPrev(); }} disabled={prevIndex < 0} aria-label="Previous question" className="h-10 gap-1.5 px-3 sm:min-w-[7.5rem] sm:px-4">
       <ChevronLeft className="h-4 w-4" />
       <span className="hidden sm:inline">Previous</span>
     </Button>
   );
+  // A practice run where every answer was revealed has nothing typed in but
+  // still needs a way to the report.
+  const nothingToHandIn = stats.answered === 0 && checkedIds.size === 0;
   const nextButton =
     isLastPage && !showResults ? (
       <Button
-        size="sm"
         onClick={handleSubmit}
-        disabled={stats.answered === 0 || summoning}
-        className={cn('gap-1', allAnswered ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-[rgb(var(--ex-primary))] text-[rgb(var(--ex-ink))] hover:bg-white')}
+        disabled={nothingToHandIn || summoning}
+        data-exam-forward
+        className={cn('h-10 gap-1.5 px-4', allAnswered ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-[rgb(var(--ex-primary))] text-[rgb(var(--ex-ink))] hover:bg-white')}
       >
-        {summoning ? 'Summoning…' : submitLabel}
+        {summoning ? (
+          'Summoning…'
+        ) : (
+          <>
+            <span className="sm:hidden">Submit</span>
+            <span className="hidden sm:inline">{submitLabel}</span>
+          </>
+        )}
       </Button>
     ) : nextIndex >= 0 ? (
-      <Button size="sm" onClick={goNext} className="gap-1 bg-[rgb(var(--ex-primary))] text-[rgb(var(--ex-ink))] hover:bg-white">
+      <Button onClick={() => { navViaRef.current = 'next'; goNext(); }} data-exam-forward aria-label="Next question" className="h-10 gap-1.5 bg-[rgb(var(--ex-primary))] px-3 text-[rgb(var(--ex-ink))] hover:bg-white sm:min-w-[7.5rem] sm:px-4">
         <span className="hidden sm:inline">Next</span>
         <ChevronRight className="h-4 w-4" />
       </Button>
     ) : (
-      <Button size="sm" variant="outline" onClick={showReport} className="gap-1">
+      <Button variant="outline" onClick={showReport} aria-label="Back to report" className="h-10 gap-1.5 px-4">
         <span className="hidden sm:inline">Back to</span> report
       </Button>
     );
-  const flagButton = !showResults && currentPage && (
+  // Number keys pick options 1–6; the hint shows only the ones this question has.
+  const keyedQuestion =
+    currentQuestion?.questionType === 'COMPREHENSION' ? currentQuestion.subQuestions?.[0] : currentQuestion;
+  const answerKeyCount = Math.min(6, keyedQuestion?.options.length ?? 0);
+  const currentAnswered = pageStates[safeIndex] !== undefined && pageStates[safeIndex] !== 'none';
+  const checkButton =
+    isPractice && !showResults && currentPage && !currentChecked ? (
+      <Button
+        variant={currentAnswered ? 'default' : 'outline'}
+        onClick={() => handleCheckCurrent(currentPage.id)}
+        className={cn('h-10 gap-1.5 px-3 sm:px-4', currentAnswered && 'bg-[rgb(var(--ex-primary))] text-[rgb(var(--ex-ink))] hover:bg-white')}
+        title={currentAnswered ? 'Check this answer (locks it)' : 'Reveal the answer without attempting'}
+        aria-label={currentAnswered ? 'Check this answer' : 'Show answer'}
+      >
+        {currentAnswered ? (
+          <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+        ) : (
+          <Eye className="h-4 w-4" aria-hidden="true" />
+        )}
+        <span className="hidden sm:inline">{currentAnswered ? 'Check' : 'Show answer'}</span>
+      </Button>
+    ) : null;
+  // Flag: in the sheet head on wide screens, in the foot on phones where the
+  // head row has no room for it.
+  const renderFlag = (placement: 'head' | 'foot') => !showResults && currentPage && (
     <button
       type="button"
       onClick={() => toggleFlag(currentPage.id)}
       aria-pressed={currentFlagged}
+      aria-label="Flag for review"
       title="Flag for review (F)"
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm transition-colors',
+        'items-center gap-1.5 rounded-md border transition-colors',
+        placement === 'head' ? 'hidden h-8 px-2.5 text-[13px] lg:inline-flex' : 'inline-flex h-10 px-3 text-sm lg:hidden',
         currentFlagged
           ? 'border-amber-500/50 bg-amber-500/15 text-amber-300'
           : 'border-[rgb(var(--ex-line)/0.22)] text-muted-foreground hover:border-amber-500/40 hover:text-foreground',
       )}
     >
       <Flag className={cn('h-4 w-4', currentFlagged && 'fill-amber-400/80')} aria-hidden="true" />
-      <span className="hidden sm:inline">{currentFlagged ? 'Flagged' : 'Flag'}</span>
+      <span className={placement === 'head' ? undefined : 'hidden sm:inline'}>{currentFlagged ? 'Flagged' : 'Flag'}</span>
     </button>
   );
+  // Whole minutes left on a timed run's clock, for the hand-in summary.
+  const clockMinutesLeft =
+    runMode === 'timed' && remainingSeconds !== null && !timeExpired && remainingSeconds >= 60
+      ? Math.floor(remainingSeconds / 60)
+      : null;
   const toolButton =
     'inline-flex h-8 items-center justify-center gap-1.5 rounded-md px-2 text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground disabled:pointer-events-none disabled:opacity-35';
 
   return (
     <ImageZoomProvider>
     <div
-      className="ex-theme relative isolate w-full lg:-mb-6"
+      className={cn(
+        'ex-theme relative isolate w-full lg:-mb-6',
+        // On wide screens the sitting fills exactly one screen under the 2.5rem
+        // site header: a flex column whose sheet takes whatever the exam bar
+        // (and, in review, the filter bar) leaves, so no height is hardcoded.
+        // The report is a normal scrolling page.
+        fitsScreen && 'lg:-mt-10 lg:flex lg:h-[calc(100dvh-3.5rem)] lg:flex-col',
+      )}
       // The level colour stays a small label accent; selections and progress
       // keep the calm default blue so a red course never reads as "wrong".
-      // --exam-chrome: site header + exam bar + page padding, what the question
-      // and answer panels leave free so the whole exam fits one screen (the
-      // pager lives in the rail). In review the filter bar takes ~7.5rem more.
-      style={{ ['--ring' as string]: 'rgb(var(--ex-accent))', ['--exam-chrome' as string]: reviewing ? '18.5rem' : '11rem' }}
+      style={{ ['--ring' as string]: 'rgb(var(--ex-accent))' }}
     >
       {/* Page backdrop — the exam hall, dimmed and softened so the question
           and navigator stay legible through a long sitting. */}
@@ -2597,9 +3488,9 @@ export default function PaperPage() {
 
       {/* Exam bar — everything the sitting needs at a glance, pinned under the
           site header: where you are, how far along, the clock, and Submit. */}
-      <header className="sticky top-14 z-40 -mx-4 -mt-8 mb-6 border-b border-[rgb(var(--ex-line)/0.16)] bg-[#0d1325]/85 backdrop-blur-md md:-mx-8 md:-mt-10">
-        <div className="px-4 md:px-8">
-        <div className="mx-auto flex max-w-[1500px] items-center gap-2 py-2.5 sm:gap-3">
+      <header className={cn('sticky top-10 z-40 -mx-4 -mt-8 mb-3 shrink-0 border-b border-[rgb(var(--ex-line)/0.16)] bg-[#0d1325]/85 backdrop-blur-md md:-mx-5 md:-mt-10', fitsScreen && 'lg:mt-0')}>
+        <div className="px-4 md:px-5">
+        <div className="relative mx-auto flex max-w-[1880px] items-center gap-2 py-2.5 sm:gap-3">
           <Button
             variant="ghost"
             size="icon"
@@ -2610,22 +3501,39 @@ export default function PaperPage() {
           >
             <ArrowLeft className="h-4 w-4" />
           </Button>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-              <span className="text-[rgb(var(--ex-accent))]">{displayCourseName || paper.examName}</span>
+          {/* Where you are: orientation, not a focal point, so it stays quiet
+              and leaves the centre of the bar to the clock. */}
+          <div className={cn('min-w-0 flex-1', hasTimer && !showResults && 'lg:max-w-[calc(50%-12rem)]')}>
+            <p className="truncate text-[11px] font-medium uppercase tracking-[0.12em] text-white/55">
+              {focusIds && (
+                <span className="text-[rgb(var(--ex-accent))]">
+                  {pageCount} missed {pageCount === 1 ? 'question' : 'questions'} ·{' '}
+                </span>
+              )}
+              {displayCourseName || paper.examName}
               {displayCourseName && <span className="hidden sm:inline"> · {paper.examName}</span>}
             </p>
-            <h1 className="truncate font-display text-base font-normal leading-tight tracking-tight sm:text-lg" title={displayPaperName}>
+            <h1 className="truncate font-display text-lg font-normal leading-tight tracking-tight text-white/95 sm:text-xl" title={displayPaperName}>
               {displayPaperName}
             </h1>
           </div>
+          {/* The capped title leaves room; this keeps the tools pinned right. */}
+          {hasTimer && !showResults && <div aria-hidden="true" className="hidden flex-1 lg:block" />}
 
           {!showResults && (
-            <div className="hidden shrink-0 flex-col items-end leading-tight md:flex">
-              <span className="text-sm font-medium tabular-nums">
-                {stats.answered}
-                <span className="text-muted-foreground">/{stats.totalQuestions} answered</span>
-              </span>
+            <div className="hidden shrink-0 flex-col items-end justify-center leading-tight md:flex">
+              {isPractice ? (
+                <span className="text-sm font-medium tabular-nums lg:hidden">
+                  {checkedCount}
+                  <span className="text-muted-foreground">/{pageCount} checked</span>
+                  {checkedCount > 0 && <span className="text-emerald-300/90"> · {checkedCorrect} correct</span>}
+                </span>
+              ) : (
+                <span className="text-sm font-medium tabular-nums lg:hidden">
+                  {stats.answered}
+                  <span className="text-muted-foreground">/{stats.totalQuestions} answered</span>
+                </span>
+              )}
               <span
                 className="inline-flex items-center gap-1 text-[11px] text-muted-foreground"
                 title="Your answers and timer autosave and survive a refresh."
@@ -2636,7 +3544,7 @@ export default function PaperPage() {
                   <button
                     type="button"
                     onClick={goNextFlagged}
-                    className="ml-1.5 inline-flex items-center gap-1 text-amber-400/90 transition-colors hover:text-amber-300"
+                    className="ml-1.5 inline-flex items-center gap-1 text-amber-400/90 transition-colors hover:text-amber-300 lg:hidden"
                     title="Jump to next flagged question"
                   >
                     <Flag className="h-3 w-3 fill-amber-400/70" aria-hidden="true" />
@@ -2682,22 +3590,29 @@ export default function PaperPage() {
             </button>
           </div>
 
-          {lowTimeWarning && !showResults && (
-            <span
-              key={lowTimeWarning}
-              role="status"
-              className={cn(
-                'exam-lowtime hidden shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-semibold lg:inline-flex',
-                lowTimeWarning === '1min'
-                  ? 'border-red-500/40 bg-red-500/10 text-red-400'
-                  : 'border-amber-500/40 bg-amber-500/10 text-amber-400',
-              )}
-            >
-              <Timer className="h-3.5 w-3.5" aria-hidden="true" />
-              {lowTimeWarning === '1min' ? '1 minute left' : '5 minutes left'}
-            </span>
-          )}
+          {/* Low-time alert: hangs just under the bar, centred like the clock,
+              and is announced. The live region stays mounted so it's heard. */}
+          <div
+            role="status"
+            className="pointer-events-none absolute left-1/2 top-full z-10 mt-2 -translate-x-1/2"
+          >
+            {lowTimeWarning && !showResults && (
+              <span
+                key={lowTimeWarning}
+                className={cn(
+                  'exam-lowtime inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-1 text-sm font-semibold shadow-[0_8px_24px_-10px_rgb(0_0_0/0.7)] backdrop-blur-md',
+                  lowTimeWarning === '1min'
+                    ? 'border-red-500/50 bg-[#2a1216]/90 text-red-300'
+                    : 'border-amber-500/50 bg-[#2a2010]/90 text-amber-300',
+                )}
+              >
+                <Timer className="h-4 w-4" aria-hidden="true" />
+                {LOW_TIME_LABEL[lowTimeWarning]}
+              </span>
+            )}
+          </div>
           {hasTimer && !showResults && (
+            <div className="shrink-0 lg:absolute lg:left-1/2 lg:top-1/2 lg:-translate-x-1/2 lg:-translate-y-1/2">
             <CompactTimer
               durationMinutes={durationMinutes}
               remainingSeconds={remainingSeconds}
@@ -2708,7 +3623,9 @@ export default function PaperPage() {
               expired={timeExpired}
               hidden={timerHidden}
               onToggleHidden={() => setTimerHidden((value) => !value)}
+              alerting={lowTimeWarning !== null}
             />
+            </div>
           )}
           {showResults ? (
             <div className="flex shrink-0 items-center gap-2">
@@ -2718,11 +3635,11 @@ export default function PaperPage() {
                     key={view}
                     type="button"
                     role="tab"
-                    aria-selected={resultsView === view}
+                    aria-selected={view === 'review' ? resultsView === 'review' : resultsView !== 'review'}
                     onClick={() => (view === 'report' ? showReport() : openReview(reviewFilter, currentPage?.id))}
                     className={cn(
                       'rounded-md px-2.5 py-1 text-xs font-medium capitalize transition-colors',
-                      resultsView === view
+                      (view === 'review' ? resultsView === 'review' : resultsView !== 'review')
                         ? 'bg-[rgb(var(--ex-primary))] text-[rgb(var(--ex-ink))]'
                         : 'text-muted-foreground hover:text-foreground',
                     )}
@@ -2744,8 +3661,8 @@ export default function PaperPage() {
             <Button
               size="sm"
               onClick={handleSubmit}
-              disabled={stats.answered === 0 || summoning}
-              title={stats.answered === 0 ? 'Answer at least one question to submit' : undefined}
+              disabled={nothingToHandIn || summoning}
+              title={nothingToHandIn ? 'Answer at least one question to submit' : undefined}
               className={cn(
                 'shrink-0',
                 allAnswered ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-[rgb(var(--ex-primary))] text-[rgb(var(--ex-ink))] hover:bg-white',
@@ -2786,12 +3703,29 @@ export default function PaperPage() {
             onCompareChange={setCompareId}
             onReview={openReview}
             onTryAgain={handleTryAgain}
+            missedCount={missedPageIds.length}
+            onRetryMissed={handleRetryMissed}
+            focusRun={focusIds !== null}
+            onBuildInsights={buildInsights}
+            onOpenInsights={showInsights}
+          />
+        </div>
+      ) : insightsView ? (
+        <div className="mx-auto max-w-[1180px] pb-10">
+          <AttemptInsights
+            analysis={insightsView.analysis}
+            patterns={insightsView.patterns}
+            runMode={runMode}
+            durationMinutes={durationMinutes}
+            onBack={showReport}
+            onBuildReport={buildInsights}
+            onOpenQuestion={(id) => openReview('all', id)}
           />
         </div>
       ) : (
-      <div className="mx-auto grid max-w-[1500px] gap-5 lg:grid-cols-[minmax(0,1fr)_272px] xl:grid-cols-[minmax(0,1fr)_300px]">
-        <div className="min-w-0 space-y-4">
-          {reviewing && currentPage && (
+      <div className="mx-auto w-full max-w-[1880px] lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
+        {reviewing && currentPage && (
+          <div className="mb-3 shrink-0">
             <ReviewBar
               filter={reviewFilter}
               counts={reviewCounts}
@@ -2807,112 +3741,152 @@ export default function PaperPage() {
               onBackToReport={showReport}
               onTryAgain={handleTryAgain}
             />
-          )}
+          </div>
+        )}
 
-          {/* One question per page: question | answer. */}
-          {currentPage && currentQuestion && (
-            // Parts of one passage share a key, so the passage (and its scroll)
-            // stays put while only the question beside it changes.
-            <div key={currentPage.passage?.uuid ?? currentPage.id} className="exam-q-enter">
-              <QuestionCard
-                question={currentQuestion}
-                index={safeIndex}
-                passage={currentPage.passage}
-                tools={questionTools}
-                selectedAnswers={selectedAnswers}
-                showResults={showResults}
-                onSelectAnswer={handleOptionSelect}
-                onShortAnswerChange={handleShortAnswerChange}
-                isFlagged={currentFlagged}
-              />
-            </div>
-          )}
+        {/* The exam sheet: question | answer | navigator in one framed card,
+            with the pager along its foot, right under the options. */}
+        <div className="exam-tome relative isolate overflow-clip rounded-2xl border border-[rgb(var(--ex-line)/0.24)] backdrop-blur-sm lg:grid lg:min-h-[26rem] lg:flex-1 lg:grid-cols-[minmax(0,1fr)_16.5rem] lg:grid-rows-[minmax(0,1fr)] xl:grid-cols-[minmax(0,1fr)_18rem]">
+          <div className="relative z-10 flex min-h-0 min-w-0 flex-col">
+            {currentPage && currentQuestion && (
+              // Parts of one passage share a key, so the passage (and its scroll)
+              // stays put while only the question beside it changes.
+              <div key={currentPage.passage?.uuid ?? currentPage.id} className="exam-q-enter flex min-h-0 flex-1 flex-col">
+                <QuestionCard
+                  question={currentQuestion}
+                  index={safeIndex}
+                  passage={currentPage.passage}
+                  tools={questionTools}
+                  selectedAnswers={selectedAnswers}
+                  showResults={pageRevealed}
+                  onSelectAnswer={handleOptionSelect}
+                  onShortAnswerChange={handleShortAnswerChange}
+                  headAction={renderFlag('head')}
+                  verdict={
+                    currentChecked && practiceGrade ? (
+                      <PracticeVerdict
+                        key={currentPage.id}
+                        outcome={reviewStates[safeIndex] ?? 'unanswered'}
+                        marksAwarded={practiceGrade.awarded}
+                        maxMarks={practiceGrade.max}
+                      />
+                    ) : null
+                  }
+                />
+              </div>
+            )}
 
-          {/* Phone/tablet pager, pinned to the bottom — Prev · list · flag · Next. */}
-          <div className="sticky bottom-4 z-30 lg:hidden">
-            <div className="exam-panel flex items-center justify-between gap-2 rounded-xl bg-[#121a30]/95 px-3 py-2.5 shadow-[0_-12px_32px_-12px_rgba(0,0,0,0.7)] backdrop-blur sm:px-4">
+            {/* Sheet foot: Previous · (phone list and flag) · (Check) · Next. Pinned to
+                the bottom of the screen on phones. */}
+            <div className="sticky bottom-0 z-20 flex items-center gap-2 border-t border-[rgb(var(--ex-line)/0.16)] bg-[#10172d]/95 px-5 py-2.5 backdrop-blur sm:gap-3 sm:px-8 lg:static lg:bg-black/25">
               {prevButton}
-              <div className="flex items-center gap-1.5 sm:gap-3">
+              <div className="flex min-w-0 flex-1 items-center justify-center gap-2 sm:gap-3">
                 <button
                   type="button"
                   onClick={() => setNavOpen(true)}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-[rgb(var(--ex-line)/0.22)] px-2.5 py-1.5 text-sm tabular-nums text-foreground transition-colors hover:bg-white/5"
+                  className="inline-flex h-10 items-center gap-1.5 rounded-md border border-[rgb(var(--ex-line)/0.22)] px-2.5 text-sm tabular-nums text-foreground transition-colors hover:bg-white/5 lg:hidden"
                   aria-label={`Question ${safeIndex + 1} of ${pageCount}. Open question list`}
                 >
                   <LayoutGrid className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
                   {safeIndex + 1}
                   <span className="text-muted-foreground">/ {pageCount}</span>
                 </button>
-                {flagButton}
+                {/* Wide screens: the rail and the sheet head already say where you are. */}
+                {renderFlag('foot')}
               </div>
+              {checkButton}
               {nextButton}
             </div>
           </div>
-        </div>
 
-        {/* Rail: where you are, how to move, the whole paper at a glance. */}
-        <aside className="hidden lg:block">
-          <div className="sticky top-[8.5rem] flex max-h-[calc(100dvh-10rem)] flex-col gap-3">
-            <div className="exam-panel shrink-0 rounded-2xl bg-[#121a30]/90 p-3 backdrop-blur-sm">
-              <div className="flex items-center justify-between gap-2 px-1">
-                <span className="text-sm tabular-nums text-muted-foreground">
-                  Question <span className="font-medium text-foreground">{safeIndex + 1}</span> of {pageCount}
-                </span>
-                {flagButton}
-              </div>
-              <div className="mt-3 grid grid-cols-2 gap-2">
-                {prevButton}
-                {nextButton}
-              </div>
-              <p className="mt-2.5 flex flex-wrap items-center justify-center gap-1 text-[10px] text-muted-foreground/80">
-                <kbd className="rounded border border-border px-1 py-px font-sans text-[9px]">←</kbd>
-                <kbd className="rounded border border-border px-1 py-px font-sans text-[9px]">→</kbd>
-                move
-                {!showResults && (
-                  <>
-                    <kbd className="ml-1 rounded border border-border px-1 py-px font-sans text-[9px]">F</kbd>
-                    flag
-                    <kbd className="ml-1 rounded border border-border px-1 py-px font-sans text-[9px]">1–4</kbd>
-                    answer
-                  </>
-                )}
-              </p>
-            </div>
-            <div className="exam-scroll min-h-0 overflow-y-auto rounded-2xl">
+          {/* Rail: the whole paper at a glance, cut from the sheet by a rule. */}
+          <aside aria-label="Questions" className="relative z-10 hidden min-h-0 flex-col border-l border-[rgb(var(--ex-line)/0.16)] bg-black/[0.18] lg:flex">
+            <div className="exam-scroll min-h-0 flex-1 overflow-y-auto p-4">
               <QuestionNavigator
+                bare
                 states={pageStates}
                 reviewStates={showResults ? reviewStates : null}
+                checkedStates={checkedStates}
                 flagged={flaggedPages}
                 flaggedCount={flaggedCount}
                 incorrectCount={incorrectCount}
+                unansweredCount={showResults ? 0 : unansweredCount}
                 currentIndex={safeIndex}
-                onJump={goTo}
+                onJump={(index) => {
+                  navViaRef.current = 'question-grid';
+                  goTo(index);
+                }}
                 onJumpNextFlagged={goNextFlagged}
                 onJumpNextIncorrect={goNextIncorrect}
+                onJumpNextUnanswered={goNextUnanswered}
               />
             </div>
-            {/* Mid timed run the paper is on screen already; downloading waits for the report. */}
-            {!(runMode === 'timed' && !showResults) && (
-            <div className="flex shrink-0 flex-wrap items-center gap-2">
-              <DownloadPdfButton
-                paperUuid={paper.uuid}
-                courseUuid={paper.courseUuid}
-                examUuid={paper.examUuid}
-              />
-              {BOOKMARKS_ENABLED && <SaveButton paperId={paper._id} />}
+            <div className="shrink-0 space-y-3 border-t border-[rgb(var(--ex-line)/0.14)] px-4 py-3">
+              <p className="flex flex-wrap items-center gap-x-1 gap-y-1.5 text-xs text-muted-foreground/85">
+                <kbd className="rounded border border-border px-1 py-px font-sans text-[11px]">←</kbd>
+                <kbd className="rounded border border-border px-1 py-px font-sans text-[11px]">→</kbd>
+                <span className="mr-1.5">move</span>
+                {!showResults && (
+                  <>
+                    <kbd className="rounded border border-border px-1 py-px font-sans text-[11px]">F</kbd>
+                    <span className="mr-1.5">flag</span>
+                    {answerKeyCount > 0 && !currentChecked && (
+                      <>
+                        <kbd className="rounded border border-border px-1 py-px font-sans text-[11px]">
+                          {answerKeyCount === 1 ? '1' : `1–${answerKeyCount}`}
+                        </kbd>
+                        <span className="mr-1.5">answer</span>
+                      </>
+                    )}
+                    {isPractice && (
+                      <>
+                        <kbd className="rounded border border-border px-1 py-px font-sans text-[11px]">Enter</kbd>
+                        <span className="mr-1.5">{currentChecked ? 'next' : 'check'}</span>
+                      </>
+                    )}
+                  </>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setShortcutsOpen(true)}
+                  className="ml-auto inline-flex items-center gap-1 rounded px-1 text-muted-foreground transition-colors hover:text-foreground"
+                  aria-label="Show all keyboard shortcuts"
+                >
+                  <kbd className="rounded border border-border px-1 py-px font-sans text-[11px]">?</kbd>
+                  all
+                </button>
+              </p>
+              {/* Mid timed run the paper is on screen already; downloading waits for the report. */}
+              {!(runMode === 'timed' && !showResults) && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <DownloadPdfButton
+                    paperUuid={paper.uuid}
+                    courseUuid={paper.courseUuid}
+                    examUuid={paper.examUuid}
+                  />
+                  {BOOKMARKS_ENABLED && <SaveButton paperId={paper._id} />}
+                </div>
+              )}
             </div>
-            )}
-          </div>
-        </aside>
+          </aside>
+
+          <div className="tcard-frame" aria-hidden="true" />
+          <span className="tcard-corner tcard-corner-tl" aria-hidden="true" />
+          <span className="tcard-corner tcard-corner-tr" aria-hidden="true" />
+          <span className="tcard-corner tcard-corner-bl" aria-hidden="true" />
+          <span className="tcard-corner tcard-corner-br" aria-hidden="true" />
+        </div>
       </div>
       )}
 
       {/* Floating calculator, parked over the rail so the question stays in view. */}
       {calcOpen && (
-        <div className="fixed bottom-24 right-4 z-50 sm:bottom-auto sm:top-[8.5rem] md:right-8">
+        <div className="fixed bottom-24 right-4 z-50 sm:bottom-auto sm:top-[7.5rem] md:right-8">
           <ExamCalculator onClose={() => setCalcOpen(false)} />
         </div>
       )}
+
+      <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} practice={isPractice && !showResults} />
 
       {/* Phone/tablet question list — the rail as a bottom sheet. */}
       <Dialog open={navOpen} onOpenChange={setNavOpen} labelledBy="exam-nav-title" className="sm:max-w-md">
@@ -2921,17 +3895,24 @@ export default function PaperPage() {
           <QuestionNavigator
             states={pageStates}
             reviewStates={showResults ? reviewStates : null}
+            checkedStates={checkedStates}
             flagged={flaggedPages}
             flaggedCount={flaggedCount}
             incorrectCount={incorrectCount}
             currentIndex={safeIndex}
             onJump={(index) => {
               setNavOpen(false);
+              navViaRef.current = 'question-grid';
               goTo(index);
             }}
             onJumpNextFlagged={() => {
               setNavOpen(false);
               goNextFlagged();
+            }}
+            unansweredCount={showResults ? 0 : unansweredCount}
+            onJumpNextUnanswered={() => {
+              setNavOpen(false);
+              goNextUnanswered();
             }}
             onJumpNextIncorrect={() => {
               setNavOpen(false);
@@ -2950,111 +3931,103 @@ export default function PaperPage() {
         className="border-transparent bg-[#0f1529] sm:max-w-[31rem]"
       >
         {/* Frieren and Fern at the exam hall's door at day's end; fades into the panel. */}
-        <div className="relative h-40 shrink-0 overflow-hidden sm:h-44" aria-hidden="true">
+        {/* Everything above the actions scrolls, so Hand in stays reachable on short phones. */}
+        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="relative h-40 shrink-0 overflow-hidden sm:h-44 [@media(max-height:640px)]:h-24" aria-hidden="true">
           <img src={handInHall} alt="" className="h-full w-full object-cover object-[50%_55%]" />
           <div className="absolute inset-0 bg-gradient-to-b from-[#0f1529]/30 via-transparent to-[#0f1529]" />
         </div>
-        <div className="relative -mt-6 px-6 pb-6 sm:px-8">
+        <div className="relative -mt-8 px-6 pb-2 sm:px-8">
           <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[rgb(var(--ex-accent))]/80">End of paper</p>
-          <h2 id="submit-confirm-title" className="mt-1.5 font-display text-[1.65rem] font-normal leading-tight tracking-tight">
-            {blankCount === 0 ? 'Hand in your paper?' : `Hand in with ${blankCount} left blank?`}
+          <h2 id="submit-confirm-title" className="mt-1.5 font-display text-[1.75rem] font-normal leading-tight tracking-tight">
+            Hand in your paper?
           </h2>
-          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-            {remainingSeconds !== null && !timeExpired && remainingSeconds >= 60 && (
-              <>
-                <span className="text-foreground/90">{Math.floor(remainingSeconds / 60)} min</span> still on the clock.{' '}
-              </>
-            )}
-            Once handed in, answers can't change.
-          </p>
 
-          {/* The answer sheet. */}
-          <div className="mt-6">
-            <div className="mb-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
-              <span className="inline-flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 rounded-[3px] bg-[#62aef0]" aria-hidden="true" />
-                {pageCount - blankCount - partialCount} answered
-              </span>
-              {partialCount > 0 && (
-                <span className="inline-flex items-center gap-1.5">
-                  <span className="h-2.5 w-2.5 rounded-[3px] border border-[rgb(var(--ex-accent))]/70 bg-[rgb(var(--ex-accent))]/25" aria-hidden="true" />
-                  {partialCount} partial
-                </span>
-              )}
-              <span className="inline-flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 rounded-[3px] border border-dashed border-white/35" aria-hidden="true" />
-                {blankCount} blank
-              </span>
-              {flaggedCount > 0 && (
-                <span className="inline-flex items-center gap-1.5 text-amber-300">
-                  <Flag className="h-3 w-3 fill-amber-400/70" aria-hidden="true" />
-                  {flaggedCount} flagged
-                </span>
-              )}
+          {/* Where the paper stands, in big numbers. */}
+          <dl className="mt-5 flex divide-x divide-white/[0.08] overflow-hidden rounded-xl border border-white/[0.08] bg-black/25">
+            <HandInStat label="Answered" value={answeredCount} swatch={NAV_CELL_CLASS.done} />
+            {partialCount > 0 && <HandInStat label="Partly" value={partialCount} swatch={NAV_CELL_CLASS.partial} />}
+            <HandInStat label="Blank" value={blankCount} swatch={NAV_CELL_CLASS.none} />
+            {flaggedCount > 0 && (
+              <HandInStat
+                label="Flagged"
+                value={flaggedCount}
+                icon={<Flag className="h-3 w-3 fill-amber-400/80 text-amber-400" aria-hidden="true" />}
+              />
+            )}
+            {clockMinutesLeft !== null && <HandInStat label="Min left" value={clockMinutesLeft} />}
+          </dl>
+
+          {/* One line on what's unfinished, with a way straight to it. */}
+          {firstIncompleteIndex >= 0 && (
+            <div className="mt-3 flex items-center gap-3 rounded-lg border border-amber-500/25 bg-amber-500/[0.07] px-3.5 py-2.5 text-sm">
+              <CircleAlert className="h-4 w-4 shrink-0 text-amber-400" aria-hidden="true" />
+              <p className="min-w-0 flex-1 text-amber-50/90">
+                {blankCount > 0
+                  ? `${blankCount} ${blankCount === 1 ? 'question is' : 'questions are'} blank and will score nothing.`
+                  : `${partialCount} ${partialCount === 1 ? 'question is' : 'questions are'} only partly answered.`}
+              </p>
+              <button
+                type="button"
+                onClick={handleConfirmReviewUnanswered}
+                className="shrink-0 rounded-md px-2 py-1 text-sm font-medium text-amber-200 transition-colors hover:bg-amber-500/15"
+              >
+                Go to Q{firstIncompleteIndex + 1} →
+              </button>
             </div>
-            <ol className="grid grid-cols-10 gap-1.5" aria-label="Answer sheet">
+          )}
+
+          {/* The answer sheet, in the same cells as the question rail. */}
+          <div className="mt-5">
+            <div className="mb-2 flex items-baseline justify-between gap-3">
+              <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">Answer sheet</p>
+              <p className="text-xs text-muted-foreground">Select a question to go back</p>
+            </div>
+            <ol className="-m-1 grid max-h-[13rem] grid-cols-10 gap-1.5 overflow-y-auto p-1" aria-label="Answer sheet">
               {pageStates.map((state, index) => (
                 <li key={pages[index]?.id ?? index}>
                   <button
                     type="button"
                     onClick={() => {
                       setConfirmOpen(false);
+                      navViaRef.current = 'hand-in-sheet';
                       goTo(index);
                     }}
-                    aria-label={`Question ${index + 1}: ${state === 'done' ? 'answered' : state === 'partial' ? 'partly answered' : 'blank'}${flaggedPages[index] ? ', flagged' : ''}`}
+                    aria-label={`Question ${index + 1}: ${NAV_CELL_LABEL[state].toLowerCase()}${flaggedPages[index] ? ', flagged' : ''}`}
                     className={cn(
-                      'relative flex aspect-square w-full items-center justify-center rounded-[5px] text-[10px] font-medium tabular-nums transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--ex-accent))]/70',
-                      state === 'done'
-                        ? 'bg-[#62aef0]/85 text-[#0b1622] hover:bg-[#62aef0]'
-                        : state === 'partial'
-                        ? 'border border-[rgb(var(--ex-accent))]/60 bg-[rgb(var(--ex-accent))]/15 text-[rgb(var(--ex-accent-soft))] hover:bg-[rgb(var(--ex-accent))]/25'
-                        : 'border border-dashed border-white/20 text-muted-foreground hover:border-[rgb(var(--ex-accent))]/60 hover:text-[rgb(var(--ex-accent-soft))]',
-                      index === safeIndex && 'ring-1 ring-white/60 ring-offset-1 ring-offset-[#0f1529]',
+                      'relative flex h-9 w-full items-center justify-center overflow-hidden rounded-md border text-[13px] font-medium tabular-nums transition-[filter] hover:brightness-125 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--ex-accent))]/70',
+                      NAV_CELL_CLASS[state],
+                      index === safeIndex && 'ring-2 ring-[rgb(var(--ex-accent-soft))] ring-offset-1 ring-offset-[#0f1529]',
                     )}
                   >
                     {index + 1}
-                    {flaggedPages[index] && (
-                      <span className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-amber-400 ring-2 ring-[#0f1529]" aria-hidden="true" />
-                    )}
+                    {flaggedPages[index] && <FlagFold className="border-l-[8px] border-t-[8px]" />}
                   </button>
                 </li>
               ))}
             </ol>
-            <p className="mt-2.5 text-xs text-muted-foreground">
-              Tap a square to go back to it.
-              {firstIncompleteIndex >= 0 && (
-                <>
-                  {' '}
-                  <button
-                    type="button"
-                    onClick={handleConfirmReviewUnanswered}
-                    className="font-medium text-[rgb(var(--ex-accent-soft))] underline-offset-4 hover:underline"
-                  >
-                    First blank: Q{firstIncompleteIndex + 1} →
-                  </button>
-                </>
-              )}
-            </p>
-          </div>
-
-          <div className="mt-7 flex flex-col-reverse gap-2 border-t border-white/[0.06] pt-5 sm:flex-row sm:justify-end">
-            {/* Safe default focus: a stray Enter returns to the paper. */}
-            <Button variant="ghost" data-autofocus onClick={() => setConfirmOpen(false)}>
-              Back to paper
-            </Button>
-            <Button
-              onClick={handleConfirmSubmit}
-              className={cn(
-                'px-5',
-                blankCount === 0
-                  ? 'bg-[rgb(var(--ex-primary))] text-[rgb(var(--ex-ink))] hover:bg-white'
-                  : 'border border-[rgb(var(--ex-accent))]/45 bg-[rgb(var(--ex-accent))]/10 text-[rgb(var(--ex-accent-soft))] hover:bg-[rgb(var(--ex-accent))]/20',
-              )}
-            >
-              Hand in paper
-            </Button>
           </div>
         </div>
+        </div>
+
+          <div className="relative mx-6 mb-6 mt-4 flex shrink-0 flex-col gap-4 border-t border-white/[0.06] pt-5 sm:mx-8 sm:flex-row sm:items-center">
+            <p className="inline-flex items-center gap-1.5 text-xs text-muted-foreground sm:mr-auto">
+              <Lock className="h-3.5 w-3.5" aria-hidden="true" />
+              Answers lock once handed in.
+            </p>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row">
+              {/* Safe default focus: a stray Enter returns to the paper. */}
+              <Button variant="ghost" data-autofocus onClick={() => setConfirmOpen(false)}>
+                Back to paper
+              </Button>
+              <Button
+                onClick={handleConfirmSubmit}
+                className="bg-[rgb(var(--ex-primary))] px-5 font-semibold text-[rgb(var(--ex-ink))] hover:bg-white"
+              >
+                Hand in paper
+              </Button>
+            </div>
+          </div>
 
         {/* Same frame as the question card: the paper's own edge. */}
         <div className="tcard-frame rounded-[19px] [--lvl:rgb(var(--ex-accent))]" aria-hidden="true" />

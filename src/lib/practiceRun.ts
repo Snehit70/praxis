@@ -1,13 +1,19 @@
 import type { QuestionType, QuizQuestion } from '@/lib/dataTransforms';
+import { parseRunEvents, type RunEvent } from '@/lib/runActivity';
 
 export type SelectedAnswers = Record<string, string | string[]>;
 
 /**
- * The two modes a user chooses on entering a paper variant (see CONTEXT.md):
- * a Timed Run (clock + auto-submit) or an Open Run (untimed, free review).
+ * The modes a user chooses on entering a paper variant (see CONTEXT.md): a
+ * Timed Run (clock + auto-submit), an Open Run (untimed, results at hand-in),
+ * or a Practice Run (untimed, each question checked and revealed on its own).
  * `null` means the choice hasn't been made yet — the cover plate is showing.
  */
-export type RunMode = 'timed' | 'open';
+export type RunMode = 'timed' | 'open' | 'practice';
+
+export function isRunMode(value: unknown): value is RunMode {
+  return value === 'timed' || value === 'open' || value === 'practice';
+}
 
 export interface QuestionWithChildren extends QuizQuestion {
   subQuestions?: QuizQuestion[];
@@ -26,12 +32,22 @@ export interface SavedPracticeRunSession {
    * saves) means the cover plate hasn't been resolved yet for this session.
    */
   runMode: RunMode | null;
+  /** Practice Run: page ids already checked (answer locked, result shown). */
+  checkedIds?: string[];
   /** Epoch ms when the run started; times open runs. Absent in older saves. */
   startedAt?: number | null;
   /** Seconds the sitting took, fixed at hand-in. */
   timeUsedSeconds?: number | null;
   /** Server id of this sitting's stored attempt, once handed in and saved. */
   attemptId?: string | null;
+  /**
+   * A retry of the questions missed last time: only these page ids (question
+   * uuids, or sub-question uuids for a passage) are in the run. Such runs stay
+   * out of the attempt history. Absent or null for a full-paper run.
+   */
+  focusIds?: string[] | null;
+  /** What the user did during the sitting, for the insights report. */
+  activity?: RunEvent[];
 }
 
 export interface PracticeRunStats {
@@ -70,6 +86,17 @@ export function getPracticeRunStorageKey(
   return [PAPER_SESSION_STORAGE_PREFIX, paperId, courseId ?? 'none', examId ?? 'none'].join(':');
 }
 
+/** Keeps string and string-array answers; anything else in an old or edited save is dropped. */
+function parseAnswers(value: unknown): Record<string, string | string[]> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const answers: Record<string, string | string[]> = {};
+  for (const [id, answer] of Object.entries(value)) {
+    if (typeof answer === 'string') answers[id] = answer;
+    else if (Array.isArray(answer) && answer.every((item) => typeof item === 'string')) answers[id] = answer;
+  }
+  return answers;
+}
+
 export function parseSavedPracticeRunSession(
   saved: string | null,
   durationMinutes: number,
@@ -88,12 +115,22 @@ export function parseSavedPracticeRunSession(
       ? Math.max(0, parsed.remainingSeconds)
       : durationSeconds;
     const expiredWhileAway = running && remainingSeconds === 0;
-    const runMode: RunMode | null =
-      parsed.runMode === 'timed' || parsed.runMode === 'open' ? parsed.runMode : null;
+    const runMode: RunMode | null = isRunMode(parsed.runMode) ? parsed.runMode : null;
+    const showResults = parsed.showResults === true || expiredWhileAway;
+    const activity = Array.isArray(parsed.activity) ? parseRunEvents(parsed.activity) : null;
+    if (activity && activity.length > 0 && showResults && !activity.some((event) => event.type === 'submit')) {
+      // The run ended while the page was closed (or mid "time's up"), so the
+      // live recorder never wrote the hand-in. Close the log here. Without a
+      // hidden boundary, stop at the last thing the user did rather than
+      // crediting the closed stretch to the question on screen.
+      const last = activity[activity.length - 1]!;
+      const t = last.type === 'hidden' ? Math.max(last.t, timerEndsAt ?? last.t) : last.t;
+      activity.push({ t, type: 'submit', auto: remainingSeconds === 0 });
+    }
 
     return {
-      selectedAnswers: parsed.selectedAnswers ?? {},
-      showResults: parsed.showResults === true || expiredWhileAway,
+      selectedAnswers: parseAnswers(parsed.selectedAnswers),
+      showResults,
       timerRunning: running && remainingSeconds !== null && remainingSeconds > 0,
       remainingSeconds,
       timerEndsAt: running && remainingSeconds !== null && remainingSeconds > 0 ? timerEndsAt : null,
@@ -101,9 +138,16 @@ export function parseSavedPracticeRunSession(
         ? parsed.flaggedIds.filter((id): id is string => typeof id === 'string')
         : [],
       runMode,
+      checkedIds: Array.isArray(parsed.checkedIds)
+        ? parsed.checkedIds.filter((id): id is string => typeof id === 'string')
+        : [],
       ...(typeof parsed.startedAt === 'number' ? { startedAt: parsed.startedAt } : {}),
       ...(typeof parsed.timeUsedSeconds === 'number' ? { timeUsedSeconds: parsed.timeUsedSeconds } : {}),
       ...(typeof parsed.attemptId === 'string' ? { attemptId: parsed.attemptId } : {}),
+      ...(Array.isArray(parsed.focusIds)
+        ? { focusIds: parsed.focusIds.filter((id): id is string => typeof id === 'string') }
+        : {}),
+      ...(activity ? { activity } : {}),
     };
   } catch {
     return null;
@@ -162,6 +206,25 @@ export function groupPracticeRunQuestions(questions: QuizQuestion[]): QuestionWi
   }
 
   return topLevel;
+}
+
+/**
+ * Narrows a grouped paper to the given page ids, for a retry of missed
+ * questions. A passage keeps only its listed sub-questions and drops out when
+ * none are left; order is preserved.
+ */
+export function focusPracticeRunQuestions(
+  grouped: QuestionWithChildren[],
+  pageIds: ReadonlySet<string>,
+): QuestionWithChildren[] {
+  return grouped.flatMap((question) => {
+    const subs = question.subQuestions ?? [];
+    if (question.questionType !== 'COMPREHENSION' || subs.length === 0) {
+      return pageIds.has(question.uuid) ? [question] : [];
+    }
+    const kept = subs.filter((sub) => pageIds.has(sub.uuid));
+    return kept.length > 0 ? [{ ...question, subQuestions: kept }] : [];
+  });
 }
 
 const normalizeTyped = (value: string) => value.trim().replace(/\s+/g, '').toLowerCase();

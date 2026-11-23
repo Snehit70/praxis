@@ -39,3 +39,16 @@ doubles as a natural home for the deck's cover/crest moment.
   backward-compatible with existing local sessions.
 - The timer's presence is now driven by `runMode === 'timed'`, not by the paper's
   stored `duration`.
+
+## Amendment: a third mode, Checked Run
+
+The cover plate now offers three modes as radio tiles with one Begin button:
+Timed, Open, and **Checked Run** (labelled "Practice", `runMode: 'practice'`).
+A Checked Run has no clock; each question has a Check action that reveals only
+that question's result and locks its answer. The saved session stores the
+checked question ids (`checkedIds`) so locks survive a refresh. The total is
+graded at hand-in like any other run, and the server accepts `practice` as a
+`run_mode` value (the column is `TEXT`, so no migration was needed).
+
+It exists because Open Run held back all feedback until hand-in, which suits a
+self-review pass but not learning one question at a time.

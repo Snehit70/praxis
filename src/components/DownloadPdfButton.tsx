@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '@clerk/clerk-react';
-import { FileDown, LoaderCircle } from 'lucide-react';
+import { EyeOff, FileDown, LoaderCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { downloadPaperPdf, PdfDownloadError } from '@/lib/api';
 import { logger } from '@/lib/logger';
@@ -23,12 +23,18 @@ export function DownloadPdfButton({
   examUuid,
   answers = false,
   label,
+  variant = 'button',
+  hint,
 }: {
   paperUuid: string;
   courseUuid?: string | null;
   examUuid?: string | null;
   answers?: boolean;
   label?: string;
+  /** `link`: a quiet text link, for secondary placements like the cover plate. */
+  variant?: 'button' | 'link';
+  /** Small note under a `link`, e.g. a spoiler warning on the answer key. */
+  hint?: string;
 }) {
   const { getToken } = useAuth();
   const [open, setOpen] = useState(false);
@@ -123,20 +129,43 @@ export function DownloadPdfButton({
 
   return (
     <span className="inline-flex flex-col items-start gap-1">
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() => void startDownload()}
-        className="gap-1.5"
-        aria-busy={busy}
-      >
-        {busy ? (
-          <LoaderCircle className="h-4 w-4 animate-spin" />
-        ) : (
-          <FileDown className="h-4 w-4" />
-        )}
-        {label ?? (answers ? 'Answer key' : 'Download PDF')}
-      </Button>
+      {variant === 'link' ? (
+        <button
+          type="button"
+          onClick={() => void startDownload()}
+          aria-busy={busy}
+          className="group inline-flex items-start gap-2 rounded-md text-left text-sm text-[rgb(var(--ex-accent-soft,214_232_250))] transition-colors hover:text-white"
+        >
+          {busy ? (
+            <LoaderCircle className="mt-0.5 h-4 w-4 shrink-0 animate-spin" aria-hidden="true" />
+          ) : answers ? (
+            <EyeOff className="mt-0.5 h-4 w-4 shrink-0 opacity-75" aria-hidden="true" />
+          ) : (
+            <FileDown className="mt-0.5 h-4 w-4 shrink-0 opacity-75" aria-hidden="true" />
+          )}
+          <span className="flex flex-col">
+            <span className="underline decoration-white/25 underline-offset-4 group-hover:decoration-white/60">
+              {label ?? (answers ? 'Answer key' : 'Download PDF')}
+            </span>
+            {hint && <span className="mt-0.5 text-xs text-white/55">{hint}</span>}
+          </span>
+        </button>
+      ) : (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => void startDownload()}
+          className="gap-1.5"
+          aria-busy={busy}
+        >
+          {busy ? (
+            <LoaderCircle className="h-4 w-4 animate-spin" />
+          ) : (
+            <FileDown className="h-4 w-4" />
+          )}
+          {label ?? (answers ? 'Answer key' : 'Download PDF')}
+        </Button>
+      )}
       {error && !open ? (
         <span className="max-w-[16rem] text-left text-[11px] text-red-400" role="status">
           {error}

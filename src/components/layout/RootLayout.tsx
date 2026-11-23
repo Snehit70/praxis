@@ -81,14 +81,21 @@ export default function RootLayout() {
               />
             </>
           )}
-          <div className="container relative mx-auto flex h-14 items-center px-4 md:px-8">
+          {/* The exam page wants every pixel for the sheet, so its header shrinks to
+              a slim strip with a smaller brand and no Profile text link. */}
+          <div
+            className={cn(
+              "relative mx-auto flex items-center",
+              fullBleed ? "h-10 px-4 md:px-5" : "container h-14 px-4 md:px-8",
+            )}
+          >
             <Link
               to={isSignedIn ? "/home" : "/"}
               onMouseEnter={() => { if (isSignedIn) void import('@/pages/HomePage'); }}
               onFocus={() => { if (isSignedIn) void import('@/pages/HomePage'); }}
               className="flex items-center gap-2.5 transition-opacity hover:opacity-80"
             >
-              <PraxisBrand className="text-[#f1ead9]" />
+              <PraxisBrand className={cn("text-[#f1ead9]", fullBleed && "h-7")} />
             </Link>
             <nav className="ml-auto flex items-center gap-4">
               <SignedIn>
@@ -101,7 +108,7 @@ export default function RootLayout() {
                   </Link>
                 )}
                 {/* No self-link while already on the profile. */}
-                {pathname !== "/profile" && (
+                {pathname !== "/profile" && !fullBleed && (
                   <Link
                     to="/profile"
                     onMouseEnter={() => { void import('@/pages/ProfilePage'); }}
@@ -112,7 +119,7 @@ export default function RootLayout() {
                     Profile
                   </Link>
                 )}
-                <AccountButton />
+                <AccountButton compact={fullBleed} />
               </SignedIn>
               <SignedOut>
                 <SignInTrigger>
@@ -133,7 +140,7 @@ export default function RootLayout() {
           <div
             className={
               fullBleed
-                ? "w-full px-4 py-8 md:px-8 md:py-10"
+                ? "w-full px-4 py-8 md:px-5 md:py-10"
                 : "container mx-auto px-4 py-8 md:px-8 md:py-10"
             }
           >
