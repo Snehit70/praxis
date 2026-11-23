@@ -17,10 +17,10 @@ test('run mode colours by progress and shows the progress legend', () => {
   render(<QuestionNavigator {...baseProps} states={states} />);
 
   expect(screen.getByRole('heading')).toHaveTextContent('Questions');
-  expect(screen.getByText('1/3 done')).toBeInTheDocument();
+  expect(screen.getByRole('progressbar', { name: '1 of 3 answered' })).toBeInTheDocument();
   expect(screen.getByText('Answered')).toBeInTheDocument();
-  expect(screen.getByText('Partial')).toBeInTheDocument();
-  expect(screen.getByText('Unanswered')).toBeInTheDocument();
+  expect(screen.getByText('Partly')).toBeInTheDocument();
+  expect(screen.getByText('Not yet')).toBeInTheDocument();
   // Outcome legend and the next-incorrect jump belong to review mode only.
   expect(screen.queryByText('Correct')).not.toBeInTheDocument();
   expect(screen.queryByText(/Next incorrect/)).not.toBeInTheDocument();
@@ -41,7 +41,7 @@ test('review mode switches to outcome heading, counter, and legend', () => {
   expect(screen.getByRole('heading')).toHaveTextContent('Review');
   // One correct of three gradable pages — only 'manual' pages are excluded, so
   // the unanswered/skipped page still counts toward the denominator.
-  expect(screen.getByText('1/3 correct')).toBeInTheDocument();
+  expect(screen.getByRole('progressbar', { name: '1 of 3 correct' })).toBeInTheDocument();
   expect(screen.getByText('Correct')).toBeInTheDocument();
   expect(screen.getByText('Incorrect')).toBeInTheDocument();
   expect(screen.getByText('Skipped')).toBeInTheDocument();
@@ -67,7 +67,7 @@ test('review cells carry correctness colours and accessible labels', () => {
 
   expect(correctCell.className).toContain('emerald');
   expect(incorrectCell.className).toContain('red');
-  expect(skippedCell.className).toContain('text-muted-foreground');
+  expect(skippedCell.className).toContain('bg-black/25');
 });
 
 test('"Next incorrect" appears only with incorrect answers and fires its handler', () => {
@@ -83,7 +83,7 @@ test('"Next incorrect" appears only with incorrect answers and fires its handler
     />,
   );
 
-  const button = screen.getByText('Next incorrect (1)');
+  const button = screen.getByRole('button', { name: /Next incorrect\s*1/ });
   fireEvent.click(button);
   expect(onJumpNextIncorrect).toHaveBeenCalledTimes(1);
 });

@@ -39,6 +39,12 @@ export interface SavedPracticeRunSession {
   timeUsedSeconds?: number | null;
   /** Server id of this sitting's stored attempt, once handed in and saved. */
   attemptId?: string | null;
+  /**
+   * A retry of the questions missed last time: only these page ids (question
+   * uuids, or sub-question uuids for a passage) are in the run. Such runs stay
+   * out of the attempt history. Absent or null for a full-paper run.
+   */
+  focusIds?: string[] | null;
 }
 
 export interface PracticeRunStats {
@@ -113,6 +119,9 @@ export function parseSavedPracticeRunSession(
       ...(typeof parsed.startedAt === 'number' ? { startedAt: parsed.startedAt } : {}),
       ...(typeof parsed.timeUsedSeconds === 'number' ? { timeUsedSeconds: parsed.timeUsedSeconds } : {}),
       ...(typeof parsed.attemptId === 'string' ? { attemptId: parsed.attemptId } : {}),
+      ...(Array.isArray(parsed.focusIds)
+        ? { focusIds: parsed.focusIds.filter((id): id is string => typeof id === 'string') }
+        : {}),
     };
   } catch {
     return null;
@@ -171,6 +180,25 @@ export function groupPracticeRunQuestions(questions: QuizQuestion[]): QuestionWi
   }
 
   return topLevel;
+}
+
+/**
+ * Narrows a grouped paper to the given page ids, for a retry of missed
+ * questions. A passage keeps only its listed sub-questions and drops out when
+ * none are left; order is preserved.
+ */
+export function focusPracticeRunQuestions(
+  grouped: QuestionWithChildren[],
+  pageIds: ReadonlySet<string>,
+): QuestionWithChildren[] {
+  return grouped.flatMap((question) => {
+    const subs = question.subQuestions ?? [];
+    if (question.questionType !== 'COMPREHENSION' || subs.length === 0) {
+      return pageIds.has(question.uuid) ? [question] : [];
+    }
+    const kept = subs.filter((sub) => pageIds.has(sub.uuid));
+    return kept.length > 0 ? [{ ...question, subQuestions: kept }] : [];
+  });
 }
 
 const normalizeTyped = (value: string) => value.trim().replace(/\s+/g, '').toLowerCase();

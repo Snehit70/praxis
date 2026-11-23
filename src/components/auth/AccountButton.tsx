@@ -4,9 +4,10 @@ import { Link } from 'react-router-dom';
 import { UserRound } from 'lucide-react';
 import { getProfile } from '@/lib/api';
 import { AVATARS } from '@/lib/avatars';
+import { cn } from '@/lib/utils';
 
 /** Open the Praxis profile using its selected avatar. */
-export function AccountButton() {
+export function AccountButton({ compact = false }: { compact?: boolean }) {
   const { getToken } = useAuth();
   const { user } = useUser();
   const [avatarKey, setAvatarKey] = useState<string | null>(null);
@@ -30,8 +31,8 @@ export function AccountButton() {
 
   const avatar = AVATARS.find((item) => item.key === avatarKey);
   return (
-    <Link to="/profile" aria-label="Your profile" className="flex size-9 items-center justify-center overflow-hidden rounded-xl border border-white/30 bg-black/30 text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">
-      {avatar ? <img src={avatar.src} alt="" className="h-full w-full object-cover object-top" /> : <UserRound className="size-5" aria-hidden="true" />}
+    <Link to="/profile" aria-label="Your profile" className={cn("flex items-center justify-center overflow-hidden border border-white/30 bg-black/30 text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white", compact ? "size-7 rounded-lg" : "size-9 rounded-xl")}>
+      {avatar ? <img src={avatar.src} alt="" className="h-full w-full object-cover object-top" /> : <UserRound className={compact ? "size-4" : "size-5"} aria-hidden="true" />}
     </Link>
   );
 }

@@ -13,6 +13,7 @@ import {
   Minus,
   PenLine,
   RotateCcw,
+  Target,
   Timer,
   TrendingUp,
   XCircle,
@@ -361,6 +362,12 @@ export interface AttemptReportProps {
   onCompareChange: (id: string) => void;
   onReview: (filter: ReviewFilter, startUuid?: string) => void;
   onTryAgain: () => void;
+  /** Questions this run got wrong or skipped, which a retry would cover. */
+  missedCount?: number;
+  /** Starts a Practice run of just the missed questions. */
+  onRetryMissed?: () => void;
+  /** This run was itself a retry of missed questions (kept out of history). */
+  focusRun?: boolean;
 }
 
 export function AttemptReport({
@@ -380,6 +387,9 @@ export function AttemptReport({
   onCompareChange,
   onReview,
   onTryAgain,
+  missedCount = 0,
+  onRetryMissed,
+  focusRun = false,
 }: AttemptReportProps) {
   const hasMarks = stats.totalMarks > 0;
   const scoreTarget = hasMarks ? stats.scoredMarks : stats.correct;
@@ -498,7 +508,11 @@ export function AttemptReport({
             )}
           </p>
           <span className="text-muted-foreground">
-            <SaveNote signedIn={signedIn} saveState={saveState} onRetry={onRetrySave} />
+            {focusRun ? (
+              <span className="text-xs">Retry of missed questions · not added to your history</span>
+            ) : (
+              <SaveNote signedIn={signedIn} saveState={saveState} onRetry={onRetrySave} />
+            )}
           </span>
         </div>
 
@@ -584,6 +598,17 @@ export function AttemptReport({
           {primaryReview.filter !== 'all' && (
             <Button variant="ghost" onClick={() => onReview('all')} className={quietButton}>
               Review all
+            </Button>
+          )}
+          {onRetryMissed && missedCount > 0 && (
+            <Button
+              variant="ghost"
+              onClick={onRetryMissed}
+              title="A Practice run of only the questions you got wrong or skipped, checked one at a time"
+              className="gap-2 border border-[rgb(var(--ex-accent)/0.4)] bg-[rgb(var(--ex-accent)/0.08)] text-[rgb(var(--ex-accent-soft))] hover:bg-[rgb(var(--ex-accent)/0.16)] hover:text-white"
+            >
+              <Target className="h-4 w-4" aria-hidden="true" />
+              Retry {missedCount} missed
             </Button>
           )}
           <Button
