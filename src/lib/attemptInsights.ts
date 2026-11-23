@@ -239,12 +239,27 @@ export interface InsightsAnalysis {
   timeline: Array<Record<string, unknown>>;
 }
 
+/**
+ * A log should hold one sitting, but older saves could carry a handed-in run
+ * followed by another. Keep only the last one: everything after the hand-in
+ * before the final hand-in (or after the final one, if the run is still going).
+ */
+export function lastSitting(events: RunEvent[]): RunEvent[] {
+  const ends = events.flatMap((event, index) => (event.type === 'submit' ? [index] : []));
+  if (ends.length === 0) return events;
+  const lastEnd = ends[ends.length - 1]!;
+  const tail = events.slice(lastEnd + 1);
+  if (tail.some((event) => event.type !== 'hidden' && event.type !== 'visible')) return tail;
+  const from = ends.length > 1 ? ends[ends.length - 2]! + 1 : 0;
+  return events.slice(from, lastEnd + 1);
+}
+
 /** Walks the activity log and attributes time, visits and answer changes. */
 export function analyseAttempt(input: InsightsInput): InsightsAnalysis {
   const pageIndex = new Map(input.pages.map((page, index) => [page.id, index]));
   const flagged = new Set(input.flaggedIds);
   const checked = new Set(input.checkedIds);
-  const events = [...input.events].sort((a, b) => a.t - b.t);
+  const events = lastSitting([...input.events].sort((a, b) => a.t - b.t));
   const origin = events[0]?.t ?? input.startedAt ?? input.generatedAt;
   const at = (t: number) => round1((t - origin) / 1000);
 

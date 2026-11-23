@@ -2324,7 +2324,9 @@ export default function PaperPage() {
   }, [paperId, courseId, examUuidFromSearch, storageKey, retryNonce, getToken]);
 
   useEffect(() => {
-    if (!paper || !storageKey) return;
+    // While a (re)load is in flight the old paper is still set but answers and
+    // results were just cleared; saving now would overwrite a finished run.
+    if (!paper || !storageKey || loading) return;
 
     const payload: SavedPracticeRunSession = {
       selectedAnswers,
@@ -2346,7 +2348,7 @@ export default function PaperPage() {
 
     writePracticeRunSession(storageKey, payload);
     savedSessionRef.current = { key: storageKey, payload };
-  }, [paper, remainingSeconds, selectedAnswers, showResults, storageKey, timerEndsAt, timerRunning, flaggedIds, runMode, checkedIds, startedAt, timeUsed, attemptId, focusIds, activity, timeExpired]);
+  }, [paper, remainingSeconds, selectedAnswers, showResults, storageKey, timerEndsAt, timerRunning, flaggedIds, runMode, checkedIds, startedAt, timeUsed, attemptId, focusIds, activity, timeExpired, loading]);
 
   useEffect(() => {
     if (!paper || !timerRunning || showResults || timerEndsAt === null) {
@@ -2726,9 +2728,15 @@ export default function PaperPage() {
     if (live && !wasLive) {
       const fresh = freshRunRef.current;
       freshRunRef.current = false;
-      setActivity((log) =>
-        appendRunEvent(log, fresh ? { t, type: 'start', mode: runMode!, page } : { t, type: 'resume', page }),
-      );
+      setActivity((log) => {
+        // A log that already holds a hand-in belongs to a finished sitting;
+        // never extend it with a new one.
+        if (fresh || log.some((event) => event.type === 'submit')) {
+          if (!fresh) logger.warn('Run went live on a handed-in log; starting a fresh one', { events: log.length });
+          return [{ t, type: 'start', mode: runMode!, page }];
+        }
+        return appendRunEvent(log, { t, type: 'resume', page });
+      });
       return;
     }
     if (!live && wasLive && showResults) {

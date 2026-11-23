@@ -4,6 +4,7 @@ import {
   analyseAttempt,
   buildAttemptInsightsMarkdown,
   insightsFileName,
+  lastSitting,
   toPlainText,
   type InsightsInput,
 } from '@/lib/attemptInsights';
@@ -221,4 +222,18 @@ test('saved answers drop bad values, and a run that ended while closed gets its 
   expect(session?.selectedAnswers).toEqual({ q2: '1', q4: ['0'] });
   expect(session?.showResults).toBe(true);
   expect(session?.activity?.at(-1)).toEqual({ t: s(100), type: 'submit', auto: true });
+});
+
+test('a log carrying two sittings is read as the last one', () => {
+  const second: RunEvent[] = [
+    { t: s(300), type: 'resume', page: 'q1' },
+    { t: s(310), type: 'answer', page: 'q1', value: '2' },
+    { t: s(320), type: 'submit', auto: false },
+  ];
+  expect(lastSitting([...sitting, ...second])).toEqual(second);
+  expect(lastSitting([...sitting, { t: s(150), type: 'hidden' }])).toEqual(sitting);
+  const a = analyseAttempt(input([...sitting, ...second], { q1: '2' }));
+  expect(a.questions[2]!.answerTrail).toEqual([]);
+  expect(a.questions[0]!.answerTrail.map((step) => step.answer)).toEqual(['C']);
+  expect(a.activeSeconds).toBe(20);
 });
