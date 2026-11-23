@@ -648,7 +648,8 @@ function answerFormatLabel(question: QuizQuestion, numeric: boolean): string {
   if (isEssayQuestion(question)) return 'Written answer';
   switch (question.questionType) {
     case 'MSQ':
-      return 'Select all that apply';
+      // The options carry "Select all that apply" themselves.
+      return 'Multiple answers';
     case 'SA':
       return numeric ? 'Numeric answer' : 'Short answer';
     case 'OPPE':
@@ -1032,6 +1033,121 @@ interface ExamPage {
   passage?: PassagePart;
 }
 
+// Question | answer split on wide screens: the question column's share of the
+// sheet, draggable and remembered per device like the reading size.
+const SPLIT_KEY = 'praxis.exam.split';
+const SPLIT_DEFAULT = 1.2 / 2.2;
+const SPLIT_MIN = 0.3;
+const SPLIT_MAX = 0.72;
+const SPLIT_STEP = 0.02;
+const clampSplit = (value: number) => Math.min(SPLIT_MAX, Math.max(SPLIT_MIN, value));
+
+function readSplit(): number {
+  try {
+    const saved = Number(window.localStorage.getItem(SPLIT_KEY));
+    return saved >= SPLIT_MIN && saved <= SPLIT_MAX ? saved : SPLIT_DEFAULT;
+  } catch {
+    return SPLIT_DEFAULT;
+  }
+}
+
+function saveSplit(value: number) {
+  try {
+    window.localStorage.setItem(SPLIT_KEY, String(value));
+  } catch {
+    // Storage blocked: the split still works for this page view.
+  }
+}
+
+/**
+ * The draggable seam between the question and answer columns. Drag it, use
+ * ← → / Home / End while it has focus, or double-click to reset.
+ */
+function SplitHandle({
+  split,
+  onChange,
+  containerRef,
+}: {
+  split: number;
+  onChange: (value: number) => void;
+  containerRef: React.RefObject<HTMLDivElement | null>;
+}) {
+  const [dragging, setDragging] = useState(false);
+  const ratioAt = (clientX: number) => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    return rect && rect.width > 0 ? clampSplit((clientX - rect.left) / rect.width) : split;
+  };
+  const set = (value: number) => {
+    const next = clampSplit(value);
+    onChange(next);
+    saveSplit(next);
+  };
+  const endDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragging) return;
+    setDragging(false);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    set(ratioAt(event.clientX));
+  };
+  const percent = Math.round(split * 100);
+
+  return (
+    <div
+      role="separator"
+      tabIndex={0}
+      aria-orientation="vertical"
+      aria-label="Resize the question and answer columns"
+      aria-valuemin={Math.round(SPLIT_MIN * 100)}
+      aria-valuemax={Math.round(SPLIT_MAX * 100)}
+      aria-valuenow={percent}
+      aria-valuetext={`Question column ${percent}% wide`}
+      title="Drag to resize · double-click to reset"
+      data-dragging={dragging || undefined}
+      style={{ left: `${split * 100}%` }}
+      onPointerDown={(event) => {
+        if (event.button !== 0) return;
+        event.preventDefault();
+        event.currentTarget.setPointerCapture(event.pointerId);
+        setDragging(true);
+      }}
+      onPointerMove={(event) => {
+        if (dragging) onChange(ratioAt(event.clientX));
+      }}
+      onPointerUp={endDrag}
+      onPointerCancel={endDrag}
+      onDoubleClick={() => set(SPLIT_DEFAULT)}
+      onKeyDown={(event) => {
+        const next =
+          event.key === 'ArrowLeft'
+            ? split - SPLIT_STEP
+            : event.key === 'ArrowRight'
+            ? split + SPLIT_STEP
+            : event.key === 'Home'
+            ? SPLIT_MIN
+            : event.key === 'End'
+            ? SPLIT_MAX
+            : null;
+        if (next === null) return;
+        // Keep ← → from also turning the page.
+        event.preventDefault();
+        event.stopPropagation();
+        set(next);
+      }}
+      className="group absolute inset-y-0 z-20 hidden w-4 -translate-x-1/2 cursor-col-resize touch-none select-none outline-none lg:block"
+    >
+      <span
+        aria-hidden="true"
+        className="absolute inset-y-0 left-1/2 w-0.5 -translate-x-1/2 bg-transparent transition-colors group-hover:bg-[rgb(var(--ex-accent)/0.55)] group-focus-visible:bg-[rgb(var(--ex-accent))] group-data-[dragging]:bg-[rgb(var(--ex-accent))]"
+      />
+      <span
+        aria-hidden="true"
+        className="absolute left-1/2 top-1/2 h-10 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[rgb(var(--ex-line)/0.4)] transition-colors group-hover:bg-[rgb(var(--ex-accent))] group-focus-visible:bg-[rgb(var(--ex-accent))] group-data-[dragging]:bg-[rgb(var(--ex-accent))]"
+      />
+    </div>
+  );
+}
+
 function QuestionCard({
   question,
   index,
@@ -1043,6 +1159,7 @@ function QuestionCard({
   passage,
   tools,
   verdict,
+  headAction,
 }: {
   question: QuestionWithChildren;
   index: number;
@@ -1050,6 +1167,8 @@ function QuestionCard({
   tools?: QuestionTools;
   /** Practice Run result for this page, shown at the top of the answer column. */
   verdict?: React.ReactNode;
+  /** Page-level control at the end of the sheet head (the flag). */
+  headAction?: React.ReactNode;
   selectedAnswers: SelectedAnswers;
   showResults: boolean;
   onSelectAnswer: (questionId: string, optionIndex: string, questionType: QuestionType) => void;
@@ -1061,6 +1180,8 @@ function QuestionCard({
   const selectedAnswer = selectedAnswers[question.uuid];
   // Comprehension passages can be collapsed to reclaim room for the sub-questions.
   const [passageOpen, setPassageOpen] = useState(true);
+  const [split, setSplit] = useState(readSplit);
+  const splitRef = useRef<HTMLDivElement>(null);
   // Kept index-aligned (no filter): text_i and image_i interleave so inline
   // math images land between the right text fragments.
   const questionTexts = [
@@ -1251,10 +1372,16 @@ function QuestionCard({
               {formatScore(headMarks)} {headMarks === 1 ? 'mark' : 'marks'}
             </span>
           )}
+          {headAction}
         </div>
       </div>
 
-      <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+      <div
+        ref={splitRef}
+        className="relative grid min-h-0 flex-1 lg:grid-cols-[minmax(0,var(--ex-split))_minmax(0,var(--ex-rest))]"
+        style={{ '--ex-split': `${split}fr`, '--ex-rest': `${1 - split}fr` } as React.CSSProperties}
+      >
+        <SplitHandle split={split} onChange={setSplit} containerRef={splitRef} />
         <section aria-label={isComprehension ? 'Passage' : 'Question'} className={columnClass}>
           {isComprehension ? (
             <div>
@@ -3145,7 +3272,9 @@ export default function PaperPage() {
         <span className="hidden sm:inline">{currentAnswered ? 'Check' : 'Show answer'}</span>
       </Button>
     ) : null;
-  const flagButton = !showResults && currentPage && (
+  // Flag: in the sheet head on wide screens, in the foot on phones where the
+  // head row has no room for it.
+  const renderFlag = (placement: 'head' | 'foot') => !showResults && currentPage && (
     <button
       type="button"
       onClick={() => toggleFlag(currentPage.id)}
@@ -3153,14 +3282,15 @@ export default function PaperPage() {
       aria-label="Flag for review"
       title="Flag for review (F)"
       className={cn(
-        'inline-flex h-10 items-center gap-1.5 rounded-md border px-3 text-sm transition-colors',
+        'items-center gap-1.5 rounded-md border transition-colors',
+        placement === 'head' ? 'hidden h-8 px-2.5 text-[13px] lg:inline-flex' : 'inline-flex h-10 px-3 text-sm lg:hidden',
         currentFlagged
           ? 'border-amber-500/50 bg-amber-500/15 text-amber-300'
           : 'border-[rgb(var(--ex-line)/0.22)] text-muted-foreground hover:border-amber-500/40 hover:text-foreground',
       )}
     >
       <Flag className={cn('h-4 w-4', currentFlagged && 'fill-amber-400/80')} aria-hidden="true" />
-      <span className="hidden sm:inline">{currentFlagged ? 'Flagged' : 'Flag'}</span>
+      <span className={placement === 'head' ? undefined : 'hidden sm:inline'}>{currentFlagged ? 'Flagged' : 'Flag'}</span>
     </button>
   );
   const toolButton =
@@ -3446,6 +3576,7 @@ export default function PaperPage() {
                   showResults={pageRevealed}
                   onSelectAnswer={handleOptionSelect}
                   onShortAnswerChange={handleShortAnswerChange}
+                  headAction={renderFlag('head')}
                   verdict={
                     currentChecked && practiceGrade ? (
                       <PracticeVerdict
@@ -3460,7 +3591,7 @@ export default function PaperPage() {
               </div>
             )}
 
-            {/* Sheet foot: Previous · position · flag · (Check) · Next. Pinned to
+            {/* Sheet foot: Previous · (phone list and flag) · (Check) · Next. Pinned to
                 the bottom of the screen on phones. */}
             <div className="sticky bottom-0 z-20 flex items-center gap-2 border-t border-[rgb(var(--ex-line)/0.16)] bg-[#10172d]/95 px-5 py-2.5 backdrop-blur sm:gap-3 sm:px-8 lg:static lg:bg-black/25">
               {prevButton}
@@ -3475,10 +3606,8 @@ export default function PaperPage() {
                   {safeIndex + 1}
                   <span className="text-muted-foreground">/ {pageCount}</span>
                 </button>
-                <span className="hidden text-sm tabular-nums text-muted-foreground lg:inline">
-                  <span className="font-medium text-foreground">{safeIndex + 1}</span> of {pageCount}
-                </span>
-                {flagButton}
+                {/* Wide screens: the rail and the sheet head already say where you are. */}
+                {renderFlag('foot')}
               </div>
               {checkButton}
               {nextButton}
