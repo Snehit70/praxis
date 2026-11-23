@@ -86,6 +86,17 @@ export function getPracticeRunStorageKey(
   return [PAPER_SESSION_STORAGE_PREFIX, paperId, courseId ?? 'none', examId ?? 'none'].join(':');
 }
 
+/** Keeps string and string-array answers; anything else in an old or edited save is dropped. */
+function parseAnswers(value: unknown): Record<string, string | string[]> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const answers: Record<string, string | string[]> = {};
+  for (const [id, answer] of Object.entries(value)) {
+    if (typeof answer === 'string') answers[id] = answer;
+    else if (Array.isArray(answer) && answer.every((item) => typeof item === 'string')) answers[id] = answer;
+  }
+  return answers;
+}
+
 export function parseSavedPracticeRunSession(
   saved: string | null,
   durationMinutes: number,
@@ -105,10 +116,21 @@ export function parseSavedPracticeRunSession(
       : durationSeconds;
     const expiredWhileAway = running && remainingSeconds === 0;
     const runMode: RunMode | null = isRunMode(parsed.runMode) ? parsed.runMode : null;
+    const showResults = parsed.showResults === true || expiredWhileAway;
+    const activity = Array.isArray(parsed.activity) ? parseRunEvents(parsed.activity) : null;
+    if (activity && activity.length > 0 && showResults && !activity.some((event) => event.type === 'submit')) {
+      // The run ended while the page was closed (or mid "time's up"), so the
+      // live recorder never wrote the hand-in. Close the log here. Without a
+      // hidden boundary, stop at the last thing the user did rather than
+      // crediting the closed stretch to the question on screen.
+      const last = activity[activity.length - 1]!;
+      const t = last.type === 'hidden' ? Math.max(last.t, timerEndsAt ?? last.t) : last.t;
+      activity.push({ t, type: 'submit', auto: remainingSeconds === 0 });
+    }
 
     return {
-      selectedAnswers: parsed.selectedAnswers ?? {},
-      showResults: parsed.showResults === true || expiredWhileAway,
+      selectedAnswers: parseAnswers(parsed.selectedAnswers),
+      showResults,
       timerRunning: running && remainingSeconds !== null && remainingSeconds > 0,
       remainingSeconds,
       timerEndsAt: running && remainingSeconds !== null && remainingSeconds > 0 ? timerEndsAt : null,
@@ -125,7 +147,7 @@ export function parseSavedPracticeRunSession(
       ...(Array.isArray(parsed.focusIds)
         ? { focusIds: parsed.focusIds.filter((id): id is string => typeof id === 'string') }
         : {}),
-      ...(Array.isArray(parsed.activity) ? { activity: parseRunEvents(parsed.activity) } : {}),
+      ...(activity ? { activity } : {}),
     };
   } catch {
     return null;

@@ -2213,6 +2213,8 @@ export default function PaperPage() {
   // The next time a run goes live, log 'start' (a fresh run) not 'resume'.
   const freshRunRef = useRef(false);
   const liveRef = useRef(false);
+  // The last session written to storage, so a hide can add to it synchronously.
+  const savedSessionRef = useRef<{ key: string; payload: SavedPracticeRunSession } | null>(null);
   // Bumped on Try again so a save still in flight can't attach to the new run.
   const runTokenRef = useRef(0);
 
@@ -2326,7 +2328,9 @@ export default function PaperPage() {
 
     const payload: SavedPracticeRunSession = {
       selectedAnswers,
-      showResults,
+      // At the deadline the run is over even while "time's up" is still on
+      // screen, so a reload in that beat lands on the results, not a dead clock.
+      showResults: showResults || (runMode === 'timed' && timeExpired),
       timerRunning,
       remainingSeconds,
       timerEndsAt,
@@ -2341,7 +2345,8 @@ export default function PaperPage() {
     };
 
     writePracticeRunSession(storageKey, payload);
-  }, [paper, remainingSeconds, selectedAnswers, showResults, storageKey, timerEndsAt, timerRunning, flaggedIds, runMode, checkedIds, startedAt, timeUsed, attemptId, focusIds, activity]);
+    savedSessionRef.current = { key: storageKey, payload };
+  }, [paper, remainingSeconds, selectedAnswers, showResults, storageKey, timerEndsAt, timerRunning, flaggedIds, runMode, checkedIds, startedAt, timeUsed, attemptId, focusIds, activity, timeExpired]);
 
   useEffect(() => {
     if (!paper || !timerRunning || showResults || timerEndsAt === null) {
@@ -2741,6 +2746,19 @@ export default function PaperPage() {
       if (!liveRef.current) return;
       const event: RunEvent = { t: Date.now(), type: document.hidden ? 'hidden' : 'visible' };
       setActivity((log) => appendRunEvent(log, event));
+      // Hiding is also what closing the tab looks like, and the page may not
+      // render again. Save the boundary now so a later resume or an expiry
+      // while closed doesn't credit the closed stretch to the last question.
+      const saved = savedSessionRef.current;
+      if (document.hidden && saved) {
+        const payload = { ...saved.payload, activity: appendRunEvent(saved.payload.activity ?? [], event) };
+        savedSessionRef.current = { key: saved.key, payload };
+        try {
+          writePracticeRunSession(saved.key, payload);
+        } catch (error) {
+          logger.warn('Could not save the run before the page hid', { error: String(error) });
+        }
+      }
     };
     document.addEventListener('visibilitychange', onVisibility);
     return () => document.removeEventListener('visibilitychange', onVisibility);
@@ -2893,8 +2911,9 @@ export default function PaperPage() {
       const onForward = !!target?.closest('[data-exam-forward]');
       const inAnswerBox = target instanceof HTMLInputElement && target.type === 'text';
       // A clicked option keeps focus; Enter there would toggle it back off, so
-      // it checks instead (Space still toggles).
-      const onOption = !!target?.closest('[data-exam-option]');
+      // it checks instead (Space still toggles). Enter on an option not yet
+      // chosen keeps its native press, so a multi-select can't lock half-done.
+      const onOption = target?.closest('[data-exam-option]')?.getAttribute('aria-pressed') === 'true';
       // Other controls (links, the calculator, textareas) keep their Enter.
       if (
         !onForward &&
@@ -3899,11 +3918,13 @@ export default function PaperPage() {
         className="border-transparent bg-[#0f1529] sm:max-w-[31rem]"
       >
         {/* Frieren and Fern at the exam hall's door at day's end; fades into the panel. */}
-        <div className="relative h-40 shrink-0 overflow-hidden sm:h-44" aria-hidden="true">
+        {/* Everything above the actions scrolls, so Hand in stays reachable on short phones. */}
+        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="relative h-40 shrink-0 overflow-hidden sm:h-44 [@media(max-height:640px)]:h-24" aria-hidden="true">
           <img src={handInHall} alt="" className="h-full w-full object-cover object-[50%_55%]" />
           <div className="absolute inset-0 bg-gradient-to-b from-[#0f1529]/30 via-transparent to-[#0f1529]" />
         </div>
-        <div className="relative -mt-8 px-6 pb-6 sm:px-8">
+        <div className="relative -mt-8 px-6 pb-2 sm:px-8">
           <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[rgb(var(--ex-accent))]/80">End of paper</p>
           <h2 id="submit-confirm-title" className="mt-1.5 font-display text-[1.75rem] font-normal leading-tight tracking-tight">
             Hand in your paper?
@@ -3973,8 +3994,10 @@ export default function PaperPage() {
               ))}
             </ol>
           </div>
+        </div>
+        </div>
 
-          <div className="mt-6 flex flex-col gap-4 border-t border-white/[0.06] pt-5 sm:flex-row sm:items-center">
+          <div className="relative mx-6 mb-6 mt-4 flex shrink-0 flex-col gap-4 border-t border-white/[0.06] pt-5 sm:mx-8 sm:flex-row sm:items-center">
             <p className="inline-flex items-center gap-1.5 text-xs text-muted-foreground sm:mr-auto">
               <Lock className="h-3.5 w-3.5" aria-hidden="true" />
               Answers lock once handed in.
@@ -3992,7 +4015,6 @@ export default function PaperPage() {
               </Button>
             </div>
           </div>
-        </div>
 
         {/* Same frame as the question card: the paper's own edge. */}
         <div className="tcard-frame rounded-[19px] [--lvl:rgb(var(--ex-accent))]" aria-hidden="true" />

@@ -187,3 +187,38 @@ test('journey stretches and first answers sit on the active-time axis', () => {
     { q: 3, at: 55, outcome: 'correct' },
   ]);
 });
+
+test('switching options quickly is kept as two answers', () => {
+  let log: RunEvent[] = [];
+  log = appendRunEvent(log, { t: s(10), type: 'answer', page: 'q1', value: '0' });
+  log = appendRunEvent(log, { t: s(12), type: 'answer', page: 'q1', value: '2' });
+  expect(log).toHaveLength(2);
+  const a = analyseAttempt(input([{ t: s(0), type: 'start', mode: 'open', page: 'q1' }, ...log, { t: s(20), type: 'submit', auto: false }], { q1: '2' }));
+  expect(a.questions[0]!.answerChanges).toBe(1);
+  expect(a.questions[0]!.timeToFirstAnswer).toBe(10);
+});
+
+test('a resume without a hidden boundary stops at the last action', () => {
+  const a = analyseAttempt(input([
+    { t: s(0), type: 'start', mode: 'open', page: 'q1' },
+    { t: s(10), type: 'answer', page: 'q1', value: '0' },
+    { t: s(50), type: 'resume', page: 'q1' },
+    { t: s(60), type: 'submit', auto: false },
+  ], { q1: '0' }));
+  expect(a.activeSeconds).toBe(20);
+});
+
+test('saved answers drop bad values, and a run that ended while closed gets its hand-in', () => {
+  const saved = JSON.stringify({
+    selectedAnswers: { q1: 123, q2: '1', q3: ['0', 2], q4: ['0'] },
+    showResults: false,
+    timerRunning: true,
+    timerEndsAt: s(100),
+    runMode: 'timed',
+    activity: [{ t: s(0), type: 'start', mode: 'timed', page: 'q1' }, { t: s(40), type: 'hidden' }],
+  });
+  const session = parseSavedPracticeRunSession(saved, 60, s(500));
+  expect(session?.selectedAnswers).toEqual({ q2: '1', q4: ['0'] });
+  expect(session?.showResults).toBe(true);
+  expect(session?.activity?.at(-1)).toEqual({ t: s(100), type: 'submit', auto: true });
+});

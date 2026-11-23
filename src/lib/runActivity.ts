@@ -52,7 +52,8 @@ const NAV_VIA = new Set<NavVia>([
 
 /**
  * Appends one event. Typing in a short-answer box would log every keystroke,
- * so a text answer to the same question within a few seconds replaces the last.
+ * so a text answer to the same question that extends or trims the last one
+ * within a few seconds replaces it. A switch between options is kept.
  */
 export function appendRunEvent(log: RunEvent[], event: RunEvent): RunEvent[] {
   const last = log[log.length - 1];
@@ -62,7 +63,9 @@ export function appendRunEvent(log: RunEvent[], event: RunEvent): RunEvent[] {
     last?.type === 'answer' &&
     typeof last.value === 'string' &&
     last.page === event.page &&
-    event.t - last.t <= TYPING_MERGE_MS
+    event.t - last.t <= TYPING_MERGE_MS &&
+    // Typing grows or trims the text; switching single-choice options ("0" → "2") doesn't.
+    (event.value.startsWith(last.value) || last.value.startsWith(event.value))
   ) {
     return [...log.slice(0, -1), event];
   }

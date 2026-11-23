@@ -172,7 +172,7 @@ function TimePerQuestion({ questions, budget, onOpen }: {
       <svg
         viewBox={`0 0 ${width} ${height}`}
         className="h-auto w-full overflow-visible"
-        role="img"
+        role="group"
         aria-label={`Time per question. Average ${formatSeconds(avg)}. Longest Q${
           questions.reduce((a, b) => (b.timeSeconds > a.timeSeconds ? b : a), questions[0]!).q
         }.`}
@@ -218,8 +218,19 @@ function TimePerQuestion({ questions, budget, onOpen }: {
                 height={innerH + 14}
                 fill="transparent"
                 className="cursor-pointer"
+                tabIndex={0}
+                role="button"
+                aria-label={`Q${q.q}, ${WORD[q.outcome].toLowerCase()}, ${formatSeconds(q.timeSeconds)}. Review it.`}
                 onMouseEnter={() => setHover(i)}
+                onFocus={() => setHover(i)}
+                onBlur={() => setHover(null)}
                 onClick={() => onOpen(q.id)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    onOpen(q.id);
+                  }
+                }}
               >
                 <title>{`Review Q${q.q}`}</title>
               </rect>
@@ -288,12 +299,14 @@ function JourneyMap({ analysis, onOpen }: { analysis: InsightsAnalysis; onOpen: 
   const yTicks = Array.from(new Set([1, Math.ceil(n / 2), n]));
   const hovered = hover !== null ? journey[hover] : null;
 
-  const onMove = (event: React.MouseEvent<SVGRectElement>) => {
+  // Read the stretch from the pointer itself, so a tap with no hover first still lands.
+  const stretchAt = (event: React.MouseEvent<SVGRectElement>) => {
     const box = event.currentTarget.getBoundingClientRect();
     const t = ((event.clientX - box.left) / box.width) * end;
     const index = journey.findIndex((stretch) => t >= stretch.from && t <= stretch.to);
-    setHover(index >= 0 ? index : null);
+    return index >= 0 ? index : null;
   };
+  const onMove = (event: React.MouseEvent<SVGRectElement>) => setHover(stretchAt(event));
 
   return (
     <div className="relative">
@@ -375,8 +388,10 @@ function JourneyMap({ analysis, onOpen }: { analysis: InsightsAnalysis; onOpen: 
           fill="transparent"
           className={cn(hovered && 'cursor-pointer')}
           onMouseMove={onMove}
-          onClick={() => {
-            const id = hovered ? questions[hovered.q - 1]?.id : undefined;
+          onClick={(event) => {
+            const index = stretchAt(event);
+            const stretch = index !== null ? journey[index] : undefined;
+            const id = stretch ? questions[stretch.q - 1]?.id : undefined;
             if (id) onOpen(id);
           }}
         />

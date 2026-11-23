@@ -310,14 +310,17 @@ export function analyseAttempt(input: InsightsInput): InsightsAnalysis {
     path.push({ q: pageIndex.get(page)! + 1, seconds: 0, via });
   };
 
+  let prevT: number | null = null;
   for (const event of events) {
     switch (event.type) {
       case 'start':
         enter(event.page, event.t, 'start');
         break;
       case 'resume': {
-        credit(event.t);
-        const gapFrom = hiddenAt ?? lastEndAt;
+        // A reload with no hidden boundary saved: stop at the last recorded
+        // action instead of crediting the closed stretch to that question.
+        credit(hiddenAt ?? prevT ?? event.t);
+        const gapFrom = hiddenAt ?? lastEndAt ?? prevT;
         if (gapFrom !== null) closed += Math.max(0, (event.t - gapFrom) / 1000);
         hiddenAt = null;
         resumes += 1;
@@ -396,6 +399,7 @@ export function analyseAttempt(input: InsightsInput): InsightsAnalysis {
       case 'check':
         break;
     }
+    prevT = event.t;
   }
 
   const questions: QuestionInsight[] = input.pages.map((page, index) => {
