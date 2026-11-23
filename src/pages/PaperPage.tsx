@@ -1,6 +1,6 @@
 import { useParams, Link, useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, CheckCircle2, XCircle, RotateCcw, Trophy, Timer, Play, Pause, ChevronLeft, ChevronRight, ChevronsRight, Flag, BookOpen, LayoutGrid, Maximize2, Undo2, Calculator, Eraser, Eye, EyeOff, AArrowDown, AArrowUp, Hourglass, ListChecks, Lock } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, XCircle, RotateCcw, Trophy, Timer, Play, Pause, ChevronLeft, ChevronRight, ChevronsRight, Flag, BookOpen, LayoutGrid, Maximize2, Undo2, Calculator, Eraser, Eye, EyeOff, AArrowDown, AArrowUp, Hourglass, ListChecks, Lock, CircleAlert } from 'lucide-react';
 import type React from 'react';
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { Dialog } from '@/components/ui/dialog';
@@ -64,6 +64,9 @@ import {
   type ReviewFilter,
 } from '@/components/exam/AttemptReport';
 import { HallBackdrop, PaperLoadingSkeleton, PaperReportSkeleton } from '@/components/skeletons/route-skeletons';
+import { appendRunEvent, diffRunSnapshots, type NavVia, type RunEvent, type RunSnapshot } from '@/lib/runActivity';
+import { analyseAttempt, attemptPatterns, buildAttemptInsightsMarkdown, insightsFileName, type InsightsInput } from '@/lib/attemptInsights';
+import { AttemptInsights } from '@/components/exam/AttemptInsights';
 
 const OPTION_LABELS = ['A', 'B', 'C', 'D', 'E', 'F'];
 /** Low-time alerts, each fired once as the clock crosses it. */
@@ -1342,26 +1345,14 @@ function QuestionCard({
           <span className="tabular-nums text-[rgb(var(--ex-accent))]">{index + 1}</span>
         </h2>
         {passage && (
-          <span className="inline-flex items-center gap-2.5 rounded-full border border-[rgb(var(--ex-line)/0.2)] bg-[rgb(var(--ex-line)/0.07)] py-1 pl-3 pr-2.5 text-xs text-[rgb(var(--ex-accent-soft))]">
-            <BookOpen className="h-3.5 w-3.5 opacity-80" aria-hidden="true" />
-            Passage {passage.number}
+          // Which passage this question belongs to, and where in it: one quiet line.
+          <span className="flex items-center gap-2 border-l border-[rgb(var(--ex-line)/0.22)] pl-4 text-sm text-white/60">
+            <BookOpen className="h-4 w-4 text-[rgb(var(--ex-accent-soft))]" aria-hidden="true" />
+            <span className="text-[rgb(var(--ex-accent-soft))]">Passage {passage.number}</span>
             {passage.parts > 1 && (
-              <>
-                <span className="tabular-nums text-white/55">
-                  part {passage.part + 1} of {passage.parts}
-                </span>
-                <span className="inline-flex items-center gap-1" aria-hidden="true">
-                  {Array.from({ length: passage.parts }, (_, i) => (
-                    <span
-                      key={i}
-                      className={cn(
-                        'h-1.5 rounded-full transition-all',
-                        i === passage.part ? 'w-4 bg-[rgb(var(--ex-accent))]' : 'w-1.5 bg-white/20',
-                      )}
-                    />
-                  ))}
-                </span>
-              </>
+              <span className="tabular-nums">
+                · Part {passage.part + 1} of {passage.parts}
+              </span>
             )}
           </span>
         )}
@@ -1432,6 +1423,30 @@ function QuestionCard({
           ) : null}
         </section>
       </div>
+    </div>
+  );
+}
+
+/** One figure in the hand-in summary: a big number over a small key. */
+function HandInStat({
+  label,
+  value,
+  swatch,
+  icon,
+}: {
+  label: string;
+  value: number;
+  swatch?: string;
+  icon?: React.ReactNode;
+}) {
+  return (
+    <div className="flex min-w-0 flex-1 flex-col-reverse gap-1.5 px-4 py-3">
+      <dt className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
+        {swatch && <span aria-hidden="true" className={cn('h-3 w-3 shrink-0 rounded-[3px] border', swatch)} />}
+        {icon}
+        {label}
+      </dt>
+      <dd className="font-display text-[1.75rem] leading-none tabular-nums">{value}</dd>
     </div>
   );
 }
@@ -2175,7 +2190,7 @@ export default function PaperPage() {
   const warningTimeoutRef = useRef<number | null>(null);
   const { getToken, isSignedIn } = useAuth();
   // After hand-in: the report, or stepping through questions under a filter.
-  const [resultsView, setResultsView] = useState<'report' | 'review'>('report');
+  const [resultsView, setResultsView] = useState<'report' | 'insights' | 'review'>('report');
   const [reviewFilter, setReviewFilter] = useState<ReviewFilter>('all');
   // Attempt record: when the sitting began, how long it took, and the stored
   // server copy once saved. Retries append, so `attempts` is the history.
@@ -2190,6 +2205,14 @@ export default function PaperPage() {
   const [compareId, setCompareId] = useState<string | null>(null);
   const [compare, setCompare] = useState<AttemptDetail | null>(null);
   const savingRef = useRef(false);
+  // The sitting's activity log (visits, answers, flags, focus) for the
+  // insights report. Recorded only while a run is live.
+  const [activity, setActivity] = useState<RunEvent[]>([]);
+  // How the next page change happened; call sites set it just before moving.
+  const navViaRef = useRef<NavVia>('other');
+  // The next time a run goes live, log 'start' (a fresh run) not 'resume'.
+  const freshRunRef = useRef(false);
+  const liveRef = useRef(false);
   // Bumped on Try again so a save still in flight can't attach to the new run.
   const runTokenRef = useRef(0);
 
@@ -2252,6 +2275,8 @@ export default function PaperPage() {
           setStartedAt(savedSession?.startedAt ?? null);
           setTimeUsed(savedSession?.timeUsedSeconds ?? null);
           setAttemptId(savedSession?.attemptId ?? null);
+          setActivity(savedSession?.activity ?? []);
+          freshRunRef.current = false;
           setSaveState(savedSession?.attemptId ? 'saved' : 'idle');
           setResultsView('report');
           setAttempts(null);
@@ -2312,10 +2337,11 @@ export default function PaperPage() {
       timeUsedSeconds: timeUsed,
       attemptId,
       focusIds,
+      activity,
     };
 
     writePracticeRunSession(storageKey, payload);
-  }, [paper, remainingSeconds, selectedAnswers, showResults, storageKey, timerEndsAt, timerRunning, flaggedIds, runMode, checkedIds, startedAt, timeUsed, attemptId, focusIds]);
+  }, [paper, remainingSeconds, selectedAnswers, showResults, storageKey, timerEndsAt, timerRunning, flaggedIds, runMode, checkedIds, startedAt, timeUsed, attemptId, focusIds, activity]);
 
   useEffect(() => {
     if (!paper || !timerRunning || showResults || timerEndsAt === null) {
@@ -2572,7 +2598,7 @@ export default function PaperPage() {
   // Review steps only through pages matching the filter; otherwise every page.
   const reviewing = showResults && resultsView === 'review';
   // Everything but the report fits one screen on wide displays.
-  const fitsScreen = !(showResults && resultsView === 'report');
+  const fitsScreen = !(showResults && resultsView !== 'review');
   const reviewIndices = useMemo(
     () =>
       reviewStates.flatMap((state, index) =>
@@ -2630,6 +2656,11 @@ export default function PaperPage() {
     window.scrollTo({ top: 0, behavior: 'instant' });
   };
 
+  const showInsights = () => {
+    setResultsView('insights');
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  };
+
   // Flagged-for-review overlay, aligned to the navigator pages.
   const flaggedPages = useMemo(
     () => pages.map((page) => flaggedIds.has(page.id)),
@@ -2650,6 +2681,7 @@ export default function PaperPage() {
     () => pageStates.filter((state) => state === 'none').length,
     [pageStates],
   );
+  const answeredCount = pageCount - blankCount - partialCount;
 
   const toggleFlag = useCallback((uuid: string) => {
     setFlaggedIds((prev) => {
@@ -2660,11 +2692,66 @@ export default function PaperPage() {
     });
   }, []);
 
+  // Activity recorder: compares each render's run state with the last and logs
+  // what changed. A run going live logs 'start' or 'resume'; hand-in logs
+  // 'submit'. Nothing is logged on the cover plate, while loading, or in review.
+  const snapshotRef = useRef<RunSnapshot | null>(null);
+  useEffect(() => {
+    const live = !loading && !!paper && runMode !== null && !showResults && pages.length > 0;
+    const snapshot: RunSnapshot = {
+      pageIds: pages.map((page) => page.id),
+      index: Math.max(0, Math.min(currentIndex, pages.length - 1)),
+      answers: selectedAnswers,
+      flagged: flaggedIds,
+      checked: checkedIds,
+      eliminated,
+      calcOpen,
+      handInOpen: confirmOpen,
+      clockRunning: runMode === 'timed' && !timeExpired ? timerRunning : null,
+    };
+    const prev = snapshotRef.current;
+    snapshotRef.current = snapshot;
+    const wasLive = liveRef.current;
+    liveRef.current = live;
+    const via = navViaRef.current;
+    navViaRef.current = 'other';
+    const t = Date.now();
+    const page = snapshot.pageIds[snapshot.index] ?? '';
+
+    if (live && !wasLive) {
+      const fresh = freshRunRef.current;
+      freshRunRef.current = false;
+      setActivity((log) =>
+        appendRunEvent(log, fresh ? { t, type: 'start', mode: runMode!, page } : { t, type: 'resume', page }),
+      );
+      return;
+    }
+    if (!live && wasLive && showResults) {
+      setActivity((log) => appendRunEvent(log, { t, type: 'submit', auto: timeExpired }));
+      return;
+    }
+    if (!live || !prev) return;
+    const events = diffRunSnapshots(prev, snapshot, t, via);
+    if (events.length > 0) setActivity((log) => events.reduce(appendRunEvent, log));
+  }, [loading, paper, runMode, showResults, pages, currentIndex, selectedAnswers, flaggedIds, checkedIds, eliminated, calcOpen, confirmOpen, timerRunning, timeExpired]);
+
+  // Leaving the tab pauses the per-question clock in the report.
+  useEffect(() => {
+    const onVisibility = () => {
+      if (!liveRef.current) return;
+      const event: RunEvent = { t: Date.now(), type: document.hidden ? 'hidden' : 'visible' };
+      setActivity((log) => appendRunEvent(log, event));
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, []);
+
   const goNextFlagged = useCallback(() => {
     const total = flaggedPages.length;
     for (let step = 1; step <= total; step++) {
       const idx = (currentIndex + step) % total;
       if (flaggedPages[idx]) {
+        navViaRef.current = 'next-flagged';
         goTo(idx);
         return;
       }
@@ -2684,6 +2771,7 @@ export default function PaperPage() {
     for (let step = 1; step < total; step++) {
       const idx = (currentIndex + step) % total;
       if (pageStates[idx] !== 'done' && !checkedIds.has(pages[idx]?.id ?? '')) {
+        navViaRef.current = 'next-unanswered';
         goTo(idx);
         return;
       }
@@ -2723,6 +2811,7 @@ export default function PaperPage() {
       } else if (target?.isContentEditable) {
         return;
       }
+      navViaRef.current = 'arrow-key';
       if (event.key === 'ArrowLeft') goPrev();
       else goNext();
     };
@@ -2832,6 +2921,7 @@ export default function PaperPage() {
       if (onForward) return; // the button's own click moves on
       event.preventDefault();
       if (onOption) return; // a locked option: don't toggle, don't jump
+      navViaRef.current = 'enter-key';
       goNext();
     };
     window.addEventListener('keydown', onKey);
@@ -2879,6 +2969,7 @@ export default function PaperPage() {
 
   const handleConfirmReviewUnanswered = () => {
     setConfirmOpen(false);
+    navViaRef.current = 'hand-in-sheet';
     if (firstIncompleteIndex >= 0) goTo(firstIncompleteIndex);
   };
 
@@ -2989,6 +3080,8 @@ export default function PaperPage() {
   // timed attempt can never be silently un-started.
   const handleBeginTimed = () => {
     if (!paper) return;
+    setActivity([]);
+    freshRunRef.current = true;
     setRunMode('timed');
     setFocusIds(null);
     setCheckedIds(new Set());
@@ -3010,6 +3103,8 @@ export default function PaperPage() {
   // Practice Run (no clock, each question checked on its own).
   const handleBeginUntimed = (mode: 'open' | 'practice') => {
     if (!paper) return;
+    setActivity([]);
+    freshRunRef.current = true;
     setRunMode(mode);
     setFocusIds(null);
     setCheckedIds(new Set());
@@ -3060,6 +3155,7 @@ export default function PaperPage() {
     setResultsView('report');
     setReviewFilter('all');
     setCompareId(null);
+    setActivity([]);
     if (storageKey) clearPracticeRunSession(storageKey);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -3078,6 +3174,7 @@ export default function PaperPage() {
     if (missedPageIds.length === 0) return;
     const ids = missedPageIds;
     resetRun();
+    freshRunRef.current = true;
     setFocusIds(ids);
     setRunMode('practice');
     setStartedAt(Date.now());
@@ -3181,6 +3278,43 @@ export default function PaperPage() {
   const isLastPage = safeIndex >= pageCount - 1;
   const pageNumberById = new Map(pages.map((page, index) => [page.id, index + 1]));
   const labelFor = (uuid: string) => String(pageNumberById.get(uuid) ?? '?');
+  // "Analyse with AI": the sitting as a Markdown report, built on demand.
+  const insightsInput = (generatedAt: number): InsightsInput => {
+    const name = displayPaperName || paper?.paperName || 'Exam paper';
+    return {
+      paper: { name, course: displayCourseName, exam: paper?.examName ?? '', year: paper?.year ?? null },
+      mode: runMode ?? 'open',
+      focusRun: focusIds !== null,
+      durationMinutes,
+      startedAt,
+      timeUsedSeconds: timeUsed,
+      timeExpired,
+      pages: pages.map((page) => ({
+        id: page.id,
+        question: page.passage ? page.question.subQuestions?.[0] ?? page.question : page.question,
+        passage: page.passage
+          ? { number: page.passage.number, part: page.passage.part, parts: page.passage.parts }
+          : null,
+        passageQuestion: page.passage ? page.question : null,
+      })),
+      answers: selectedAnswers,
+      flaggedIds: Array.from(flaggedIds),
+      checkedIds: Array.from(checkedIds),
+      events: activity,
+      generatedAt,
+    };
+  };
+  // Analysed only while the Insights page is open.
+  const insightsView = (() => {
+    if (!showResults || resultsView !== 'insights') return null;
+    const input = insightsInput(Date.now());
+    const analysis = analyseAttempt(input);
+    return { analysis, patterns: attemptPatterns(analysis, input) };
+  })();
+  const buildInsights = () => {
+    const input = insightsInput(Date.now());
+    return { markdown: buildAttemptInsightsMarkdown(input), fileName: insightsFileName(input.paper.name, input.generatedAt) };
+  };
   const currentGrade = currentPage ? graded.find((row) => row.questionUuid === currentPage.id) : undefined;
   const isPractice = runMode === 'practice';
   const currentChecked = isPractice && !showResults && !!currentPage && checkedIds.has(currentPage.id);
@@ -3218,7 +3352,7 @@ export default function PaperPage() {
   };
   // Pager controls, shared by the desktop rail and the phone pager.
   const prevButton = (
-    <Button variant="outline" onClick={goPrev} disabled={prevIndex < 0} aria-label="Previous question" className="h-10 gap-1.5 px-3 sm:min-w-[7.5rem] sm:px-4">
+    <Button variant="outline" onClick={() => { navViaRef.current = 'prev'; goPrev(); }} disabled={prevIndex < 0} aria-label="Previous question" className="h-10 gap-1.5 px-3 sm:min-w-[7.5rem] sm:px-4">
       <ChevronLeft className="h-4 w-4" />
       <span className="hidden sm:inline">Previous</span>
     </Button>
@@ -3241,7 +3375,7 @@ export default function PaperPage() {
         )}
       </Button>
     ) : nextIndex >= 0 ? (
-      <Button onClick={goNext} data-exam-forward aria-label="Next question" className="h-10 gap-1.5 bg-[rgb(var(--ex-primary))] px-3 text-[rgb(var(--ex-ink))] hover:bg-white sm:min-w-[7.5rem] sm:px-4">
+      <Button onClick={() => { navViaRef.current = 'next'; goNext(); }} data-exam-forward aria-label="Next question" className="h-10 gap-1.5 bg-[rgb(var(--ex-primary))] px-3 text-[rgb(var(--ex-ink))] hover:bg-white sm:min-w-[7.5rem] sm:px-4">
         <span className="hidden sm:inline">Next</span>
         <ChevronRight className="h-4 w-4" />
       </Button>
@@ -3293,6 +3427,11 @@ export default function PaperPage() {
       <span className={placement === 'head' ? undefined : 'hidden sm:inline'}>{currentFlagged ? 'Flagged' : 'Flag'}</span>
     </button>
   );
+  // Whole minutes left on a timed run's clock, for the hand-in summary.
+  const clockMinutesLeft =
+    runMode === 'timed' && remainingSeconds !== null && !timeExpired && remainingSeconds >= 60
+      ? Math.floor(remainingSeconds / 60)
+      : null;
   const toolButton =
     'inline-flex h-8 items-center justify-center gap-1.5 rounded-md px-2 text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground disabled:pointer-events-none disabled:opacity-35';
 
@@ -3464,11 +3603,11 @@ export default function PaperPage() {
                     key={view}
                     type="button"
                     role="tab"
-                    aria-selected={resultsView === view}
+                    aria-selected={view === 'review' ? resultsView === 'review' : resultsView !== 'review'}
                     onClick={() => (view === 'report' ? showReport() : openReview(reviewFilter, currentPage?.id))}
                     className={cn(
                       'rounded-md px-2.5 py-1 text-xs font-medium capitalize transition-colors',
-                      resultsView === view
+                      (view === 'review' ? resultsView === 'review' : resultsView !== 'review')
                         ? 'bg-[rgb(var(--ex-primary))] text-[rgb(var(--ex-ink))]'
                         : 'text-muted-foreground hover:text-foreground',
                     )}
@@ -3535,6 +3674,20 @@ export default function PaperPage() {
             missedCount={missedPageIds.length}
             onRetryMissed={handleRetryMissed}
             focusRun={focusIds !== null}
+            onBuildInsights={buildInsights}
+            onOpenInsights={showInsights}
+          />
+        </div>
+      ) : insightsView ? (
+        <div className="mx-auto max-w-[1180px] pb-10">
+          <AttemptInsights
+            analysis={insightsView.analysis}
+            patterns={insightsView.patterns}
+            runMode={runMode}
+            durationMinutes={durationMinutes}
+            onBack={showReport}
+            onBuildReport={buildInsights}
+            onOpenQuestion={(id) => openReview('all', id)}
           />
         </div>
       ) : (
@@ -3627,7 +3780,10 @@ export default function PaperPage() {
                 incorrectCount={incorrectCount}
                 unansweredCount={showResults ? 0 : unansweredCount}
                 currentIndex={safeIndex}
-                onJump={goTo}
+                onJump={(index) => {
+                  navViaRef.current = 'question-grid';
+                  goTo(index);
+                }}
                 onJumpNextFlagged={goNextFlagged}
                 onJumpNextIncorrect={goNextIncorrect}
                 onJumpNextUnanswered={goNextUnanswered}
@@ -3714,6 +3870,7 @@ export default function PaperPage() {
             currentIndex={safeIndex}
             onJump={(index) => {
               setNavOpen(false);
+              navViaRef.current = 'question-grid';
               goTo(index);
             }}
             onJumpNextFlagged={() => {
@@ -3746,105 +3903,94 @@ export default function PaperPage() {
           <img src={handInHall} alt="" className="h-full w-full object-cover object-[50%_55%]" />
           <div className="absolute inset-0 bg-gradient-to-b from-[#0f1529]/30 via-transparent to-[#0f1529]" />
         </div>
-        <div className="relative -mt-6 px-6 pb-6 sm:px-8">
+        <div className="relative -mt-8 px-6 pb-6 sm:px-8">
           <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[rgb(var(--ex-accent))]/80">End of paper</p>
-          <h2 id="submit-confirm-title" className="mt-1.5 font-display text-[1.65rem] font-normal leading-tight tracking-tight">
-            {blankCount === 0 ? 'Hand in your paper?' : `Hand in with ${blankCount} left blank?`}
+          <h2 id="submit-confirm-title" className="mt-1.5 font-display text-[1.75rem] font-normal leading-tight tracking-tight">
+            Hand in your paper?
           </h2>
-          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-            {runMode === 'timed' && remainingSeconds !== null && !timeExpired && remainingSeconds >= 60 && (
-              <>
-                <span className="text-foreground/90">{Math.floor(remainingSeconds / 60)} min</span> still on the clock.{' '}
-              </>
-            )}
-            Once handed in, answers can't change.
-          </p>
 
-          {/* The answer sheet. */}
-          <div className="mt-6">
-            <div className="mb-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
-              <span className="inline-flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 rounded-[3px] bg-[#62aef0]" aria-hidden="true" />
-                {pageCount - blankCount - partialCount} answered
-              </span>
-              {partialCount > 0 && (
-                <span className="inline-flex items-center gap-1.5">
-                  <span className="h-2.5 w-2.5 rounded-[3px] border border-[rgb(var(--ex-accent))]/70 bg-[rgb(var(--ex-accent))]/25" aria-hidden="true" />
-                  {partialCount} partial
-                </span>
-              )}
-              <span className="inline-flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 rounded-[3px] border border-dashed border-white/35" aria-hidden="true" />
-                {blankCount} blank
-              </span>
-              {flaggedCount > 0 && (
-                <span className="inline-flex items-center gap-1.5 text-amber-300">
-                  <Flag className="h-3 w-3 fill-amber-400/70" aria-hidden="true" />
-                  {flaggedCount} flagged
-                </span>
-              )}
+          {/* Where the paper stands, in big numbers. */}
+          <dl className="mt-5 flex divide-x divide-white/[0.08] overflow-hidden rounded-xl border border-white/[0.08] bg-black/25">
+            <HandInStat label="Answered" value={answeredCount} swatch={NAV_CELL_CLASS.done} />
+            {partialCount > 0 && <HandInStat label="Partly" value={partialCount} swatch={NAV_CELL_CLASS.partial} />}
+            <HandInStat label="Blank" value={blankCount} swatch={NAV_CELL_CLASS.none} />
+            {flaggedCount > 0 && (
+              <HandInStat
+                label="Flagged"
+                value={flaggedCount}
+                icon={<Flag className="h-3 w-3 fill-amber-400/80 text-amber-400" aria-hidden="true" />}
+              />
+            )}
+            {clockMinutesLeft !== null && <HandInStat label="Min left" value={clockMinutesLeft} />}
+          </dl>
+
+          {/* One line on what's unfinished, with a way straight to it. */}
+          {firstIncompleteIndex >= 0 && (
+            <div className="mt-3 flex items-center gap-3 rounded-lg border border-amber-500/25 bg-amber-500/[0.07] px-3.5 py-2.5 text-sm">
+              <CircleAlert className="h-4 w-4 shrink-0 text-amber-400" aria-hidden="true" />
+              <p className="min-w-0 flex-1 text-amber-50/90">
+                {blankCount > 0
+                  ? `${blankCount} ${blankCount === 1 ? 'question is' : 'questions are'} blank and will score nothing.`
+                  : `${partialCount} ${partialCount === 1 ? 'question is' : 'questions are'} only partly answered.`}
+              </p>
+              <button
+                type="button"
+                onClick={handleConfirmReviewUnanswered}
+                className="shrink-0 rounded-md px-2 py-1 text-sm font-medium text-amber-200 transition-colors hover:bg-amber-500/15"
+              >
+                Go to Q{firstIncompleteIndex + 1} →
+              </button>
             </div>
-            <ol className="grid grid-cols-10 gap-1.5" aria-label="Answer sheet">
+          )}
+
+          {/* The answer sheet, in the same cells as the question rail. */}
+          <div className="mt-5">
+            <div className="mb-2 flex items-baseline justify-between gap-3">
+              <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">Answer sheet</p>
+              <p className="text-xs text-muted-foreground">Select a question to go back</p>
+            </div>
+            <ol className="-m-1 grid max-h-[13rem] grid-cols-10 gap-1.5 overflow-y-auto p-1" aria-label="Answer sheet">
               {pageStates.map((state, index) => (
                 <li key={pages[index]?.id ?? index}>
                   <button
                     type="button"
                     onClick={() => {
                       setConfirmOpen(false);
+                      navViaRef.current = 'hand-in-sheet';
                       goTo(index);
                     }}
-                    aria-label={`Question ${index + 1}: ${state === 'done' ? 'answered' : state === 'partial' ? 'partly answered' : 'blank'}${flaggedPages[index] ? ', flagged' : ''}`}
+                    aria-label={`Question ${index + 1}: ${NAV_CELL_LABEL[state].toLowerCase()}${flaggedPages[index] ? ', flagged' : ''}`}
                     className={cn(
-                      'relative flex aspect-square w-full items-center justify-center rounded-[5px] text-[10px] font-medium tabular-nums transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--ex-accent))]/70',
-                      state === 'done'
-                        ? 'bg-[#62aef0]/85 text-[#0b1622] hover:bg-[#62aef0]'
-                        : state === 'partial'
-                        ? 'border border-[rgb(var(--ex-accent))]/60 bg-[rgb(var(--ex-accent))]/15 text-[rgb(var(--ex-accent-soft))] hover:bg-[rgb(var(--ex-accent))]/25'
-                        : 'border border-dashed border-white/20 text-muted-foreground hover:border-[rgb(var(--ex-accent))]/60 hover:text-[rgb(var(--ex-accent-soft))]',
-                      index === safeIndex && 'ring-1 ring-white/60 ring-offset-1 ring-offset-[#0f1529]',
+                      'relative flex h-9 w-full items-center justify-center overflow-hidden rounded-md border text-[13px] font-medium tabular-nums transition-[filter] hover:brightness-125 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--ex-accent))]/70',
+                      NAV_CELL_CLASS[state],
+                      index === safeIndex && 'ring-2 ring-[rgb(var(--ex-accent-soft))] ring-offset-1 ring-offset-[#0f1529]',
                     )}
                   >
                     {index + 1}
-                    {flaggedPages[index] && (
-                      <span className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-amber-400 ring-2 ring-[#0f1529]" aria-hidden="true" />
-                    )}
+                    {flaggedPages[index] && <FlagFold className="border-l-[8px] border-t-[8px]" />}
                   </button>
                 </li>
               ))}
             </ol>
-            <p className="mt-2.5 text-xs text-muted-foreground">
-              Tap a square to go back to it.
-              {firstIncompleteIndex >= 0 && (
-                <>
-                  {' '}
-                  <button
-                    type="button"
-                    onClick={handleConfirmReviewUnanswered}
-                    className="font-medium text-[rgb(var(--ex-accent-soft))] underline-offset-4 hover:underline"
-                  >
-                    First blank: Q{firstIncompleteIndex + 1} →
-                  </button>
-                </>
-              )}
-            </p>
           </div>
 
-          <div className="mt-7 flex flex-col-reverse gap-2 border-t border-white/[0.06] pt-5 sm:flex-row sm:justify-end">
-            {/* Safe default focus: a stray Enter returns to the paper. */}
-            <Button variant="ghost" data-autofocus onClick={() => setConfirmOpen(false)}>
-              Back to paper
-            </Button>
-            <Button
-              onClick={handleConfirmSubmit}
-              className={cn(
-                'px-5',
-                blankCount === 0
-                  ? 'bg-[rgb(var(--ex-primary))] text-[rgb(var(--ex-ink))] hover:bg-white'
-                  : 'border border-[rgb(var(--ex-accent))]/45 bg-[rgb(var(--ex-accent))]/10 text-[rgb(var(--ex-accent-soft))] hover:bg-[rgb(var(--ex-accent))]/20',
-              )}
-            >
-              Hand in paper
-            </Button>
+          <div className="mt-6 flex flex-col gap-4 border-t border-white/[0.06] pt-5 sm:flex-row sm:items-center">
+            <p className="inline-flex items-center gap-1.5 text-xs text-muted-foreground sm:mr-auto">
+              <Lock className="h-3.5 w-3.5" aria-hidden="true" />
+              Answers lock once handed in.
+            </p>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row">
+              {/* Safe default focus: a stray Enter returns to the paper. */}
+              <Button variant="ghost" data-autofocus onClick={() => setConfirmOpen(false)}>
+                Back to paper
+              </Button>
+              <Button
+                onClick={handleConfirmSubmit}
+                className="bg-[rgb(var(--ex-primary))] px-5 font-semibold text-[rgb(var(--ex-ink))] hover:bg-white"
+              >
+                Hand in paper
+              </Button>
+            </div>
           </div>
         </div>
 
