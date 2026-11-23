@@ -3368,6 +3368,8 @@ export default function PaperPage() {
     ? 'Submit answers'
     : stats.answered > 0
     ? `Submit (${stats.answered}/${stats.totalQuestions})`
+    : checkedIds.size > 0
+    ? 'Submit'
     : 'Answer to submit';
 
   const questionTools: QuestionTools = {
@@ -3384,11 +3386,14 @@ export default function PaperPage() {
       <span className="hidden sm:inline">Previous</span>
     </Button>
   );
+  // A practice run where every answer was revealed has nothing typed in but
+  // still needs a way to the report.
+  const nothingToHandIn = stats.answered === 0 && checkedIds.size === 0;
   const nextButton =
     isLastPage && !showResults ? (
       <Button
         onClick={handleSubmit}
-        disabled={stats.answered === 0 || summoning}
+        disabled={nothingToHandIn || summoning}
         data-exam-forward
         className={cn('h-10 gap-1.5 px-4', allAnswered ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-[rgb(var(--ex-primary))] text-[rgb(var(--ex-ink))] hover:bg-white')}
       >
@@ -3656,8 +3661,8 @@ export default function PaperPage() {
             <Button
               size="sm"
               onClick={handleSubmit}
-              disabled={stats.answered === 0 || summoning}
-              title={stats.answered === 0 ? 'Answer at least one question to submit' : undefined}
+              disabled={nothingToHandIn || summoning}
+              title={nothingToHandIn ? 'Answer at least one question to submit' : undefined}
               className={cn(
                 'shrink-0',
                 allAnswered ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-[rgb(var(--ex-primary))] text-[rgb(var(--ex-ink))] hover:bg-white',
