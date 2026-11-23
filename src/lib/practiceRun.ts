@@ -1,4 +1,5 @@
 import type { QuestionType, QuizQuestion } from '@/lib/dataTransforms';
+import { parseRunEvents, type RunEvent } from '@/lib/runActivity';
 
 export type SelectedAnswers = Record<string, string | string[]>;
 
@@ -45,6 +46,8 @@ export interface SavedPracticeRunSession {
    * out of the attempt history. Absent or null for a full-paper run.
    */
   focusIds?: string[] | null;
+  /** What the user did during the sitting, for the insights report. */
+  activity?: RunEvent[];
 }
 
 export interface PracticeRunStats {
@@ -122,6 +125,7 @@ export function parseSavedPracticeRunSession(
       ...(Array.isArray(parsed.focusIds)
         ? { focusIds: parsed.focusIds.filter((id): id is string => typeof id === 'string') }
         : {}),
+      ...(Array.isArray(parsed.activity) ? { activity: parseRunEvents(parsed.activity) } : {}),
     };
   } catch {
     return null;
